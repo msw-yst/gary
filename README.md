@@ -36,8 +36,9 @@
 > | 4 + 4 | 79.7 / 110.5 |
 >
 > The MI50s matter most: each one adds speed until no experts are left in host RAM, and the drafter only pays off once
-> they are. Measured but not yet in a release: a batched-path fusion (+6 % with 8 users) and a cache fix that wins back
-> 12.5 % on 8K first token. Both are being tested together for the next build. Served single-user decode on build 16 is
+> they are. Measured but not yet in a release: build 16 plus a batched-path fusion and a cache fix, together, against
+> build 16 on the same day: **+12.5 % with 8 users (about 203 tok/s), +5.3 % with 4**, and 12.5 % faster first token on
+> an 8K prompt, with identical output. It is the candidate for the next build. Served single-user decode on build 16 is
 > 5-9 % behind build 15. That is the price of fixing a real correctness bug: build 15 summed some experts twice.
 >
 > **Read more:** [latest results](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/docs/dsv41/UPDATE-2026-11-14.md) ·
