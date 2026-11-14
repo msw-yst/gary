@@ -1,3 +1,55 @@
+> ## This fork: DeepSeek V4.1 Flash on AMD consumer + datacenter cards
+>
+> **What it is.** A fork of [Strata](https://github.com/Niko1221/Strata) that runs DeepSeek V4.1 Flash on a mixed AMD box:
+> four RX 7900 XTX (24 GB, RDNA3) in a tensor-parallel group, with four Instinct MI50 (32 GB, gfx906, several generations
+> older) holding and computing the experts the XTX cards can't fit. The work is on branch
+> [`dsv41-amd`](https://github.com/msw-yst/strata-dsv41/tree/dsv41-amd) (latest tag
+> [`v0.2.9-dsv41.2`](https://github.com/msw-yst/strata-dsv41/releases/tag/v0.2.9-dsv41.2)). This `main` branch is upstream
+> Strata, unchanged apart from this note.
+>
+> **Where it came from.** Upstream Strata v0.2.9 already ran DeepSeek V4.1 Flash on one GPU, keeping the experts that
+> don't fit on it in host RAM. Several engine fixes and decode fusions were ported from [Project Maya](https://github.com/mw00/project-maya),
+> itself built on Strata. From early November 2026 we (YST) asked how much of the rest of the box could be put to work,
+> and at what cost in correctness. Each change went in behind a flag, was checked for byte-identical output against the
+> build before it, and was timed. Each one has a card: what and why, the prediction written down before the run,
+> correctness, timing and verdict. There are 146 cards so far.
+>
+> **How it's looking** (our test machine, our quant of about 2.25 bits a weight; yours will vary):
+>
+> | step | single-user decode, drafter off |
+> |---|---|
+> | start: 1 XTX, the rest of the experts in host RAM | 22.7 tok/s |
+> | + 1 MI50 holding experts | 26.8 tok/s |
+> | 3 XTX + 3 MI50, every expert on a GPU | 48.7 tok/s |
+> | 4 XTX + 4 MI50, build 10 → build 14 | 57.9 → 71.0 tok/s (77.1 after a short prompt) |
+>
+> Early and late points used different prompts, so read that table as the shape of the progress. Today, on build 16
+> (the release build), one process on all 8 cards decodes at **79.7 tok/s, or 110.5 tok/s with DeepSeek's own DSpark
+> drafter**. Through the server, one user gets about 120 tok/s and 8 users about 189 tok/s in total. With fewer cards:
+>
+> | XTX + MI50 | drafter off / on (tok/s) |
+> |---|---|
+> | 1 + 0 | 25.2 / 21.8 |
+> | 1 + 4 | 51.7 / 59.5 |
+> | 2 + 4 | 64.4 / 73.0 |
+> | 3 + 4 | 72.1 / 92.0 |
+> | 4 + 4 | 79.7 / 110.5 |
+>
+> The MI50s matter most: each one adds speed until no experts are left in host RAM, and the drafter only pays off once
+> they are. Measured but not yet in a release: a batched-path fusion (+6 % with 8 users) and a cache fix that wins back
+> 12.5 % on 8K first token. Both are being tested together for the next build. Served single-user decode on build 16 is
+> 5-9 % behind build 15. That is the price of fixing a real correctness bug: build 15 summed some experts twice.
+>
+> **Read more:** [latest results](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/docs/dsv41/UPDATE-2026-11-14.md) ·
+> [the long write-up](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/docs/dsv41/WRITEUP.md) ·
+> [cards index](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/docs/dsv41/README.md) ·
+> [GPU permutations benchmark](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/docs/dsv41/benchmarking-gpu-permutations.md) ·
+> [credits and licence](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/NOTICE.md).
+>
+> Thanks to Niko1221 and the Strata contributors, whose engine all of this builds on; to Peasant Smith (mw00) and the
+> Project Maya contributors (including pepuscz, tctiger and mrsirg97, whose ports are credited in the source); and to the
+> MI50 Discord community. Built by YST, https://yst.dev. Upstream's README follows unchanged.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="apps/host/public/brand/strata-lockup-dark.svg">
