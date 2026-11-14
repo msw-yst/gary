@@ -1,0 +1,26 @@
+== C follow-up (MEASURED; tp4h4 unless noted; pass = top-1 within 0.5 pp of off and ppl <= +1 %)
+plumb: decode IDENTICAL | bt IDENTICAL (rc=0) | score IDENTICAL
+window 1: off top-1 71.27 %, ppl 3.3870
+  C      top-1 68.85 % (-2.42 pp), ppl 3.7829 (+11.69 %), agreement with off 86.03% -> FAIL
+  w0.05  top-1 71.21 % (-0.06 pp), ppl 3.3913 (+0.13 %), agreement with off 98.38% -> PASS
+  w0.1   top-1 71.11 % (-0.16 pp), ppl 3.3993 (+0.36 %), agreement with off 97.10% -> PASS
+  w0.2   top-1 71.17 % (-0.10 pp), ppl 3.3599 (-0.80 %), agreement with off 94.89% -> PASS
+  w0.3   top-1 70.47 % (-0.80 pp), ppl 3.4365 (+1.46 %), agreement with off 92.29% -> FAIL
+  w0.5   top-1 69.79 % (-1.48 pp), ppl 3.6370 (+7.38 %), agreement with off 88.39% -> FAIL
+window 16: off top-1 71.27 %, ppl 3.3870
+  C      top-1 68.85 % (-2.42 pp), ppl 3.7829 (+11.69 %), agreement with off 86.03% -> FAIL
+  w0.05  top-1 71.21 % (-0.06 pp), ppl 3.3913 (+0.13 %), agreement with off 98.38% -> PASS
+  w0.1   top-1 71.11 % (-0.16 pp), ppl 3.3993 (+0.36 %), agreement with off 97.10% -> PASS
+  w0.2   top-1 71.17 % (-0.10 pp), ppl 3.3599 (-0.80 %), agreement with off 94.89% -> PASS
+  w0.3   top-1 70.47 % (-0.80 pp), ppl 3.4365 (+1.46 %), agreement with off 92.29% -> FAIL
+  w0.5   top-1 69.79 % (-1.48 pp), ppl 3.6370 (+7.38 %), agreement with off 88.39% -> FAIL
+  bt tp4h4 off-a: B1 16.9 ms, B8 49.8 ms (helpers 21.45 ms) | 
+  bt tp4h4 off-b: B1 16.9 ms, B8 49.0 ms (helpers 20.72 ms) | 
+  bt tp4h4 w0.05: B1 17.2 ms, B8 57.8 ms (helpers 27.66 ms) | deferred 483, kept 143531 picks
+  bt tp4h4 w0.1: B1 17.2 ms, B8 49.1 ms (helpers 22.17 ms) | deferred 5228, kept 129305 picks
+  bt tp4h4 w0.2: B1 16.2 ms, B8 56.0 ms (helpers 37.28 ms) | deferred 69873, kept 72296 picks
+  bt tp4h4 w0.3: B1 15.3 ms, B8 51.9 ms (helpers 30.33 ms) | deferred 120549, kept 18092 picks
+  bt tp4h4 w0.5: B1 15.1 ms, B8 39.0 ms (helpers 17.40 ms) | deferred 144135, kept 3553 picks
+  bt tp3h3 off-d: B1 18.3 ms, B8 48.0 ms
+  bt tp3h3 off-e: B1 18.3 ms, B8 47.9 ms
+  bt tp3h3 w0.2: B1 17.6 ms, B8 44.9 ms

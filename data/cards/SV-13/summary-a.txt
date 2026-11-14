@@ -1,0 +1,21 @@
+# LIKE4LIKE A, official summary after re-validation (the run script's own validity rules applied to a copy; originals untouched)
+# O = the 9 Nov four-plus-four build, no flags; N = build 14 with its served flags; drafter loaded, off; one session; ms a token
+== A: 4 XTX + 4 MI50 (tp4h4), O = tp4-9Nov (no flags) vs N = build 14 (served + deploy + QO); ms a token, valid runs only
+  b1 O: 17.170 [17.164-17.179] n4 reps 17.164 17.179 17.167 17.167
+  b1 N: 12.962 [12.932-13.024] n4 reps 13.024 12.932 12.945 12.948
+  b2k O: 18.073 [18.067-18.077] n3 reps 18.077 18.067 18.077
+  b2k N: 14.083 [14.063-14.112] n3 reps 14.112 14.063 14.073
+  b1 O detail (rep 1): VRAM experts 7106 of 15744, CPU lane 0 of 61200, cache moved 0, prompt 395 ms
+  b1 N detail (rep 1): VRAM experts 7171 of 15744, CPU lane 0 of 61200, cache moved 0, prompt 204 ms
+  tokens O vs N (b1 rep 1, info only - not expected identical): first differing token at index 0 (of 256 / 256)
+VERDICT A B1 (64-token prompt, today's harness): old 17.170 ms, new 12.962 ms a token -> x1.325 (gap 4.207 ms, separable); inside my range x1.20-x1.35 (central x1.27); operator's x1.35-x1.40: outside
+VERDICT A 2K (2,048-token prompt, today's harness): old 18.073 ms, new 14.083 ms a token -> x1.283 (gap 3.991 ms, separable); above my range x1.17-x1.28 (central x1.22)
+== A anchor: the 9 Nov harness's 11-09 lines, no MI50 pin, 1 run each (ms a token; 11-09 value / prior beside)
+  anc-b1-O: 17.800 (11-09 / prior 17.91: -0.6 %)
+  anc-b1-N: 13.787
+  anc-bt-O: 18.202 (11-09 / prior 18.15: +0.3 %)
+  anc-bt-N: 14.806 (11-09 / prior 14.65: +1.1 %)
+VERDICT A ANCHOR anc-b1-O: 17.800 vs 11-09 17.91 ms -> REPRODUCED (within 3 %)
+VERDICT A ANCHOR anc-bt-O: 18.202 vs 11-09 18.15 ms -> REPRODUCED (within 3 %)
+A ANCHOR b1 ratio (the 11-09 harness, n 1): x1.291
+A ANCHOR bt ratio (the 11-09 harness, n 1): x1.229

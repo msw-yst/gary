@@ -1,0 +1,5 @@
+measure                 X          Y      Y - X   95% interval of Y - X (paired block bootstrap, 1000x)
+top-1 agree %      95.916     96.276      0.360   [-0.200, 0.901]
+median KL        1.69e-03   1.67e-03  -2.27e-05   [-2.38e-04, 1.60e-04]
+mean KL          1.51e-02   1.39e-02  -1.21e-03   [-2.81e-03, 1.45e-04]
+ppl                 3.408      3.401     -0.007   [-0.042, 0.022]

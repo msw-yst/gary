@@ -1,0 +1,37 @@
+# MI50 PCIe link: C = production DPM `high` with the link free; P = link pinned at level 1 (16 GT/s x4); L = placebo
+# (P's manual mode with the link left free). Batch test B1 / B8, drafter off, plus solo; build 15. The served part stopped
+# at its first switch (the server's own start changed the MI50 power profile; the safety check marks that INVALID).
+pciepinrun pciepin-20261114T044950Z - build 15 <path> (<hash>); CTRL_LEVEL high; SEQ C P P C C P P C L C; bt: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1 DS4_PF_HELPER=8192 DS4_BATCH_PREFILL_SHARE=0.5 DS4_EG_AHEAD=1 DS4_TOPK_MB=1 DS4_XK_QO=1 DS4_PF_TILE=1 DS4_TOPK_MB_BATCH=1 + DS4_BATCH_DECODE=8 DS4_BATCH_DSPARK=0 DS4_HELPER_PLACE=stripe --dspark off --n 256 --batch-sizes 1,8; srv: PAR 4, XENV DS4_XK_QO=1 DS4_PF_TILE=1 DS4_TOPK_MB_BATCH=1 DS4_FLOW_STATS=1 STRATA_DS4_REUSE=0, helper 8192, 32K cold; --gpus 0,1,2,8 --tp 4 --helper-device 4,5,6,7; 4 production MI50 helpers
+== arms (mode: C control, P PCIe level 1 pinned, L placebo = P's mode with the link free)
+arm mode | B1 ms/step | B8 ms/step | solo ms/tok | 32K TTFT s (scaled; raw, tokens, engine ms) | link bt | link srv
+01 C | 14.569 | 38.408 | 14.046 | - (-, -, -) | n 53, Gen4 (pp_dpm_pcie) 1.00/1.00/1.00/1.00, root port 16 GT/s 1.00/1.00/1.00/1.00 | no samples
+02 P | 14.588 | 38.447 | 14.054 | - (-, -, -) | n 54, Gen4 (pp_dpm_pcie) 1.00/1.00/1.00/1.00, root port 16 GT/s 1.00/1.00/1.00/1.00 | no samples
+03 P | 14.561 | 39.098 | 14.006 | - (-, -, -) | n 53, Gen4 (pp_dpm_pcie) 1.00/1.00/1.00/1.00, root port 16 GT/s 1.00/1.00/1.00/1.00 | no samples
+04 C | 14.553 | 39.282 | 14.031 | - (-, -, -) | n 53, Gen4 (pp_dpm_pcie) 1.00/1.00/1.00/1.00, root port 16 GT/s 1.00/1.00/1.00/1.00 | no samples
+05 C | 14.592 | 38.745 | 14.066 | - (-, -, -) | n 53, Gen4 (pp_dpm_pcie) 1.00/1.00/1.00/1.00, root port 16 GT/s 1.00/1.00/1.00/1.00 | no samples
+06 P | 14.596 | 38.698 | 14.054 | - (-, -, -) | n 54, Gen4 (pp_dpm_pcie) 1.00/1.00/1.00/1.00, root port 16 GT/s 1.00/1.00/1.00/1.00 | no samples
+07 P | 14.565 | 38.596 | 14.275 | - (-, -, -) | n 54, Gen4 (pp_dpm_pcie) 1.00/1.00/1.00/1.00, root port 16 GT/s 1.00/1.00/1.00/1.00 | no samples
+08 C | 14.533 | 39.435 | 13.992 | - (-, -, -) | n 54, Gen4 (pp_dpm_pcie) 1.00/1.00/1.00/1.00, root port 16 GT/s 1.00/1.00/1.00/1.00 | no samples
+09 L | 14.525 | 45.608 | 14.405 | - (-, -, -) | n 56, Gen4 (pp_dpm_pcie) 0.48/0.52/0.61/0.54, root port 16 GT/s 0.48/0.50/0.61/0.54 | no samples
+10 C | 14.557 | 38.855 | 14.048 | - (-, -, -) | n 53, Gen4 (pp_dpm_pcie) 1.00/1.00/1.00/1.00, root port 16 GT/s 1.00/1.00/1.00/1.00 | no samples
+C arms' mean Gen4 fraction, bt: 1.000  -> NO CONTRAST (the link stayed at Gen4 under control)
+C arms' mean Gen4 fraction, srv: -
+== contrasts (main: first 8 arms; placebo pair: arms 9 L / 10 C)
+B1 (ms a step): C 14.562 (n 4), P 14.577 (n 4), P - C +0.016 ms; noise 0.030 ms, placebo |L - C| 0.031 ms -> NOT SEPARABLE (NO CONTRAST) | prediction -0.10 ms [+0.00, -0.40 ms]: OUT  [placebo > noise: the mode switch itself moves it]
+B8 (ms a step): C 38.968 (n 4), P 38.710 (n 4), P - C -0.258 ms; noise 0.560 ms, placebo |L - C| 6.753 ms -> NOT SEPARABLE (NO CONTRAST) | prediction -0.30 ms [+0.00, -1.00 ms]: IN  [placebo > noise: the mode switch itself moves it]
+T32: NO DATA
+SOLO (not in the verdict): C 14.034 P 14.098 ms a token, P - C +0.064 ms
+check: srv: phase rc=3
+check: q-01C: no TTFT / mark / rc 0
+check: q-02P: no TTFT / mark / rc 0
+check: q-03P: no TTFT / mark / rc 0
+check: q-04C: no TTFT / mark / rc 0
+check: q-05C: no TTFT / mark / rc 0
+check: q-06P: no TTFT / mark / rc 0
+check: q-07P: no TTFT / mark / rc 0
+VERDICT PCIEPIN: INVALID - INVALID: q-00C mode C: an MI50's cap / clock tables / profile changed: < profile  0 BOOTUP_DEFAULT*: > profile  5 COMPUTE*:; an MI50's cap / clock tables / profile changed: < profile  0 BOOTUP_DEFAULT*: > profile
+TRIPPED: 0 new lines since start
+== log: abort / invalid / restore / cool lines
+tp4h4: --gpus 0,1,2,8 --tp 4 --helper-device 4,5,6,7 | lead HIP 0 | XTX_ABORT 100 XTX_LIMIT 100 MI50_ABORT 80
+INVALID: q-00C mode C: an MI50's cap / clock tables / profile changed: < profile  0 BOOTUP_DEFAULT*: > profile  5 COMPUTE*:; an MI50's cap / clock tables / profile changed: < profile  0 BOOTUP_DEFAULT*: > profile  5 COMPUTE*:; an MI50's cap / clock tables / profile changed: < profile  0 BOOTUP_DEFAULT*: > profile  5 COMPUTE*:; an MI50's cap / clock tables / profile changed: < profile  0 BOOTUP_DEFAULT*: > profile  5 COMPUTE*:;
+srv: a switch was INVALID - stop

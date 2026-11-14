@@ -1,0 +1,20 @@
+== identity (pre-registered: every line IDENTICAL)
+reg-base vs reg-fuse (engine.stdout): IDENTICAL
+ex-solo-X0 vs ex-solo-HC (engine.stdout): IDENTICAL
+ex-solo-X0 vs ex-solo-RF (engine.stdout): IDENTICAL
+ex-solo-X0 vs ex-solo-TR (engine.stdout): IDENTICAL
+ex-solo-X0 vs ex-solo-RB (engine.stdout): IDENTICAL
+ex-solo-X0 vs ex-solo-ALL (engine.stdout): IDENTICAL
+ex-draft-X0 vs ex-draft-HC (engine.stdout): IDENTICAL
+ex-draft-X0 vs ex-draft-RF (engine.stdout): IDENTICAL
+ex-draft-X0 vs ex-draft-TR (engine.stdout): IDENTICAL
+ex-draft-X0 vs ex-draft-RB (engine.stdout): IDENTICAL
+ex-draft-X0 vs ex-draft-ALL (engine.stdout): IDENTICAL
+ex-b8-X0 vs ex-b8-HC (engine.stdout): IDENTICAL
+ex-b8-X0 vs ex-b8-RF (engine.stdout): IDENTICAL
+ex-b8-X0 vs ex-b8-TR (engine.stdout): IDENTICAL
+ex-b8-X0 vs ex-b8-RB (engine.stdout): IDENTICAL
+ex-b8-X0 vs ex-b8-ALL (engine.stdout): IDENTICAL
+ex-dump-X0 vs ex-dump-ALL (logits.bin): IDENTICAL
+== reported, not an identity test: ROUTER_BF16 without the pad (its 150 MiB a member go to the experts)
+ex-solo-X0 vs ex-solo-RBNP (engine.stdout): DIFFER (<path> <path> differ: byte 103, line 1)

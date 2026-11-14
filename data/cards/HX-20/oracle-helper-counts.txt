@@ -1,0 +1,25 @@
+== b3-ref-a
+decode: 256 tokens in 3671 ms (69.46 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode per token: layers 3.69 ms (of it: routing waits 0.00, CPU lane 0.00, the rest host launches), head wait 10.34, Engram reads 0.02
+helper per token: 44.2 experts, the lane's issue + wait 0.07 ms
+helper device-direct skip (DS4_HELPER_DD_SKIP): 30254 of 40404 helper waits skipped (74.9 %; joins 10101)
+== b3-ref-b
+decode: 256 tokens in 3675 ms (69.38 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode per token: layers 3.57 ms (of it: routing waits 0.00, CPU lane 0.00, the rest host launches), head wait 10.49, Engram reads 0.02
+helper per token: 44.2 experts, the lane's issue + wait 0.07 ms
+helper device-direct skip (DS4_HELPER_DD_SKIP): 30254 of 40404 helper waits skipped (74.9 %; joins 10101)
+== b3-NO_HELPER_WAIT
+decode: 256 tokens in 3493 ms (73.01 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode per token: layers 3.56 ms (of it: routing waits 0.00, CPU lane 0.00, the rest host launches), head wait 9.77, Engram reads 0.05
+helper per token: 50.3 experts, the lane's issue + wait 0.08 ms
+helper device-direct skip (DS4_HELPER_DD_SKIP): 29019 of 40404 helper waits skipped (71.8 %; joins 10101)
+== b3-NO_MI50_MATH
+decode: 256 tokens in 3496 ms (72.94 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode per token: layers 3.73 ms (of it: routing waits 0.00, CPU lane 0.00, the rest host launches), head wait 9.62, Engram reads 0.01
+helper per token: 70.0 experts, the lane's issue + wait 0.10 ms
+helper device-direct skip (DS4_HELPER_DD_SKIP): 26036 of 40404 helper waits skipped (64.4 %; joins 10101)
+== b3-EMPTY_AR
+decode: 256 tokens in 3792 ms (67.24 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode per token: layers 3.59 ms (of it: routing waits 0.00, CPU lane 0.00, the rest host launches), head wait 10.92, Engram reads 0.15
+helper per token: 130.3 experts, the lane's issue + wait 0.12 ms
+helper device-direct skip (DS4_HELPER_DD_SKIP): 16703 of 40404 helper waits skipped (41.3 %; joins 10101)

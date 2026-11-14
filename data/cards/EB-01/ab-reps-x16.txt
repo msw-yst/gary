@@ -1,0 +1,52 @@
+## cache auto
+arm a (XTX only): status ok, ready after 36.9 s
+  rep1: decode 51.00 tok/s (256 tok, drafts 36/94), prefill 662 tok/s (8192 tok); per window 22.82 ms, CPU pool 2.95 ms, GPU-reach wait 17.45 ms; CPU entries/layer-window 1.48; helper 0 entries (0.0/token, waited 0 ms)
+  rep2: decode 54.68 tok/s (256 tok, drafts 41/128), prefill 661 tok/s (8192 tok); per window 21.78 ms, CPU pool 2.30 ms, GPU-reach wait 17.40 ms; CPU entries/layer-window 1.04; helper 0 entries (0.0/token, waited 0 ms)
+  rep3: decode 56.11 tok/s (256 tok, drafts 42/128), prefill 661 tok/s (8192 tok); per window 21.32 ms, CPU pool 2.01 ms, GPU-reach wait 17.41 ms; CPU entries/layer-window 0.91; helper 0 entries (0.0/token, waited 0 ms)
+  rep4: decode 56.65 tok/s (256 tok, drafts 48/132), prefill 661 tok/s (8192 tok); per window 21.52 ms, CPU pool 2.08 ms, GPU-reach wait 17.52 ms; CPU entries/layer-window 0.94; helper 0 entries (0.0/token, waited 0 ms)
+  rep5: decode 57.89 tok/s (256 tok, drafts 52/140), prefill 661 tok/s (8192 tok); per window 21.57 ms, CPU pool 2.05 ms, GPU-reach wait 17.59 ms; CPU entries/layer-window 0.93; helper 0 entries (0.0/token, waited 0 ms)
+arm b (XTX + MI50 helper): status ok, ready after 19.9 s
+  rep1: decode 59.34 tok/s (256 tok, drafts 55/149), prefill 661 tok/s (8192 tok); per window 21.46 ms, CPU pool 4.24 ms, GPU-reach wait 14.02 ms; CPU entries/layer-window 0.30; helper 27884 entries (108.9/token, waited 688 ms)
+  rep2: decode 58.31 tok/s (256 tok, drafts 42/124), prefill 661 tok/s (8192 tok); per window 20.52 ms, CPU pool 2.89 ms, GPU-reach wait 15.25 ms; CPU entries/layer-window 0.43; helper 10383 entries (40.6/token, waited 391 ms)
+  rep3: decode 61.90 tok/s (256 tok, drafts 57/152), prefill 661 tok/s (8192 tok); per window 20.78 ms, CPU pool 2.93 ms, GPU-reach wait 15.51 ms; CPU entries/layer-window 0.36; helper 10833 entries (42.3/token, waited 406 ms)
+  rep4: decode 58.96 tok/s (256 tok, drafts 43/120), prefill 661 tok/s (8192 tok); per window 20.38 ms, CPU pool 2.74 ms, GPU-reach wait 15.42 ms; CPU entries/layer-window 0.44; helper 8578 entries (33.5/token, waited 358 ms)
+  rep5: decode 61.96 tok/s (256 tok, drafts 56/146), prefill 661 tok/s (8192 tok); per window 20.56 ms, CPU pool 2.82 ms, GPU-reach wait 15.60 ms; CPU entries/layer-window 0.37; helper 9331 entries (36.4/token, waited 382 ms)
+## cache 5000
+arm a (XTX only): status ok, ready after 15.1 s
+  rep1: decode 45.09 tok/s (256 tok, drafts 43/117), prefill 659 tok/s (8192 tok); per window 26.66 ms, CPU pool 4.86 ms, GPU-reach wait 18.59 ms; CPU entries/layer-window 2.44; helper 0 entries (0.0/token, waited 0 ms)
+  rep2: decode 48.83 tok/s (256 tok, drafts 20/42), prefill 659 tok/s (8192 tok); per window 22.21 ms, CPU pool 3.28 ms, GPU-reach wait 16.57 ms; CPU entries/layer-window 1.47; helper 0 entries (0.0/token, waited 0 ms)
+  rep3: decode 48.93 tok/s (256 tok, drafts 30/76), prefill 659 tok/s (8192 tok); per window 23.15 ms, CPU pool 3.47 ms, GPU-reach wait 17.09 ms; CPU entries/layer-window 1.59; helper 0 entries (0.0/token, waited 0 ms)
+  rep4: decode 61.07 tok/s (256 tok, drafts 111/172), prefill 659 tok/s (8192 tok); per window 28.91 ms, CPU pool 5.21 ms, GPU-reach wait 20.34 ms; CPU entries/layer-window 2.54; helper 0 entries (0.0/token, waited 0 ms)
+  rep5: decode 64.00 tok/s (256 tok, drafts 135/197), prefill 658 tok/s (8192 tok); per window 32.78 ms, CPU pool 6.62 ms, GPU-reach wait 22.47 ms; CPU entries/layer-window 3.40; helper 0 entries (0.0/token, waited 0 ms)
+arm b (XTX + MI50 helper): status ok, ready after 19.4 s
+  rep1: decode 82.84 tok/s (256 tok, drafts 146/236), prefill 659 tok/s (8192 tok); per window 27.84 ms, CPU pool 7.98 ms, GPU-reach wait 14.98 ms; CPU entries/layer-window 1.25; helper 54233 entries (211.8/token, waited 564 ms)
+  rep2: decode 54.90 tok/s (256 tok, drafts 54/182), prefill 659 tok/s (8192 tok); per window 23.09 ms, CPU pool 4.43 ms, GPU-reach wait 14.83 ms; CPU entries/layer-window 0.91; helper 25205 entries (98.5/token, waited 472 ms)
+  rep3: decode 57.98 tok/s (256 tok, drafts 61/158), prefill 658 tok/s (8192 tok); per window 22.64 ms, CPU pool 4.27 ms, GPU-reach wait 14.88 ms; CPU entries/layer-window 0.90; helper 21264 entries (83.1/token, waited 432 ms)
+  rep4: decode 57.85 tok/s (256 tok, drafts 58/148), prefill 659 tok/s (8192 tok); per window 22.35 ms, CPU pool 4.18 ms, GPU-reach wait 14.74 ms; CPU entries/layer-window 0.83; helper 19825 entries (77.4/token, waited 444 ms)
+  rep5: decode 84.32 tok/s (256 tok, drafts 151/240), prefill 658 tok/s (8192 tok); per window 28.64 ms, CPU pool 6.70 ms, GPU-reach wait 17.33 ms; CPU entries/layer-window 1.72; helper 28822 entries (112.6/token, waited 327 ms)
+## cache 2500
+arm a (XTX only): status ok, ready after 14.3 s
+  rep1: decode 42.65 tok/s (256 tok, drafts 91/138), prefill 657 tok/s (8192 tok); per window 36.16 ms, CPU pool 9.22 ms, GPU-reach wait 22.98 ms; CPU entries/layer-window 4.95; helper 0 entries (0.0/token, waited 0 ms)
+  rep2: decode 47.67 tok/s (256 tok, drafts 68/96), prefill 657 tok/s (8192 tok); per window 28.57 ms, CPU pool 5.88 ms, GPU-reach wait 19.43 ms; CPU entries/layer-window 2.91; helper 0 entries (0.0/token, waited 0 ms)
+  rep3: decode 42.55 tok/s (256 tok, drafts 47/104), prefill 657 tok/s (8192 tok); per window 28.78 ms, CPU pool 6.12 ms, GPU-reach wait 19.42 ms; CPU entries/layer-window 3.06; helper 0 entries (0.0/token, waited 0 ms)
+  rep4: decode 39.99 tok/s (256 tok, drafts 40/104), prefill 657 tok/s (8192 tok); per window 29.64 ms, CPU pool 6.57 ms, GPU-reach wait 19.67 ms; CPU entries/layer-window 3.31; helper 0 entries (0.0/token, waited 0 ms)
+  rep5: decode 41.80 tok/s (256 tok, drafts 20/44), prefill 657 tok/s (8192 tok); per window 25.95 ms, CPU pool 5.10 ms, GPU-reach wait 17.74 ms; CPU entries/layer-window 2.42; helper 0 entries (0.0/token, waited 0 ms)
+arm b (XTX + MI50 helper): status ok, ready after 18.7 s
+  rep1: decode 50.45 tok/s (256 tok, drafts 51/142), prefill 657 tok/s (8192 tok); per window 24.75 ms, CPU pool 6.02 ms, GPU-reach wait 13.22 ms; CPU entries/layer-window 1.08; helper 54710 entries (213.7/token, waited 717 ms)
+  rep2: decode 54.53 tok/s (256 tok, drafts 58/150), prefill 657 tok/s (8192 tok); per window 23.47 ms, CPU pool 5.63 ms, GPU-reach wait 13.75 ms; CPU entries/layer-window 1.12; helper 43002 entries (168.0/token, waited 596 ms)
+  rep3: decode 53.91 tok/s (256 tok, drafts 55/144), prefill 657 tok/s (8192 tok); per window 23.62 ms, CPU pool 5.76 ms, GPU-reach wait 13.76 ms; CPU entries/layer-window 1.23; helper 45337 entries (177.1/token, waited 583 ms)
+  rep4: decode 52.08 tok/s (256 tok, drafts 46/142), prefill 657 tok/s (8192 tok); per window 23.30 ms, CPU pool 5.60 ms, GPU-reach wait 13.63 ms; CPU entries/layer-window 1.14; helper 45134 entries (176.3/token, waited 616 ms)
+  rep5: decode 70.60 tok/s (256 tok, drafts 116/184), prefill 657 tok/s (8192 tok); per window 25.90 ms, CPU pool 6.65 ms, GPU-reach wait 14.88 ms; CPU entries/layer-window 1.49; helper 39577 entries (154.6/token, waited 459 ms)
+## cache 1000
+arm a (XTX only): status ok, ready after 13.9 s
+  rep1: decode 37.12 tok/s (256 tok, drafts 93/157), prefill 540 tok/s (8192 tok); per window 41.80 ms, CPU pool 12.38 ms, GPU-reach wait 25.25 ms; CPU entries/layer-window 6.94; helper 0 entries (0.0/token, waited 0 ms)
+  rep2: decode 39.16 tok/s (256 tok, drafts 103/161), prefill 541 tok/s (8192 tok); per window 41.90 ms, CPU pool 12.55 ms, GPU-reach wait 25.44 ms; CPU entries/layer-window 7.04; helper 0 entries (0.0/token, waited 0 ms)
+  rep3: decode 39.30 tok/s (256 tok, drafts 117/210), prefill 540 tok/s (8192 tok); per window 45.23 ms, CPU pool 14.97 ms, GPU-reach wait 26.14 ms; CPU entries/layer-window 8.94; helper 0 entries (0.0/token, waited 0 ms)
+  rep4: decode 35.20 tok/s (256 tok, drafts 19/60), prefill 541 tok/s (8192 tok); per window 30.69 ms, CPU pool 7.88 ms, GPU-reach wait 19.43 ms; CPU entries/layer-window 4.03; helper 0 entries (0.0/token, waited 0 ms)
+  rep5: decode 39.95 tok/s (256 tok, drafts 107/185), prefill 541 tok/s (8192 tok); per window 43.01 ms, CPU pool 14.06 ms, GPU-reach wait 24.95 ms; CPU entries/layer-window 8.18; helper 0 entries (0.0/token, waited 0 ms)
+arm b (XTX + MI50 helper): status ok, ready after 18.0 s
+  rep1: decode 52.55 tok/s (256 tok, drafts 62/149), prefill 532 tok/s (8192 tok); per window 25.11 ms, CPU pool 7.26 ms, GPU-reach wait 13.45 ms; CPU entries/layer-window 1.58; helper 78675 entries (307.3/token, waited 748 ms)
+  rep2: decode 70.74 tok/s (256 tok, drafts 137/189), prefill 540 tok/s (8192 tok); per window 29.91 ms, CPU pool 9.35 ms, GPU-reach wait 15.82 ms; CPU entries/layer-window 2.64; helper 70608 entries (275.8/token, waited 485 ms)
+  rep3: decode 70.08 tok/s (256 tok, drafts 136/192), prefill 540 tok/s (8192 tok); per window 29.94 ms, CPU pool 9.36 ms, GPU-reach wait 15.84 ms; CPU entries/layer-window 2.62; helper 71416 entries (279.0/token, waited 491 ms)
+  rep4: decode 69.49 tok/s (256 tok, drafts 134/190), prefill 540 tok/s (8192 tok); per window 29.71 ms, CPU pool 9.35 ms, GPU-reach wait 15.68 ms; CPU entries/layer-window 2.58; helper 71482 entries (279.2/token, waited 506 ms)
+  rep5: decode 69.63 tok/s (256 tok, drafts 134/190), prefill 540 tok/s (8192 tok); per window 29.65 ms, CPU pool 9.29 ms, GPU-reach wait 15.68 ms; CPU entries/layer-window 2.57; helper 71434 entries (279.0/token, waited 500 ms)

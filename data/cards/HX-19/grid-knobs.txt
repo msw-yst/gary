@@ -1,0 +1,84 @@
+## LIVE 2 BPC 4 tg 16 td 16
+G 1 T 1 mode  0 (portable): gate_up   33.28 us ( 182.8 GB/s)  down   21.51 us ( 141.4 GB/s)  sum   54.79 us =  54.79 us/expert  b2b   44.99 us/launch-pair ( 202.8 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   30.48 us ( 199.6 GB/s)  down   21.81 us ( 139.5 GB/s)  sum   52.28 us =  52.28 us/expert  b2b   45.51 us/launch-pair ( 200.5 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.161e+02)
+## LIVE 2 BPC 4 tg 17 td 17
+G 1 T 1 mode  0 (portable): gate_up   33.63 us ( 202.8 GB/s)  down   25.38 us ( 134.4 GB/s)  sum   59.01 us =  59.01 us/expert  b2b   49.46 us/launch-pair ( 206.8 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   31.39 us ( 217.3 GB/s)  down   22.09 us ( 154.3 GB/s)  sum   53.48 us =  53.48 us/expert  b2b   46.54 us/launch-pair ( 219.8 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.501e+02)
+## LIVE 2 BPC 4 tg 22 td 22
+G 1 T 1 mode  0 (portable): gate_up   40.42 us ( 187.0 GB/s)  down   28.81 us ( 131.2 GB/s)  sum   69.23 us =  69.23 us/expert  b2b   56.42 us/launch-pair ( 200.9 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   32.50 us ( 232.6 GB/s)  down   23.06 us ( 163.9 GB/s)  sum   55.55 us =  55.55 us/expert  b2b   48.09 us/launch-pair ( 235.7 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 2.910e+02)
+## LIVE 1 BPC 4 tg 16 td 16
+G 1 T 1 mode  0 (portable): gate_up   33.04 us ( 184.1 GB/s)  down   21.38 us ( 142.3 GB/s)  sum   54.41 us =  54.41 us/expert  b2b   44.25 us/launch-pair ( 206.2 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   32.82 us ( 185.4 GB/s)  down   24.07 us ( 126.4 GB/s)  sum   56.88 us =  56.88 us/expert  b2b   49.04 us/launch-pair ( 186.0 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.161e+02)
+## LIVE 1 BPC 4 tg 17 td 17
+G 1 T 1 mode  0 (portable): gate_up   33.36 us ( 204.4 GB/s)  down   25.27 us ( 134.9 GB/s)  sum   58.64 us =  58.64 us/expert  b2b   48.02 us/launch-pair ( 213.0 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   34.64 us ( 196.9 GB/s)  down   24.83 us ( 137.3 GB/s)  sum   59.47 us =  59.47 us/expert  b2b   51.36 us/launch-pair ( 199.2 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.501e+02)
+## LIVE 1 BPC 4 tg 22 td 22
+G 1 T 1 mode  0 (portable): gate_up   40.54 us ( 186.4 GB/s)  down   28.78 us ( 131.3 GB/s)  sum   69.33 us =  69.33 us/expert  b2b   57.53 us/launch-pair ( 197.0 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   38.15 us ( 198.1 GB/s)  down   27.63 us ( 136.8 GB/s)  sum   65.78 us =  65.78 us/expert  b2b   55.89 us/launch-pair ( 202.8 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 2.910e+02)
+## LIVE 1 BPC 2 tg 16 td 16
+G 1 T 1 mode  0 (portable): gate_up   33.05 us ( 184.1 GB/s)  down   21.46 us ( 141.7 GB/s)  sum   54.51 us =  54.51 us/expert  b2b   45.17 us/launch-pair ( 202.0 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   30.41 us ( 200.0 GB/s)  down   21.76 us ( 139.7 GB/s)  sum   52.17 us =  52.17 us/expert  b2b   45.54 us/launch-pair ( 200.4 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.161e+02)
+## LIVE 1 BPC 2 tg 17 td 17
+G 1 T 1 mode  0 (portable): gate_up   33.70 us ( 202.4 GB/s)  down   25.46 us ( 133.9 GB/s)  sum   59.16 us =  59.16 us/expert  b2b   49.51 us/launch-pair ( 206.6 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   31.53 us ( 216.3 GB/s)  down   22.13 us ( 154.1 GB/s)  sum   53.66 us =  53.66 us/expert  b2b   46.38 us/launch-pair ( 220.6 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.501e+02)
+## LIVE 1 BPC 2 tg 22 td 22
+G 1 T 1 mode  0 (portable): gate_up   40.49 us ( 186.6 GB/s)  down   28.88 us ( 130.8 GB/s)  sum   69.37 us =  69.37 us/expert  b2b   58.00 us/launch-pair ( 195.5 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   33.13 us ( 228.1 GB/s)  down   23.48 us ( 160.9 GB/s)  sum   56.61 us =  56.61 us/expert  b2b   48.98 us/launch-pair ( 231.5 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 2.910e+02)
+## LIVE 1 BPC 3 tg 16 td 16
+G 1 T 1 mode  0 (portable): gate_up   33.09 us ( 183.8 GB/s)  down   21.40 us ( 142.1 GB/s)  sum   54.49 us =  54.49 us/expert  b2b   45.37 us/launch-pair ( 201.1 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   33.09 us ( 183.8 GB/s)  down   24.22 us ( 125.6 GB/s)  sum   57.31 us =  57.31 us/expert  b2b   50.28 us/launch-pair ( 181.5 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.161e+02)
+## LIVE 1 BPC 3 tg 17 td 17
+G 1 T 1 mode  0 (portable): gate_up   33.57 us ( 203.1 GB/s)  down   25.31 us ( 134.7 GB/s)  sum   58.88 us =  58.88 us/expert  b2b   49.42 us/launch-pair ( 207.0 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   34.84 us ( 195.8 GB/s)  down   24.94 us ( 136.7 GB/s)  sum   59.78 us =  59.78 us/expert  b2b   51.46 us/launch-pair ( 198.8 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.501e+02)
+## LIVE 1 BPC 3 tg 22 td 22
+G 1 T 1 mode  0 (portable): gate_up   40.44 us ( 186.9 GB/s)  down   28.85 us ( 131.0 GB/s)  sum   69.29 us =  69.29 us/expert  b2b   56.65 us/launch-pair ( 200.1 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   38.00 us ( 198.8 GB/s)  down   27.53 us ( 137.3 GB/s)  sum   65.53 us =  65.53 us/expert  b2b   55.88 us/launch-pair ( 202.9 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 2.910e+02)
+## LIVE 1 BPC 6 tg 16 td 16
+G 1 T 1 mode  0 (portable): gate_up   33.05 us ( 184.0 GB/s)  down   21.40 us ( 142.1 GB/s)  sum   54.45 us =  54.45 us/expert  b2b   44.26 us/launch-pair ( 206.1 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   31.72 us ( 191.8 GB/s)  down   27.38 us ( 111.1 GB/s)  sum   59.10 us =  59.10 us/expert  b2b   53.01 us/launch-pair ( 172.1 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.161e+02)
+## LIVE 1 BPC 6 tg 17 td 17
+G 1 T 1 mode  0 (portable): gate_up   33.14 us ( 205.8 GB/s)  down   25.26 us ( 135.0 GB/s)  sum   58.40 us =  58.40 us/expert  b2b   48.00 us/launch-pair ( 213.1 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   33.16 us ( 205.7 GB/s)  down   28.17 us ( 121.1 GB/s)  sum   61.33 us =  61.33 us/expert  b2b   54.81 us/launch-pair ( 186.6 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.501e+02)
+## LIVE 1 BPC 6 tg 22 td 22
+G 1 T 1 mode  0 (portable): gate_up   40.55 us ( 186.4 GB/s)  down   28.83 us ( 131.1 GB/s)  sum   69.38 us =  69.38 us/expert  b2b   58.08 us/launch-pair ( 195.2 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   38.74 us ( 195.1 GB/s)  down   31.08 us ( 121.6 GB/s)  sum   69.82 us =  69.82 us/expert  b2b   60.91 us/launch-pair ( 186.1 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 2.910e+02)
+## LIVE 1 BPC 8 tg 16 td 16
+G 1 T 1 mode  0 (portable): gate_up   33.12 us ( 183.7 GB/s)  down   21.58 us ( 140.9 GB/s)  sum   54.70 us =  54.70 us/expert  b2b   44.10 us/launch-pair ( 206.9 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   31.63 us ( 192.3 GB/s)  down   27.23 us ( 111.7 GB/s)  sum   58.87 us =  58.87 us/expert  b2b   53.06 us/launch-pair ( 172.0 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.161e+02)
+## LIVE 1 BPC 8 tg 17 td 17
+G 1 T 1 mode  0 (portable): gate_up   33.73 us ( 202.2 GB/s)  down   25.34 us ( 134.6 GB/s)  sum   59.06 us =  59.06 us/expert  b2b   48.39 us/launch-pair ( 211.4 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   33.60 us ( 203.0 GB/s)  down   28.29 us ( 120.6 GB/s)  sum   61.88 us =  61.88 us/expert  b2b   54.95 us/launch-pair ( 186.2 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.501e+02)
+## LIVE 1 BPC 8 tg 22 td 22
+G 1 T 1 mode  0 (portable): gate_up   40.48 us ( 186.7 GB/s)  down   28.85 us ( 131.0 GB/s)  sum   69.33 us =  69.33 us/expert  b2b   57.97 us/launch-pair ( 195.5 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   38.65 us ( 195.5 GB/s)  down   31.06 us ( 121.7 GB/s)  sum   69.71 us =  69.71 us/expert  b2b   60.78 us/launch-pair ( 186.5 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 2.910e+02)
+## LIVE 2 BPC 8 tg 16 td 16
+G 1 T 1 mode  0 (portable): gate_up   33.24 us ( 183.0 GB/s)  down   21.56 us ( 141.1 GB/s)  sum   54.80 us =  54.80 us/expert  b2b   45.43 us/launch-pair ( 200.9 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   33.11 us ( 183.7 GB/s)  down   24.29 us ( 125.2 GB/s)  sum   57.40 us =  57.40 us/expert  b2b   50.12 us/launch-pair ( 182.0 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.161e+02)
+## LIVE 2 BPC 8 tg 17 td 17
+G 1 T 1 mode  0 (portable): gate_up   33.62 us ( 202.8 GB/s)  down   25.46 us ( 133.9 GB/s)  sum   59.08 us =  59.08 us/expert  b2b   49.40 us/launch-pair ( 207.1 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   34.78 us ( 196.1 GB/s)  down   24.95 us ( 136.6 GB/s)  sum   59.74 us =  59.74 us/expert  b2b   51.44 us/launch-pair ( 198.9 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 3.501e+02)
+## LIVE 2 BPC 8 tg 22 td 22
+G 1 T 1 mode  0 (portable): gate_up   40.50 us ( 186.6 GB/s)  down   28.84 us ( 131.0 GB/s)  sum   69.33 us =  69.33 us/expert  b2b   57.77 us/launch-pair ( 196.2 GB/s)
+G 1 T 1 mode  1 (g906): gate_up   38.21 us ( 197.8 GB/s)  down   27.66 us ( 136.6 GB/s)  sum   65.87 us =  65.87 us/expert  b2b   56.02 us/launch-pair ( 202.3 GB/s)
+  A/B G 1 T 1: h BITWISE (max|d| 0.000e+00)  part BITWISE (max|d| 0.000e+00 of max 2.910e+02)

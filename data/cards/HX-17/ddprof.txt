@@ -1,0 +1,4 @@
+== DD on the lead (MEASURED, DS4_PROF, tp4h4 B1 N 256)
+-- AB: decode: 256 tokens in 4397 ms (58.00 tok/s); CPU lane: 0 of  | helper per token: 44.2 experts, the lane's issue + wait 3.55 ms
+-- ABDD: decode: 256 tokens in 4201 ms (60.70 tok/s); CPU lane: 0 of  | helper per token: 44.2 experts, the lane's issue + wait 0.15 ms
+helper device-direct (DS4_HELPER_DD): 10101 requests joined on the device (10101 armed sets), 0 helper picks answered on the CPU instead, 0 host answers

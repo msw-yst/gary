@@ -1,0 +1,146 @@
+== identity (pass: every one IDENTICAL, bt rc 0, every load / check line present, mk launches > 0 where MK)
+      4 mi50kern: N mk launches
+mk launches PB: 
+mk launches PN: 
+-- b1-F-1 rc=0
+decode: 256 tokens in 3492 ms (73.02 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-F-2 rc=0
+decode: 256 tokens in 3494 ms (72.99 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-F-3 rc=0
+decode: 256 tokens in 3483 ms (73.21 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-FLP-1 rc=0
+decode: 256 tokens in 3426 ms (74.42 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-FLP-2 rc=0
+decode: 256 tokens in 3439 ms (74.15 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-FLP-3 rc=0
+decode: 256 tokens in 3425 ms (74.45 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-FLPHW-1 rc=0
+decode: 256 tokens in 3404 ms (74.91 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-FLPHW-2 rc=0
+decode: 256 tokens in 3411 ms (74.75 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-FLPHW-3 rc=0
+decode: 256 tokens in 3417 ms (74.63 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-FLPHWMK-1 rc=0
+decode: 256 tokens in 3497 ms (72.91 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- b1-FLPHWMK-2 rc=0
+decode: 256 tokens in 3495 ms (72.97 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- b1-FLPHWMK-3 rc=0
+decode: 256 tokens in 3492 ms (73.03 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- b1-OFF-1 rc=0
+decode: 256 tokens in 3670 ms (69.48 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-OFF-2 rc=0
+decode: 256 tokens in 3666 ms (69.55 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-OFF-3 rc=0
+decode: 256 tokens in 3667 ms (69.53 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1x-BEST-1 rc=0
+decode: 256 tokens in 3425 ms (74.45 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1x-BEST-2 rc=0
+decode: 256 tokens in 3409 ms (74.80 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1x-BEST-3 rc=0
+decode: 256 tokens in 3412 ms (74.73 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1x-EG-1 rc=0
+decode: 256 tokens in 3385 ms (75.32 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1x-EG-2 rc=0
+decode: 256 tokens in 3380 ms (75.45 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1x-EG-3 rc=0
+decode: 256 tokens in 3387 ms (75.28 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1x-NS-1 rc=0
+decode: 256 tokens in 3336 ms (76.44 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1x-NS-2 rc=0
+decode: 256 tokens in 3344 ms (76.26 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1x-NS-3 rc=0
+decode: 256 tokens in 3337 ms (76.42 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b8-BEST-1 rc=0
+batch-test B=8: 255 steps in 9783 ms (38.4 ms a step): 26.07 tok/s a sequence, 208.52 tok/s in all (solo 69.36 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 iden
+-- b8-BEST-2 rc=0
+batch-test B=8: 255 steps in 9849 ms (38.6 ms a step): 25.89 tok/s a sequence, 207.12 tok/s in all (solo 69.08 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 iden
+-- b8-BEST-3 rc=0
+batch-test B=8: 255 steps in 9840 ms (38.6 ms a step): 25.91 tok/s a sequence, 207.31 tok/s in all (solo 69.17 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 iden
+-- b8-OFF-1 rc=0
+batch-test B=8: 255 steps in 10375 ms (40.7 ms a step): 24.58 tok/s a sequence, 196.62 tok/s in all (solo 64.91 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- b8-OFF-2 rc=0
+batch-test B=8: 255 steps in 10759 ms (42.2 ms a step): 23.70 tok/s a sequence, 189.61 tok/s in all (solo 65.17 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- b8-OFF-3 rc=0
+batch-test B=8: 255 steps in 10487 ms (41.1 ms a step): 24.32 tok/s a sequence, 194.52 tok/s in all (solo 64.81 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- id-bt-b11 rc=0
+batch-test B=1: 255 steps in 3862 ms (15.1 ms a step): 66.04 tok/s a sequence, 66.04 tok/s in all (solo 65.00 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4667 ms (18.3 ms a step): 54.63 tok/s a sequence, 109.27 tok/s in all (solo 65.00 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10503 ms (41.2 ms a step): 24.28 tok/s a sequence, 194.22 tok/s in all (solo 65.00 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- id-bt-F rc=0
+batch-test B=1: 255 steps in 3848 ms (15.1 ms a step): 66.27 tok/s a sequence, 66.27 tok/s in all (solo 67.95 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4660 ms (18.3 ms a step): 54.72 tok/s a sequence, 109.44 tok/s in all (solo 67.95 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10017 ms (39.3 ms a step): 25.46 tok/s a sequence, 203.65 tok/s in all (solo 67.95 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- id-bt-FLP rc=0
+batch-test B=1: 255 steps in 3792 ms (14.9 ms a step): 67.24 tok/s a sequence, 67.24 tok/s in all (solo 69.00 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4627 ms (18.1 ms a step): 55.11 tok/s a sequence, 110.23 tok/s in all (solo 69.00 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 9768 ms (38.3 ms a step): 26.10 tok/s a sequence, 208.84 tok/s in all (solo 69.00 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 iden
+-- id-bt-FLPHW rc=0
+batch-test B=1: 255 steps in 3779 ms (14.8 ms a step): 67.48 tok/s a sequence, 67.48 tok/s in all (solo 69.18 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4602 ms (18.0 ms a step): 55.41 tok/s a sequence, 110.81 tok/s in all (solo 69.18 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 9784 ms (38.4 ms a step): 26.06 tok/s a sequence, 208.49 tok/s in all (solo 69.18 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 iden
+-- id-bt-FLPHWMK rc=0
+batch-test B=1: 255 steps in 3830 ms (15.0 ms a step): 66.59 tok/s a sequence, 66.59 tok/s in all (solo 68.11 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4606 ms (18.1 ms a step): 55.36 tok/s a sequence, 110.72 tok/s in all (solo 68.11 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 9812 ms (38.5 ms a step): 25.99 tok/s a sequence, 207.90 tok/s in all (solo 68.11 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 iden
+mi50kern: 632 mk launches
+-- id-bt-IEG rc=0
+batch-test B=1: 255 steps in 3807 ms (14.9 ms a step): 66.98 tok/s a sequence, 66.98 tok/s in all (solo 68.41 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4598 ms (18.0 ms a step): 55.45 tok/s a sequence, 110.91 tok/s in all (solo 68.41 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 9785 ms (38.4 ms a step): 26.06 tok/s a sequence, 208.49 tok/s in all (solo 68.41 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 iden
+mi50kern: 632 mk launches
+-- id-bt-INE rc=0
+batch-test B=1: 255 steps in 3844 ms (15.1 ms a step): 66.33 tok/s a sequence, 66.33 tok/s in all (solo 67.99 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4692 ms (18.4 ms a step): 54.35 tok/s a sequence, 108.69 tok/s in all (solo 67.99 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 9789 ms (38.4 ms a step): 26.05 tok/s a sequence, 208.40 tok/s in all (solo 67.99 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 iden
+mi50kern: 952 mk launches
+-- id-bt-OFF rc=0
+batch-test B=1: 255 steps in 3876 ms (15.2 ms a step): 65.79 tok/s a sequence, 65.79 tok/s in all (solo 64.75 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4690 ms (18.4 ms a step): 54.37 tok/s a sequence, 108.74 tok/s in all (solo 64.75 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10446 ms (41.0 ms a step): 24.41 tok/s a sequence, 195.29 tok/s in all (solo 64.75 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- id-d-b11 rc=0
+decode: 256 tokens in 3942 ms (64.70 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-d-F rc=0
+decode: 256 tokens in 3752 ms (67.96 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-d-FLP rc=0
+decode: 256 tokens in 3706 ms (68.80 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-d-FLPHW rc=0
+decode: 256 tokens in 3674 ms (69.41 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-d-FLPHWMK rc=0
+decode: 256 tokens in 3752 ms (67.97 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- id-d-IEG rc=0
+decode: 256 tokens in 3717 ms (68.60 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- id-d-INE rc=0
+decode: 256 tokens in 3742 ms (68.15 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- id-d-INS rc=0
+decode: 256 tokens in 3674 ms (69.41 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- id-d-OFF rc=0
+decode: 256 tokens in 3928 ms (64.91 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-x-b11 rc=0
+decode: 256 tokens in 2896 ms (88.05 tok/s); CPU lane: 0 of 84645 experts; the cache moved 0 (0 in all)
+-- id-x-F rc=0
+decode: 256 tokens in 2815 ms (90.59 tok/s); CPU lane: 0 of 84645 experts; the cache moved 0 (0 in all)
+-- id-x-FLP rc=0
+decode: 256 tokens in 2789 ms (91.44 tok/s); CPU lane: 0 of 84645 experts; the cache moved 0 (0 in all)
+-- id-x-FLPHW rc=0
+decode: 256 tokens in 2772 ms (91.98 tok/s); CPU lane: 0 of 84645 experts; the cache moved 0 (0 in all)
+-- id-x-FLPHWMK rc=0
+decode: 256 tokens in 2788 ms (91.48 tok/s); CPU lane: 0 of 84645 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- id-x-IAD rc=0
+decode: 256 tokens in 2850 ms (89.48 tok/s); CPU lane: 0 of 80400 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- id-x-IEG rc=0
+decode: 256 tokens in 2781 ms (91.68 tok/s); CPU lane: 0 of 84645 experts; the cache moved 0 (0 in all)
+mi50kern: 632 mk launches
+-- id-x-INE rc=0
+decode: 256 tokens in 2854 ms (89.35 tok/s); CPU lane: 0 of 84645 experts; the cache moved 0 (0 in all)
+mi50kern: 1592 mk launches
+-- id-x-OFF rc=0
+decode: 256 tokens in 2899 ms (87.97 tok/s); CPU lane: 0 of 84645 experts; the cache moved 0 (0 in all)

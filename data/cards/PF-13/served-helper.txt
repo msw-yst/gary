@@ -1,0 +1,43 @@
+# Served (4 slots, build 15): MI50 prompt helper ON / OFF / ON again; 1 user, cold distinct prompts, 2 reps a length
+== SRVHELP per request (client TTFT s | engine prompt read s | decode ms a token | helper / stream lines)
+-- son ON (helper 8192 + PF_TILE): rc rc=0 | VRAM experts CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744 | helpers hold 8918 experts (4 devices)
+   2k-r1   ptok   1951 ttft 2.92 engine 2.91 s (1951 tok, reused 0, 2 probe lines) dec 7.06 wall 3.4 rc 0 | helper 1 lines 2853 ms unheld 8 xwait 26 ms waits [CUDA0 783, CUDA1 769, CUDA2 725, CUDA8 980] | stream 4 lines 0.0 GB
+   2k-r2   ptok   1951 ttft 2.80 engine 2.80 s (1951 tok, reused 0, 2 probe lines) dec 7.19 wall 3.3 rc 0 | helper 1 lines 2765 ms unheld 152 xwait 26 ms waits [CUDA0 650, CUDA1 570, CUDA2 561, CUDA8 843] | stream 4 lines 1.2 GB
+   8k-r1   ptok   8093 ttft 7.87 engine 7.86 s (8093 tok, reused 0, 2 probe lines) dec 7.29 wall 8.3 rc 0 | helper 1 lines 7812 ms unheld 24 xwait 78 ms waits [CUDA0 1813, CUDA1 1949, CUDA2 1877, CUDA8 2709] | stream 4 lines 0.4 GB
+   8k-r2   ptok   8093 ttft 6.97 engine 6.95 s (8093 tok, reused 0, 2 probe lines) dec 6.73 wall 7.4 rc 0 | helper 1 lines 6918 ms unheld 136 xwait 77 ms waits [CUDA0 1669, CUDA1 1753, CUDA2 1420, CUDA8 2262] | stream 4 lines 1.2 GB
+   16k-r1  ptok  16284 ttft 12.73 engine 12.70 s (16284 tok, reused 0, 2 probe lines) dec 7.41 wall 13.2 rc 0 | helper 1 lines 12636 ms unheld 80 xwait 138 ms waits [CUDA0 3102, CUDA1 3622, CUDA2 3025, CUDA8 4539] | stream 4 lines 0.8 GB
+   16k-r2  ptok  16284 ttft 12.08 engine 12.05 s (16284 tok, reused 0, 2 probe lines) dec 7.32 wall 12.5 rc 0 | helper 1 lines 12019 ms unheld 240 xwait 139 ms waits [CUDA0 2803, CUDA1 3213, CUDA2 2399, CUDA8 3960] | stream 4 lines 2.0 GB
+   32k-r1  ptok  31898 ttft 22.70 engine 22.64 s (31898 tok, reused 0, 2 probe lines) dec 7.11 wall 23.1 rc 0 | helper 1 lines 22584 ms unheld 224 xwait 246 ms waits [CUDA0 5048, CUDA1 6446, CUDA2 5109, CUDA8 7736] | stream 4 lines 2.0 GB
+   32k-r2  ptok  31898 ttft 21.73 engine 21.68 s (31898 tok, reused 0, 2 probe lines) dec 7.12 wall 22.2 rc 0 | helper 1 lines 21639 ms unheld 416 xwait 244 ms waits [CUDA0 4853, CUDA1 5922, CUDA2 4374, CUDA8 7137] | stream 4 lines 3.6 GB
+   64k-r1  ptok  65428 ttft 43.89 engine 43.78 s (65428 tok, reused 0, 2 probe lines) dec 7.58 wall 44.4 rc 0 | helper 1 lines 43716 ms unheld 576 xwait 494 ms waits [CUDA0 9566, CUDA1 12144, CUDA2 8873, CUDA8 14953] | stream 4 lines 5.2 GB
+   64k-r2  ptok  65428 ttft 43.74 engine 43.62 s (65428 tok, reused 0, 2 probe lines) dec 7.26 wall 44.2 rc 0 | helper 1 lines 43580 ms unheld 704 xwait 496 ms waits [CUDA0 9599, CUDA1 12126, CUDA2 8707, CUDA8 14410] | stream 4 lines 6.4 GB
+-- soff OFF (DS4_PF_HELPER=0): rc rc=0 | VRAM experts CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744 | helpers hold 8918 experts (4 devices)
+   2k-r1   ptok   1951 ttft 4.62 engine 4.62 s (1951 tok, reused 0, 2 probe lines) dec 7.03 wall 5.1 rc 0 | helper lines 0 | stream 4 lines 86.5 GB
+   2k-r2   ptok   1951 ttft 4.56 engine 4.55 s (1951 tok, reused 0, 2 probe lines) dec 7.32 wall 5.0 rc 0 | helper lines 0 | stream 4 lines 86.5 GB
+   8k-r1   ptok   8093 ttft 6.59 engine 6.58 s (8093 tok, reused 0, 2 probe lines) dec 7.36 wall 7.1 rc 0 | helper lines 0 | stream 4 lines 86.5 GB
+   8k-r2   ptok   8093 ttft 6.64 engine 6.62 s (8093 tok, reused 0, 2 probe lines) dec 6.98 wall 7.1 rc 0 | helper lines 0 | stream 4 lines 86.5 GB
+   16k-r1  ptok  16284 ttft 10.44 engine 10.41 s (16284 tok, reused 0, 2 probe lines) dec 7.47 wall 10.9 rc 0 | helper lines 0 | stream 4 lines 128.9 GB
+   16k-r2  ptok  16284 ttft 10.47 engine 10.44 s (16284 tok, reused 0, 2 probe lines) dec 7.06 wall 10.9 rc 0 | helper lines 0 | stream 4 lines 128.9 GB
+   32k-r1  ptok  31898 ttft 18.37 engine 18.31 s (31898 tok, reused 0, 2 probe lines) dec 6.81 wall 18.8 rc 0 | helper lines 0 | stream 4 lines 213.6 GB
+   32k-r2  ptok  31898 ttft 18.42 engine 18.36 s (31898 tok, reused 0, 2 probe lines) dec 6.92 wall 18.9 rc 0 | helper lines 0 | stream 4 lines 213.6 GB
+   64k-r1  ptok  65428 ttft 34.95 engine 34.83 s (65428 tok, reused 0, 2 probe lines) dec 7.58 wall 35.4 rc 0 | helper lines 0 | stream 4 lines 382.8 GB
+   64k-r2  ptok  65428 ttft 35.05 engine 34.93 s (65428 tok, reused 0, 2 probe lines) dec 7.34 wall 35.5 rc 0 | helper lines 0 | stream 4 lines 382.8 GB
+-- son2 ON2 (drift control): rc rc=0 | VRAM experts CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744 | helpers hold 8918 experts (4 devices)
+   8k-r1   ptok   8093 ttft 8.19 engine 8.18 s (8093 tok, reused 0, 2 probe lines) dec 7.07 wall 8.6 rc 0 | helper 1 lines 8127 ms unheld 8 xwait 78 ms waits [CUDA0 2046, CUDA1 2296, CUDA2 2076, CUDA8 2905] | stream 4 lines 0.0 GB
+   8k-r2   ptok   8093 ttft 7.21 engine 7.19 s (8093 tok, reused 0, 2 probe lines) dec 7.07 wall 7.6 rc 0 | helper 1 lines 7162 ms unheld 56 xwait 79 ms waits [CUDA0 1768, CUDA1 1952, CUDA2 1648, CUDA8 2445] | stream 4 lines 0.4 GB
+   32k-r1  ptok  31898 ttft 24.39 engine 24.33 s (31898 tok, reused 0, 2 probe lines) dec 7.37 wall 24.9 rc 0 | helper 1 lines 24292 ms unheld 96 xwait 246 ms waits [CUDA0 6033, CUDA1 7750, CUDA2 6736, CUDA8 9032] | stream 4 lines 0.8 GB
+   32k-r2  ptok  31898 ttft 22.95 engine 22.89 s (31898 tok, reused 0, 2 probe lines) dec 6.99 wall 23.4 rc 0 | helper 1 lines 22848 ms unheld 160 xwait 246 ms waits [CUDA0 5606, CUDA1 6952, CUDA2 5406, CUDA8 8160] | stream 4 lines 1.6 GB
+== SRVHELP noise N 12.20 % (largest: son 8k rep spread 12.20 %; floor 2 %)
+DRIFT 8k: son2 7.699 s vs son 7.419 s: +3.77 %
+DRIFT 32k: son2 23.670 s vs son 22.215 s: +6.55 %
+== SRVHELP per length (mean of 2 reps; ratio = ON / OFF; > 1 means the helper is SLOWER)
+LEN 2k   ptok 1951/1951: TTFT ON 2.859 OFF 4.590 s ratio 0.623 -> helper FASTER | engine ON 2.853 OFF 4.585 s ratio 0.622 (FASTER) | decode ON 7.13 OFF 7.17 ms a token | pre-registration ON 2.9 [2.2, 3.7] in, OFF 4.7 [4.2, 5.5] in, ratio 0.62 [0.45, 0.8] in
+LEN 8k   ptok 8093/8093: TTFT ON 7.419 OFF 6.617 s ratio 1.121 -> helper NOT SEPARABLE | engine ON 7.403 OFF 6.599 s ratio 1.122 (NOT SEPARABLE) | decode ON 7.01 OFF 7.17 ms a token | pre-registration ON 7.0 [6.0, 8.4] in, OFF 7.1 [6.2, 8.4] in, ratio 0.99 [0.88, 1.12] OUT
+LEN 16k  ptok 16284/16284: TTFT ON 12.406 OFF 10.453 s ratio 1.187 -> helper SLOWER | engine ON 12.376 OFF 10.422 s ratio 1.187 (SLOWER) | decode ON 7.37 OFF 7.27 ms a token | pre-registration ON 12.2 [10.5, 14.0] in, OFF 10.5 [9.3, 12.0] in, ratio 1.16 [1.0, 1.3] in
+LEN 32k  ptok 31898/31898: TTFT ON 22.215 OFF 18.396 s ratio 1.208 -> helper SLOWER | engine ON 22.157 OFF 18.337 s ratio 1.208 (SLOWER) | decode ON 7.12 OFF 6.87 ms a token | pre-registration ON 23.1 [21.0, 26.0] in, OFF 18.9 [17.0, 21.0] in, ratio 1.22 [1.08, 1.38] in
+LEN 64k  ptok 65428/65428: TTFT ON 43.814 OFF 34.999 s ratio 1.252 -> helper SLOWER | engine ON 43.700 OFF 34.883 s ratio 1.253 (SLOWER) | decode ON 7.42 OFF 7.46 ms a token | pre-registration ON 48.0 [41.0, 56.0] in, OFF 39.0 [34.0, 45.0] in, ratio 1.23 [1.05, 1.4] in
+HEADLINE CHECK 32k-r1 (the hl LONG document, 31898 tokens there): ON 31898 tok 22.70 s (hla 23.1 s), OFF 31898 tok 18.37 s (hlb build 13s 18.9 s)
+PLACEMENT: ON CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744 | OFF CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744 | ON2 CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744 -> SAME in every arm; helpers hold ON 8918 OFF 8918 experts
+HELPER LINES: ON 10 'ds4 prompt helpers' lines over the requests (present)
+VERDICT SRVHELP: HELPER SLOWER FROM 16k (2k FASTER, 8k NOT SEPARABLE, 16k SLOWER, 32k SLOWER, 64k SLOWER; N 12.20 %)
+TRIPPED: 0 new lines since start

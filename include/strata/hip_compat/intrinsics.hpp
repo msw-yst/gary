@@ -27,6 +27,10 @@ __device__ __forceinline__ int dp4a(int a, int b, int c) {
     // RDNA2 has no sudot4 (that is gfx11+), but it has the plain signed v_dot4_i32_i8 (dot1-insts): the same
     // signed x signed byte products accumulated modulo 2^32, no clamp.
     return __builtin_amdgcn_sdot4(a, b, c, false);
+#elif defined(__gfx906__) && __has_builtin(__builtin_amdgcn_sdot4)
+    // helper pass (STRATA_HIP_HELPER_ARCHS): gfx906 has the same v_dot4_i32_i8 (dot1-insts), as the gfx906 shim's
+    // strata_dp4a (platform/hip_compat/strata_hip.h) uses: signed x signed, modulo 2^32, no clamp.
+    return __builtin_amdgcn_sdot4(a, b, c, false);
 #elif defined(__gfx1012__) && !defined(STRATA_GFX1012_PORTABLE_DOT)
     // RDNA1 has no native signed dot4. SDWA selects and sign-extends byte
     // operands directly, avoiding separate shift/mask/sign-extension work.
@@ -136,9 +140,16 @@ __device__ __forceinline__ T shfl_sync(uint32_t mask, T value, int source_lane, 
     return __shfl(value, source_lane, width);
 }
 
+// CUDA's 32-bit vote of the caller's warp.  On wave32 __ballot's upper half is zero.  The wave64 helper pass (gfx906,
+// STRATA_HIP_HELPER_ARCHS) runs two logical 32-lane warps per wave, like the gfx906 shim (strata_hip.h
+// strata_ballot32): lanes 32-63 take the upper half.  Compile-time only, so wave32 code is unchanged.
 __device__ __forceinline__ unsigned ballot_sync(uint32_t mask, int predicate) {
     require_full_wave_mask(mask);
+#if defined(__gfx906__)
+    return static_cast<unsigned>(__ballot(predicate) >> (__lane_id() & 32u));
+#else
     return static_cast<unsigned>(__ballot(predicate));
+#endif
 }
 
 }  // namespace strata::hip_compat

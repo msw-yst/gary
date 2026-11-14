@@ -1,0 +1,23 @@
+== identity (pass lines: b10 vs n0 IDENTICAL; grid FN / OV vs off IDENTICAL; rc 0 = each batch sequence == its solo reference)
+id-tp3h3-b10 vs id-tp3h3-n0 (engine.stdout): IDENTICAL
+id-tp4h4-b10 vs id-tp4h4-n0 (engine.stdout): IDENTICAL
+bt-tp3h3-off-1 vs bt-tp3h3-FN-1 (engine.stdout): IDENTICAL
+bt-tp3h3-off-2 vs bt-tp3h3-FN-2 (engine.stdout): IDENTICAL
+bt-tp3h3-off-3 vs bt-tp3h3-FN-3 (engine.stdout): IDENTICAL
+bt-tp3h3-off-1 vs bt-tp3h3-OV-1 (engine.stdout): DIFFER (byte 432, line 1)
+bt-tp3h3-off-2 vs bt-tp3h3-OV-2 (engine.stdout): DIFFER (byte 432, line 1)
+bt-tp3h3-off-3 vs bt-tp3h3-OV-3 (engine.stdout): DIFFER (byte 432, line 1)
+bt-tp4h4-off-1 vs bt-tp4h4-FN-1 (engine.stdout): IDENTICAL
+bt-tp4h4-off-2 vs bt-tp4h4-FN-2 (engine.stdout): IDENTICAL
+bt-tp4h4-off-3 vs bt-tp4h4-FN-3 (engine.stdout): IDENTICAL
+bt-tp4h4-off-1 vs bt-tp4h4-OV-1 (engine.stdout): DIFFER (byte 13, line 1)
+bt-tp4h4-off-2 vs bt-tp4h4-OV-2 (engine.stdout): DIFFER (byte 13, line 1)
+bt-tp4h4-off-3 vs bt-tp4h4-OV-3 (engine.stdout): DIFFER (byte 13, line 1)
+-- id-tp3h3-b10: 
+     VRAM experts: CUDA0 4952 CUDA1 4952 CUDA2 4952
+-- id-tp3h3-n0: 
+     VRAM experts: CUDA0 4952 CUDA1 4952 CUDA2 4952
+-- id-tp4h4-b10: 
+     VRAM experts: CUDA0 7177 CUDA1 7177 CUDA2 7177 CUDA7 7177
+-- id-tp4h4-n0: 
+     VRAM experts: CUDA0 7177 CUDA1 7177 CUDA2 7177 CUDA7 7177

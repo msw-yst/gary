@@ -1,0 +1,36 @@
+== qref (--gpus 0,1,2 --tp 1) rc=0 wall 60 s
+score code: 999 positions, ppl 1.8715, top-1 0.8579 (10 s)
+score docs: 999 positions, ppl 9.8602, top-1 0.5025 (17 s)
+score english: 999 positions, ppl 4.5451, top-1 0.5816 (24 s)
+score multilingual: 999 positions, ppl 2.9518, top-1 0.7728 (31 s)
+score agent: 999 positions, ppl 1.8350, top-1 0.8448 (38 s)
+score experts: 1198800 routed, 0 on the CPU lane, 0 on the helper; the cache moved 1220
+== qo (--gpus 0,1,2 --tp 3 --helper-device 3,4,5) rc=0 wall 113 s
+score code: 999 positions, ppl 1.8992, top-1 0.8619 (5 s)
+score docs: 999 positions, ppl 9.8125, top-1 0.5055 (8 s)
+score english: 999 positions, ppl 4.4358, top-1 0.5796 (12 s)
+score multilingual: 999 positions, ppl 2.9924, top-1 0.7748 (16 s)
+score agent: 999 positions, ppl 1.8404, top-1 0.8448 (20 s)
+score experts: 1198800 routed, 0 on the CPU lane, 0 on the helper; the cache moved 70
+== qn (@DS4_ROUTER_BF16=1 --gpus 0,1,2 --tp 3 --helper-device 3,4,5) rc=0 wall 114 s
+score code: 999 positions, ppl 1.8895, top-1 0.8619 (5 s)
+score docs: 999 positions, ppl 9.8118, top-1 0.5025 (9 s)
+score english: 999 positions, ppl 4.5615, top-1 0.5706 (12 s)
+score multilingual: 999 positions, ppl 2.9692, top-1 0.7758 (16 s)
+score agent: 999 positions, ppl 1.8315, top-1 0.8418 (20 s)
+score experts: 1198800 routed, 0 on the CPU lane, 0 on the helper; the cache moved 70
+## qo vs qref
+ALL             4995      95.84%   1.79e-03  1.53e-02   3.3999   3.4013
+GATE FAIL (top-1 >= 95 %, median KL <= 1e-3)
+## qn vs qref
+ALL             4995      96.10%   1.79e-03  1.60e-02   3.3999   3.4082
+GATE FAIL (top-1 >= 95 %, median KL <= 1e-3)
+## paired ref=qref X=qo Y=qn
+measure                 X          Y      Y - X   95% interval of Y - X (paired block bootstrap, 1000x)
+top-1 agree %      95.836     96.096      0.260   [-0.240, 0.741]
+median KL        1.79e-03   1.79e-03   1.06e-06   [-2.45e-04, 1.59e-04]
+mean KL          1.53e-02   1.60e-02   6.38e-04   [-4.99e-04, 1.83e-03]
+ppl                 3.401      3.408      0.007   [-0.021, 0.039]
+## qn vs qo
+ALL             4995      96.06%   1.67e-03  1.41e-02   3.4013   3.4082
+GATE FAIL (top-1 >= 95 %, median KL <= 1e-3)

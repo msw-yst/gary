@@ -1,0 +1,22 @@
+# 128K-context server: per-card memory lines
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.15 GB (7059 of 15744 in VRAM), caches 0.12 GB, 478 MiB free
+ds4: CUDA1 layers [0, 42] (tensor parallel 4, part 1): weights 2.40 GB, experts 18.17 GB (7059 of 15744 in VRAM), caches 0.12 GB, 650 MiB free
+ds4: CUDA2 layers [0, 42] (tensor parallel 4, part 2): weights 2.40 GB, experts 18.18 GB (7059 of 15744 in VRAM), caches 0.12 GB, 634 MiB free
+ds4: CUDA7 layers [0, 42] (tensor parallel 4, part 3): weights 2.40 GB, experts 17.88 GB (7059 of 15744 in VRAM), caches 0.12 GB, 924 MiB free
+# 262,144-context server: per-card memory lines and the retrieval requests
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.03 GB (7011 of 15744 in VRAM), caches 0.24 GB, 484 MiB free
+ds4: CUDA1 layers [0, 42] (tensor parallel 4, part 1): weights 2.40 GB, experts 18.06 GB (7011 of 15744 in VRAM), caches 0.24 GB, 652 MiB free
+ds4: CUDA2 layers [0, 42] (tensor parallel 4, part 2): weights 2.40 GB, experts 18.06 GB (7011 of 15744 in VRAM), caches 0.24 GB, 644 MiB free
+ds4: CUDA7 layers [0, 42] (tensor parallel 4, part 3): weights 2.40 GB, experts 17.77 GB (7011 of 15744 in VRAM), caches 0.24 GB, 928 MiB free
+ds4 serve: prompt 122680 tokens = 0 reused + 122680 read in 64855 ms (1891.6 tok/s), 24 generated in 379 ms (63.28 tok/s); CPU lane 0.0% of the experts
+ds4 serve: prompt 122680 tokens = 122679 reused + 1 read in 248 ms (4.0 tok/s), 56 generated in 740 ms (75.64 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 23 of 47 kept; per position (kept / reached): 1: 21/30 70% 2: 2/8 25% 3: 0/1 0%
+ds4 slots: saved a 122735-token conversation (0.13 GB in RAM in 0.1 s); 1 in RAM, 1 in <path>
+ds4: long-prompt skip on the tp4 group (STRATA_DS4_PROMPT_SKIP_TP, =0 off): layers 20-39 on the last 2668 of 245840 rows
+ds4 serve: prompt 245840 tokens = 0 reused + 245840 read in 153602 ms (1600.5 tok/s), 58 generated in 755 ms (76.87 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 26 of 46 kept; per position (kept / reached): 1: 22/31 71% 2: 3/7 43% 3: 1/3 33%
+ds4 slots: saved a 245897-token conversation (0.24 GB in RAM in 0.2 s); 2 in RAM, 1 in <path>
+ds4 serve: prompt 240216 tokens = 0 reused + 240216 read in 151561 ms (1585.0 tok/s), 54 generated in 671 ms (80.50 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 27 of 44 kept; per position (kept / reached): 1: 24/27 89% 2: 3/9 33% 3: 0/1 0%
+ds4 slots: saved a 240270-token conversation (0.23 GB in RAM in 0.2 s); 3 in RAM, 1 in <path>
+ds4 serve: prompt 239764 tokens = 0 reused + 239764 read in 150701 ms (1591.0 tok/s), 54 generated in 672 ms (80.41 tok/s); CPU lane 0.0% of the experts

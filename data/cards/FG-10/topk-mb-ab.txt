@@ -1,0 +1,71 @@
+topkrun topkmb-20261112T100252Z - NEW <path> (<hash>); served env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1 DS4_PF_HELPER=8192; tp4h4: --gpus 0,1,2,7 --tp 4 --helper-device 3,4,5,6; NP 128 REPS 3
+== identity (id phase; exit 4 on any difference)
+ID id-d-U vs id-d-REF: stdout IDENTICAL | placement (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) | lines ok
+ID id-32k-ON vs id-32k-OFF: stdout IDENTICAL | placement (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) | lines ok | engaged (a top-k over 16384 scores (1 rows))
+ID id-110k-ON vs id-110k-OFF: stdout IDENTICAL | placement (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) | lines ok | engaged (a top-k over 56320 scores (1 rows))
+ID id-x32k-ON vs id-x32k-OFF: stdout IDENTICAL | placement (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) | lines ok | engaged (a top-k over 16385 scores (3 rows))
+id: PASSED
+IDM ms 1k rep 1: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 32k rep 1: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 64k rep 1: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 110k rep 1: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 1k rep 2: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 32k rep 2: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 64k rep 2: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 110k rep 2: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 1k rep 3: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 32k rep 3: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 64k rep 3: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+IDM ms 110k rep 3: ON vs OFF IDENTICAL | PLA vs OFF IDENTICAL
+== ms a token (MEASURED: decode lines, 128 tokens; an arm counts with rc 0, exactly 128 tokens, engagement right)
+  ms-OFF-1k-1      14.669
+  ms-OFF-1k-2      14.669
+  ms-OFF-1k-3      14.704
+  ms-ON-1k-1       14.747
+  ms-ON-1k-2       14.693
+  ms-ON-1k-3       14.658
+  ms-PLA-1k-1      14.656
+  ms-PLA-1k-2      14.652
+  ms-PLA-1k-3      14.708
+  ms-OFF-32k-1     15.092
+  ms-OFF-32k-2     15.063
+  ms-OFF-32k-3     15.047
+  ms-ON-32k-1      15.038
+  ms-ON-32k-2      15.049
+  ms-ON-32k-3      15.011
+  ms-PLA-32k-1     15.085
+  ms-PLA-32k-2     15.088
+  ms-PLA-32k-3     15.133
+  ms-OFF-64k-1     15.106
+  ms-OFF-64k-2     15.090
+  ms-OFF-64k-3     15.158
+  ms-ON-64k-1      14.817
+  ms-ON-64k-2      14.883
+  ms-ON-64k-3      14.939
+  ms-PLA-64k-1     15.074
+  ms-PLA-64k-2     15.131
+  ms-PLA-64k-3     15.056
+  ms-OFF-110k-1    15.451
+  ms-OFF-110k-2    15.344
+  ms-OFF-110k-3    15.423
+  ms-ON-110k-1     15.049
+  ms-ON-110k-2     14.961
+  ms-ON-110k-3     15.029
+  ms-PLA-110k-1    15.434
+  ms-PLA-110k-2    15.385
+  ms-PLA-110k-3    15.401
+== prereg verdicts (prereg.md; N = max(|mean PLA - mean OFF|, 0.12); delta = mean ON - mean OFF)
+1k    OFF 14.681 ON 14.699 PLA 14.672 ms; delta +0.019, N 0.120; predicted +0.00 [-0.05, +0.05] -> guard ok
+32k   OFF 15.067 ON 15.032 PLA 15.102 ms; delta -0.035, N 0.120; predicted -0.12 [-0.25, +0.03] -> NOT SEPARABLE
+64k   OFF 15.118 ON 14.880 PLA 15.087 ms; delta -0.238, N 0.120; predicted -0.25 [-0.40, -0.08] -> PASS
+110k  OFF 15.406 ON 15.013 PLA 15.407 ms; delta -0.393, N 0.120; predicted -0.45 [-0.65, -0.20] -> PASS
+VERDICT TOPKMB (primary 110K, guard 1K): PASS
+== load-time timing (synthetic, back-to-back launches; indicative)
+  ds4: DS4_TOPK_MB timing (CUDA0; synthetic, load-time, back-to-back launches): n 8192 k 512: old 76.4 us, mb 51.8 us | n 16384 k 512: old 70.2 us, mb 46.8 us | n 28190 k 512: old 77.9 us, mb 44.0 us
+  ds4: DS4_TOPK_MB timing (CUDA1; synthetic, load-time, back-to-back launches): n 8192 k 512: old 68.6 us, mb 48.2 us | n 16384 k 512: old 62.3 us, mb 44.3 us | n 28190 k 512: old 74.4 us, mb 41.6 us
+  ds4: DS4_TOPK_MB timing (CUDA2; synthetic, load-time, back-to-back launches): n 8192 k 512: old 72.9 us, mb 55.2 us | n 16384 k 512: old 77.6 us, mb 49.5 us | n 28190 k 512: old 78.4 us, mb 45.6 us
+  ds4: DS4_TOPK_MB timing (CUDA7; synthetic, load-time, back-to-back launches): n 8192 k 512: old 72.7 us, mb 51.1 us | n 16384 k 512: old 59.7 us, mb 45.7 us | n 28190 k 512: old 73.1 us, mb 43.9 us
+== indexer top-k time a decode token at 110K (kt phase; informative)
+KT OFF: agent Agent 1: 763.9 us a token (8.7 calls a token) | agent Agent 2: 759.8 us a token (8.7 calls a token) | agent Agent 3: 753.5 us a token (8.7 calls a token) | agent Agent 8: 769.2 us a token (8.7 calls a token) [ESTIMATE: includes the prompt's T-1 windows, if any; trace_kernel_trace.csv]
+KT ON: agent Agent 1: 597.5 us a token (58.4 calls a token) | agent Agent 2: 605.6 us a token (58.4 calls a token) | agent Agent 3: 614.3 us a token (58.4 calls a token) | agent Agent 8: 602.8 us a token (58.4 calls a token) [ESTIMATE: includes the prompt's T-1 windows, if any; trace_kernel_trace.csv]
+TRIPPED: 0 new lines since start

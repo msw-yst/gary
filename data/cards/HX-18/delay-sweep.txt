@@ -1,0 +1,3 @@
+== head-delay sweep with the skip (tp4h4 ABDDS; ms a step; 0 = skbt's mean)
+B1: 0 16.667 | 100 17.0
+B8: 0 42.700 | 100 44.8

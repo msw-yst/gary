@@ -53,6 +53,11 @@ struct Options {
     bool dspark = true;              // load the DSpark drafter (the checkpoint's mtp.* blocks) for speculative decoding
     int dspark_block = 0;             // at most this many drafts a round (--dspark-block N; 0: the pack's block size)
     float dspark_conf = 0.5f;         // a draft is verified while its confidence (sigmoid) is at least this
+    // DS4_DSPARK_NOSEED=1 (SV-09): the drafter is loaded (--dspark off) but this process never drafts - no
+    // seeding after a window, no taps in layers 37..39, and draft() offers nothing.  ds4_main.cpp sets it only for a
+    // --dspark off run that cannot ask for a draft (no --batch-spec, no --spec-eval); a serve request's spec=1 then gets
+    // plain steps.  Outputs bit-identical (nothing the trunk computes reads the drafter's state)
+    bool dspark_noseed = false;
     // tensor parallelism: runs of tp GPUs of one kind (the same memory) take the same layers, each a share of the
     // heads, of the output projection and of every expert's FFN, summed through host-mapped memory (a GPU unlike the
     // next stays alone); tp > 1 runs with threads (--tp 1 --threads off: one host thread, layer split only)
@@ -62,6 +67,10 @@ struct Options {
     // CPU lane's experts streamed to the GPUs a chunk at a time instead of computed on the host; 0: windows of 16;
     // -1: 2048, or 8192 with the experts read in place (every chunk streams them all from the files)
     int prefill_chunk = -1;
+    // prototype (ds4_helper.hpp): a GPU outside --gpus that owns no layers and holds the hottest routed experts the
+    // primary's VRAM does not (--helper-device N / STRATA_DS4_HELPER=N; -1 off).  helper_slots 0: as many as fit.
+    std::vector<int> helper_devices;   // --helper-device 1,4 / STRATA_DS4_HELPER: several helpers (empty: off); each layer's on one of them (DS4_HELPER_PLACE=stripe: striped in rank order)
+    int64_t helper_slots = 0;
     bool vision = true;               // the vision tower (the checkpoint's vision.* / aligner.*), when it has one
     bool vision_only = false;         // (tests) load the vision tower alone: encode_image() and nothing else
     bool verbose = false;
@@ -76,6 +85,9 @@ struct Image {
 struct Stats {
     int64_t tokens = 0;
     int64_t experts = 0, cpu_experts = 0;   // routed experts run, and how many of them on the CPU lane
+    int64_t helper_experts = 0;             // (ds4_helper.hpp) of them computed by the helper expert cache
+    double helper_ms = 0.0;                 // the lane's host time issuing to and waiting for the helper
+    double helper_arm_ms = 0.0;             // DS4_HELPER_ARMED: the lane's host time arming the next windows (after its answers)
     double cpu_ms = 0.0, gpu_wait_ms = 0.0;   // the CPU lane's time; the host's waits for the routing
     double layer_ms = 0.0, head_ms = 0.0, engram_ms = 0.0;   // the layers' host time in all; the head's wait; Engram reads
     int64_t eg_rows = 0, eg_hits = 0, eg_reads = 0;   // Engram rows asked for, served without a read, read from the files
@@ -103,6 +115,9 @@ struct Stats {
     // per draft position (the 1st .. 8th of a round): verified with all the drafts before it accepted, and accepted
     int64_t draft_reached[8] = {}, draft_kept[8] = {};
     double draft_ms = 0.0, verify_ms = 0.0;   // the drafter's time, the verification windows' time
+    // DS4_MULTI_ATTN (with DS4_BATCH_DECODE): batch windows' member-layer attention passes taken by the shared launches, and
+    // by the per-run path (the flag 0, or a window the shared launch does not take)
+    int64_t mattn_shared = 0, mattn_per_run = 0;
 };
 
 class Model {
@@ -145,6 +160,10 @@ public:
     int feed_unit() const;
     /// Called from feed() while a run of chunks goes through the layers, with the tokens done so far.
     void set_progress(std::function<void(int64_t)> f);
+    /// DS4_PF_HELPER_MAXP: the new tokens of the prompt read the next feeds make up (the server's read, which its pin may
+    /// split in two feeds), so the read takes one decision; 0 ends the declaration (each feed is then judged by its own n).
+    /// No effect unless DS4_PF_HELPER and DS4_PF_HELPER_MAXP are both live.
+    void set_prompt_total(int64_t n);
     /// Asked while a run of chunks goes through the layers: true (a Stop) ends it early - one GPU after the layer it is
     /// on, several at a chunk all of them reach - and feed() returns false with cancelled() true.  The state past the
     /// prompt's start is then not usable: restore() a checkpoint kept before the feed, or reset().
@@ -184,6 +203,57 @@ public:
     /// blocks - a slot naming anything else is not this model's state (a file's .meta says so; slot_load refuses).
     std::string slot_identity() const;
 
+    /// DS4_BATCH_DECODE=N (docs/dsv41/cards/SV-03.md; unset or 0: off, nothing allocated): N sequence banks beside the
+    /// conversation in the model, each a whole state, decoded together - a batch step is one window of B rows, row b
+    /// bank b's next token, the dense weights and the experts read once for all of them.  Greedy only, no drafter, no
+    /// pictures; one tensor-parallel group holding every layer (tp3 on 3 cards), else it says so and stays off.
+    int batch_slots() const;                      // the banks (0: off)
+    int64_t batch_pos(int bank) const;            // a bank's position (-1: no such bank)
+    /// A prompt into bank `bank` from token 0 (the normal prompt path, on the bank's state); first: its greedy next token.
+    /// The conversation in the model is left as it was.
+    bool batch_prefill(int bank, const int* tokens, int n, int& first, std::string& err);
+    /// One batch step: row b feeds tokens[b] to bank banks[b]; next[b]: row b's greedy next token.  A bank's rows (several:
+    /// a teacher-forced run of its tokens) are contiguous and take its next positions.
+    bool batch_step(const int* banks, const int* tokens, int B, int* next, std::string& err);
+    /// DS4_BATCH_DSPARK=1 (default off; needs the drafter loaded): drafts inside batch steps.  batch_draft: bank's
+    /// greedy drafts after y (its own drafter state).  batch_verify: one window over S sequences, sequence s = bank banks[s]
+    /// with nrows[s] rows (rows: [y, drafts] of each, in turn; kWin rows at most); accepted[s] drafts stand, next[s] is
+    /// the token after them; each bank then holds y and its accepted drafts, and its drafter is seeded with them.
+    bool batch_spec_ok() const;
+    /// DS4_BATCH_DSPARK_MAX (default 2): the scheduler's rule - draft (batch_draft + batch_verify) in a step while at
+    /// most this many sequences are active, else a plain batch_step (no drafts, no taps, no drafter seeding); decided step
+    /// by step as sequences join and leave.  0 when batch drafts are off.  A drafter that sat out plain steps drafts from
+    /// a ring missing those positions (fewer accepted drafts for up to a window's tokens; the output is exact either way).
+    int batch_spec_max() const;
+    bool batch_draft(int bank, int y, std::vector<int>& drafts, std::vector<float>& conf, std::string& err);
+    bool batch_verify(const int* banks, const int* nrows, const int* rows, int S, int* accepted, int* next,
+                      std::string& err);
+    /// DS4_BATCH_DSPARK_SAMPLED (srvbatch12; the serve loop's flag, default off): batch_verify with each sequence's
+    /// sampling.  A sequence with temperature <= 0 is batch_verify's, byte for byte (its drafts stand while the trunk's
+    /// argmax agrees).  A sequence with temperature > 0 keeps its drafts by the speculative-sampling rule over its own
+    /// chain, as the solo verify() does with the drafter's argmax drafts: q a point at each draft, so draft d stands with
+    /// probability p(d) (p through top_k / top_p / min_p / temperature), a rejected row is drawn from the residual
+    /// max(0, p - q), and with every draft kept the next row is drawn as sample() would, at counter + drafts.  Row i of
+    /// a sequence draws at counter + i: each kept token is distributed as the trunk's own draw.
+    struct BatchSampling {
+        float temperature = 0.0f, top_p = 1.0f, min_p = 0.0f;
+        int top_k = 0;
+        uint64_t seed = 0, counter = 0;
+    };
+    bool batch_verify_sampled(const int* banks, const int* nrows, const int* rows, int S, const BatchSampling* samp,
+                              int* accepted, int* next, std::string& err);
+    /// srvbatch (the serve loop's continuous batching): bank `bank`'s whole state and the conversation in the model
+    /// trade places - bank_swap's pointer swap after a queue drain, no copy, its own inverse.  The prompt path, the
+    /// checkpoints, restore() and slot_save / slot_load then work on what was the bank, so a batch admission reads its
+    /// prompt with every reuse the solo path has and is then swapped into its bank.  Between windows only, and never for
+    /// a bank that is decoding (the caller's rule).
+    bool bank_swap(int bank, std::string& err);
+    /// What bank `bank` has consumed (null: no such bank) - the serve loop's prefix match.
+    const std::vector<int32_t>* bank_tokens(int bank) const;
+    /// Row `row` of the last batch_step's window sampled with these parameters (the solo sample()'s kernel, on that row):
+    /// a request with temperature > 0 in a plain batch step.  Greedy rows keep batch_step's pick (the same argmax).
+    int batch_sample(int row, float temperature, float top_p, int top_k, float min_p, uint64_t seed, uint64_t counter);
+
     /// The vision tower: the token every position of an image's span carries (-1: no tower).
     int image_token() const;
     /// An image's pixels (RGB rows, width x height, both multiples of the patch size: the server's resize) -> the
@@ -197,6 +267,8 @@ public:
     void save_profile() const;
     const Stats& stats() const;
     std::string describe() const;
+    /// The helpers' lines (fill, then the run's counters: experts, windows, host ms issuing + waiting); "" without one.
+    std::string helper_report() const;
     /// INFO / VRAM lines for the server's Monitor.
     std::vector<std::string> info_lines() const;
 

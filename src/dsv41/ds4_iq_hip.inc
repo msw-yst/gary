@@ -13,6 +13,8 @@ namespace hipk {
 // test hooks: force_mode -1 = the default rules, 0 = never, 1 = on wherever the device has the WMMA tiles (gfx11 / gfx12); launches counts the tiles taken
 inline std::atomic<int>& force_mode() { static std::atomic<int> f{-1}; return f; }
 inline std::atomic<long long>& launches() { static std::atomic<long long> n{0}; return n; }
+// whether the engine runs tensor-parallel groups (set_hipk_tp, from the model's setup): the gfx1100 default below
+inline std::atomic<int>& tp_groups() { static std::atomic<int> t{0}; return t; }
 constexpr int kStH = 72;   // halves a shared row: 64 + 8 (the pad spreads the banks; rows stay 16-byte aligned)
 using hv2 = _Float16 __attribute__((ext_vector_type(2)));
 using hv8 = _Float16 __attribute__((ext_vector_type(8)));
@@ -263,7 +265,12 @@ inline bool ok_device() {   // gfx12 unless STRATA_DS4_HIPK=0
         // (STRATA_DS4_HIPK=1) on the other gfx11 parts, which were not measured; STRATA_DS4_HIPK=0 turns it off everywhere
         if (gfx11) {
             const bool halo = std::strncmp(prop.gcnArchName, "gfx1151", 7) == 0;
-            v = (e != nullptr ? e[0] == '1' : halo) ? 3 : 2;
+            // and on by default on gfx1100 (RX 7900 XTX) in a tensor-parallel group - the test machine tp3 16K prompt 31.8 -> 24.1 s,
+            // the chunked-path score's top-1 / median KL within noise, its ppl within noise in 2 of 3 runs
+            // (docs/dsv41/FEATURES.md section 2.9); STRATA_DS4_HIPK=0 off
+            const bool xtx_tp = std::strncmp(prop.gcnArchName, "gfx1100", 7) == 0 &&
+                                (prop.gcnArchName[7] == 0 || prop.gcnArchName[7] == ':') && tp_groups().load() != 0;
+            v = (e != nullptr ? e[0] == '1' : (halo || xtx_tp)) ? 3 : 2;
         }
         state[dev].store(v, std::memory_order_relaxed);
     }

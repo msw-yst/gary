@@ -1,0 +1,7 @@
+TIME tp3h3 decset_geomean 69.56 b1_tok_s 50.26 b2_tok_s 77.57 b4_tok_s 103.72 b8_tok_s 119.09 pf2_ms 3769.00 pf16_ms 10407.00 plain_b1_tok_s 51.06 cpu_lane_experts_tok 0.02 disk_MB_tok 0.10
+TIME tp3h4 decset_geomean 69.92 b1_tok_s 50.23 b2_tok_s 76.43 b4_tok_s 102.97 b8_tok_s 119.82 pf2_ms 3661.33 pf16_ms 10179.33 plain_b1_tok_s 50.77 cpu_lane_experts_tok 0.02 disk_MB_tok 0.00
+TIME tp4h3 decset_geomean 74.88 b1_tok_s 55.61 b2_tok_s 82.28 b4_tok_s 109.47 b8_tok_s 114.53 pf2_ms 4171.33 pf16_ms 10204.33 plain_b1_tok_s 55.35 cpu_lane_experts_tok 0.00 disk_MB_tok 0.10
+TIME tp4h4 decset_geomean 76.46 b1_tok_s 55.10 b2_tok_s 81.00 b4_tok_s 107.81 b8_tok_s 112.97 pf2_ms 4172.67 pf16_ms 10126.67 plain_b1_tok_s 55.83 cpu_lane_experts_tok 0.00 disk_MB_tok 0.10
+time tp3h4 vs tp3h3: decset +0.5 %, b8 +0.6 %, pf16 -2.2 % (prompt ms) -> FAIL
+time tp4h3 vs tp3h3: decset +7.6 %, b8 -3.8 %, pf16 -1.9 % (prompt ms) -> PASS  (the pre-registered line)
+time tp4h4 vs tp3h3: decset +9.9 %, b8 -5.1 %, pf16 -2.7 % (prompt ms) -> PASS

@@ -1,0 +1,242 @@
+ddexprun ddexp-20261110T205606Z - NEW <path> (+ B10E: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path>; ABDDS: DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1); tp3h3: --gpus 0,1,2 --tp 3 --helper-device 3,4,5; tp4h4: --gpus 0,1,2,7 --tp 4 --helper-device 3,4,5,6; N 256
+== identity (pass: every one IDENTICAL; '-' = that reference missing)
+ID tp4h4 ABDDS vs REF off: decode IDENTICAL | bt IDENTICAL (rc=0) | score IDENTICAL || vs SKREF ABDDS: decode IDENTICAL | bt IDENTICAL | score IDENTICAL
+ID tp3h3 ABDDS vs REF off: decode IDENTICAL | bt IDENTICAL (rc=0) | score IDENTICAL || vs SKREF ABDDS: decode IDENTICAL | bt IDENTICAL | score IDENTICAL
+ID tp4h4 LD50 vs ABDDS: decode IDENTICAL | bt IDENTICAL | score IDENTICAL | ddexp lane delay (DS4_DD_LANE_DELAY_US): 50 us before 9945 DD answers
+ID tp4h4 NLW vs ABDDS: decode IDENTICAL | bt IDENTICAL | score IDENTICAL | ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 9945 joins, 9945 lane waits skipped (100.0 %); waited for a CPU-possible pick 0, a host-answered helper 0, the ring gu
+ID tp4h4 INJ vs ABDDS: decode IDENTICAL | bt IDENTICAL | score IDENTICAL | ddexp inject (DS4_INJECT_EMPTY): 51000 empty kernels launched, 51000 in windows of one row (5 a trunk layer, segment 1, device -1)
+ID tp4h4 TS vs ABDDS: decode IDENTICAL | bt IDENTICAL | score IDENTICAL | ds4 tstamp: ./tstamp-dev3.txt: 8192 stamps, clock fit over 478 samples (offset + drift, rms 49 ns);ds4 tstamp: ./tstamp-dev4.txt: 8192 stamps, clock fit over 505 samples (offset + drift, rms 50 ns);ds4 tstamp: ./tstamp-dev5.txt: 8192 stamps, clock fit over 436 samples (offset + drift, rms 53 ns);ds4 tstamp: ./tstamp-dev6.txt: 8192 stamps, clock fit over 505 samples (offset + drift, rms 52 ns);ds4 tstamp: ./tstamp-dev0.txt: 52545 stamps, clock fit over 516 samples (offset only, nominal rate, rms 26 ns);ds4 tstamp: ./tstamp-dev1.txt: 16384 stamps, clock fit over 415 samples (offset only, nominal rate, rms 22 ns);ds4 tstamp: ./tstamp-dev2.txt: 16384 stamps, clock fit over 731 samples (offset only, nominal rate, rms 21 ns);ds4 tstamp: ./tstamp-dev7.txt: 16384 stamps, clock fit over 452 samples (offset only, nominal rate, rms 16 ns);ds4 tstamp: ./tstamp-host.txt: 12543 stamps, clock fit over 0 samples (offset only, nominal rate, rms 0 ns)
+ID tp3h3 NLW vs ABDDS: decode IDENTICAL | bt IDENTICAL | score IDENTICAL | ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 9945 joins, 9915 lane waits skipped (99.7 %); waited for a CPU-possible pick 30, a host-answered helper 0, the ring gu
+== b1 lane delay (MEASURED; B1 plain decode, ms a token; prediction: binding 0.039 ms/us from 0, not binding ~0 below ~24 us)
+B1 ABDDS: 0 14.366 | 20 14.364 | 50 14.323 | 100 15.314 | slope 0-100 0.00956 ms/us, 0-20 -0.00010 ms/us (0a 14.384, 0b 14.347)
+== fix: DS4_DD_NO_LANE_WAIT (MEASURED; bt, ms a step mean [min-max] nREPS | vs ABDDS; prediction B1 -0.5 to -1.2 ms)
+FIX tp4h4 B1 ABDDS: 15.20 [15.20-15.20] n3 | +0.00 ms (+0.0%)
+FIX tp4h4 B1 NLW: 15.10 [15.10-15.10] n3 | -0.10 ms (-0.7%)
+FIX tp4h4 B8 ABDDS: 41.50 [41.00-42.30] n3 | +0.00 ms (+0.0%)
+FIX tp4h4 B8 NLW: 43.07 [42.40-43.70] n3 | +1.57 ms (+3.8%)
+FIX tp3h3 B1 ABDDS: 16.40 [16.40-16.40] n3 | +0.00 ms (+0.0%)
+FIX tp3h3 B1 NLW: 16.37 [16.30-16.40] n3 | -0.03 ms (-0.2%)
+FIX tp3h3 B8 ABDDS: 43.83 [43.70-44.00] n3 | +0.00 ms (+0.0%)
+FIX tp3h3 B8 NLW: 44.23 [44.10-44.40] n3 | +0.40 ms (+0.9%)
+fx-tp4h4-ABDDS-1 stdout vs fx-tp4h4-ABDDS-1: IDENTICAL
+fx-tp4h4-ABDDS-2 stdout vs fx-tp4h4-ABDDS-1: IDENTICAL
+fx-tp4h4-ABDDS-3 stdout vs fx-tp4h4-ABDDS-1: IDENTICAL
+fx-tp4h4-NLW-1 stdout vs fx-tp4h4-ABDDS-1: IDENTICAL
+fx-tp4h4-NLW-2 stdout vs fx-tp4h4-ABDDS-1: IDENTICAL
+fx-tp4h4-NLW-3 stdout vs fx-tp4h4-ABDDS-1: IDENTICAL
+fx-tp3h3-ABDDS-1 stdout vs fx-tp3h3-ABDDS-1: IDENTICAL
+fx-tp3h3-ABDDS-2 stdout vs fx-tp3h3-ABDDS-1: IDENTICAL
+fx-tp3h3-ABDDS-3 stdout vs fx-tp3h3-ABDDS-1: IDENTICAL
+fx-tp3h3-NLW-1 stdout vs fx-tp3h3-ABDDS-1: IDENTICAL
+fx-tp3h3-NLW-2 stdout vs fx-tp3h3-ABDDS-1: IDENTICAL
+fx-tp3h3-NLW-3 stdout vs fx-tp3h3-ABDDS-1: IDENTICAL
+fxd-tp4h4-ABDDS: 14.399 ms a token | 
+fxd-tp4h4-NLW: 14.329 ms a token | ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 10101 joins, 10101 lane waits skipped (100.0 %); waited for a CPU-possible pick 0, a host-answered helper 0, the ring guard 0
+== b2 empty kernels (MEASURED; B1 plain decode ms a token; per kernel = slope / trunk layers; prediction 1.3-3.3 us on the lead's chain)
+B2 lead_moe: 0 14.384 | 2 14.594 | 5 14.881 | 10 15.482 | slope 0.10949 ms per kernel a layer = 2.75 us a kernel (39.8 layers a token)
+B2 all_attn: 0 14.384 | 2 14.594 | 5 14.932 | 10 15.427 | slope 0.10459 ms per kernel a layer = 2.63 us a kernel (39.8 layers a token)
+B2 member_moe-1: 0 14.384 | 2 14.413 | 5 14.407 | 10 14.575 | slope 0.01851 ms per kernel a layer = 0.47 us a kernel (39.8 layers a token)
+== b3 oracles (MEASURED, TIMING ONLY - outputs wrong; B1 plain decode ms a token vs the ABDDS references' mean)
+B3 ref: 14.405 (a 14.397, b 14.413)
+B3 NO_HELPER_WAIT: 13.697 | -0.71 ms a token | rc rc=0 | banner 2
+B3 NO_MI50_MATH: 13.710 | -0.69 ms a token | rc rc=0 | banner 2
+B3 EMPTY_AR: 14.872 | +0.47 ms a token | rc rc=0 | banner 2
+TRIPPED: 0 new lines since start
+== rc / key lines
+-- b1-0a rc=0
+decode: 256 tokens in 3668 ms (69.52 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-0b rc=0
+decode: 256 tokens in 3659 ms (69.70 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b1-100 rc=0
+ddexp: DS4_DD_LANE_DELAY_US=100: the lane spins that long before each DD request's answer word
+decode: 256 tokens in 3905 ms (65.30 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp lane delay (DS4_DD_LANE_DELAY_US): 100 us before 10101 DD answers
+-- b1-20 rc=0
+ddexp: DS4_DD_LANE_DELAY_US=20: the lane spins that long before each DD request's answer word
+decode: 256 tokens in 3663 ms (69.62 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp lane delay (DS4_DD_LANE_DELAY_US): 20 us before 10101 DD answers
+-- b1-50 rc=0
+ddexp: DS4_DD_LANE_DELAY_US=50: the lane spins that long before each DD request's answer word
+decode: 256 tokens in 3652 ms (69.82 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp lane delay (DS4_DD_LANE_DELAY_US): 50 us before 10101 DD answers
+-- b2-0a rc=0
+decode: 256 tokens in 3674 ms (69.41 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b2-0b rc=0
+decode: 256 tokens in 3662 ms (69.63 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b2-all_attn-10 rc=0
+ddexp: DS4_INJECT_EMPTY=all_attn:10: 10 empty kernels a trunk layer on all_attn (trunk layers 40)
+decode: 256 tokens in 3934 ms (64.82 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 413510 empty kernels launched, 407200 in windows of one row (10 a trunk layer, segment 2, device -1)
+-- b2-all_attn-2 rc=0
+ddexp: DS4_INJECT_EMPTY=all_attn:2: 2 empty kernels a trunk layer on all_attn (trunk layers 40)
+decode: 256 tokens in 3721 ms (68.52 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 82640 empty kernels launched, 81370 in windows of one row (2 a trunk layer, segment 2, device -1)
+-- b2-all_attn-5 rc=0
+ddexp: DS4_INJECT_EMPTY=all_attn:5: 5 empty kernels a trunk layer on all_attn (trunk layers 40)
+decode: 256 tokens in 3808 ms (66.97 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 206675 empty kernels launched, 203485 in windows of one row (5 a trunk layer, segment 2, device -1)
+-- b2-lead_moe-10 rc=0
+ddexp: DS4_INJECT_EMPTY=lead_moe:10: 10 empty kernels a trunk layer on lead_moe (trunk layers 40)
+decode: 256 tokens in 3948 ms (64.59 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 103600 empty kernels launched, 102000 in windows of one row (10 a trunk layer, segment 1, device -1)
+-- b2-lead_moe-2 rc=0
+ddexp: DS4_INJECT_EMPTY=lead_moe:2: 2 empty kernels a trunk layer on lead_moe (trunk layers 40)
+decode: 256 tokens in 3721 ms (68.52 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 20720 empty kernels launched, 20400 in windows of one row (2 a trunk layer, segment 1, device -1)
+-- b2-lead_moe-5 rc=0
+ddexp: DS4_INJECT_EMPTY=lead_moe:5: 5 empty kernels a trunk layer on lead_moe (trunk layers 40)
+decode: 256 tokens in 3795 ms (67.20 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 51800 empty kernels launched, 51000 in windows of one row (5 a trunk layer, segment 1, device -1)
+-- b2-member_moe-1-10 rc=0
+ddexp: DS4_INJECT_EMPTY=member_moe:1:10: 10 empty kernels a trunk layer on member_moe device 1 (trunk layers 40)
+decode: 256 tokens in 3717 ms (68.61 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 103600 empty kernels launched, 102000 in windows of one row (10 a trunk layer, segment 3, device 1)
+-- b2-member_moe-1-2 rc=0
+ddexp: DS4_INJECT_EMPTY=member_moe:1:2: 2 empty kernels a trunk layer on member_moe device 1 (trunk layers 40)
+decode: 256 tokens in 3675 ms (69.38 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 20720 empty kernels launched, 20400 in windows of one row (2 a trunk layer, segment 3, device 1)
+-- b2-member_moe-1-5 rc=0
+ddexp: DS4_INJECT_EMPTY=member_moe:1:5: 5 empty kernels a trunk layer on member_moe device 1 (trunk layers 40)
+decode: 256 tokens in 3674 ms (69.41 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 51800 empty kernels launched, 51000 in windows of one row (5 a trunk layer, segment 3, device 1)
+-- b3-EMPTY_AR rc=0
+decode: 256 tokens in 3792 ms (67.24 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b3-NO_HELPER_WAIT rc=0
+ddexp: ORACLE DS4_ORACLE_NO_HELPER_WAIT: the lead's joins do not wait for the helpers (OUTPUTS WRONG)
+decode: 256 tokens in 3493 ms (73.01 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b3-NO_MI50_MATH rc=0
+ddexp: ORACLE DS4_ORACLE_NO_MI50_MATH: the helpers' DD windows run no body (OUTPUTS WRONG)
+decode: 256 tokens in 3496 ms (72.94 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b3-ref-a rc=0
+decode: 256 tokens in 3671 ms (69.46 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- b3-ref-b rc=0
+decode: 256 tokens in 3675 ms (69.38 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- bt-tp3h3-ABDDS rc=0
+batch-test B=1: 255 steps in 4189 ms (16.4 ms a step): 60.88 tok/s a sequence, 60.88 tok/s in all (solo 59.69 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 5163 ms (20.2 ms a step): 49.39 tok/s a sequence, 98.78 tok/s in all (solo 59.69 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 11232 ms (44.0 ms a step): 22.70 tok/s a sequence, 181.63 tok/s in all (solo 59.69 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- bt-tp3h3-NLW rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+batch-test B=1: 255 steps in 4168 ms (16.3 ms a step): 61.19 tok/s a sequence, 61.19 tok/s in all (solo 59.91 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 5129 ms (20.1 ms a step): 49.72 tok/s a sequence, 99.44 tok/s in all (solo 59.91 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 11178 ms (43.8 ms a step): 22.81 tok/s a sequence, 182.50 tok/s in all (solo 59.91 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 109395 joins, 108502 lane waits skipped (99.2 %); waited for a CPU-possible pick 893, a host-answered helper 0, the ring guard 0
+-- bt-tp4h4-ABDDS rc=0
+batch-test B=1: 255 steps in 3881 ms (15.2 ms a step): 65.70 tok/s a sequence, 65.70 tok/s in all (solo 64.50 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4701 ms (18.4 ms a step): 54.24 tok/s a sequence, 108.48 tok/s in all (solo 64.50 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10471 ms (41.1 ms a step): 24.35 tok/s a sequence, 194.82 tok/s in all (solo 64.50 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- bt-tp4h4-INJ rc=0
+ddexp: DS4_INJECT_EMPTY=lead_moe:5: 5 empty kernels a trunk layer on lead_moe (trunk layers 40)
+batch-test B=1: 255 steps in 4013 ms (15.7 ms a step): 63.55 tok/s a sequence, 63.55 tok/s in all (solo 62.46 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4823 ms (18.9 ms a step): 52.87 tok/s a sequence, 105.74 tok/s in all (solo 62.46 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 11516 ms (45.2 ms a step): 22.14 tok/s a sequence, 177.14 tok/s in all (solo 62.46 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp inject (DS4_INJECT_EMPTY): 561000 empty kernels launched, 459000 in windows of one row (5 a trunk layer, segment 1, device -1)
+-- bt-tp4h4-LD50 rc=0
+ddexp: DS4_DD_LANE_DELAY_US=50: the lane spins that long before each DD request's answer word
+batch-test B=1: 255 steps in 3873 ms (15.2 ms a step): 65.83 tok/s a sequence, 65.83 tok/s in all (solo 64.76 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4681 ms (18.4 ms a step): 54.47 tok/s a sequence, 108.94 tok/s in all (solo 64.76 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10518 ms (41.2 ms a step): 24.24 tok/s a sequence, 193.95 tok/s in all (solo 64.76 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp lane delay (DS4_DD_LANE_DELAY_US): 50 us before 109395 DD answers
+-- bt-tp4h4-NLW rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+batch-test B=1: 255 steps in 3862 ms (15.1 ms a step): 66.03 tok/s a sequence, 66.03 tok/s in all (solo 64.87 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4679 ms (18.3 ms a step): 54.50 tok/s a sequence, 108.99 tok/s in all (solo 64.87 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10775 ms (42.3 ms a step): 23.67 tok/s a sequence, 189.32 tok/s in all (solo 64.87 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 109395 joins, 109395 lane waits skipped (100.0 %); waited for a CPU-possible pick 0, a host-answered helper 0, the ring guard 0
+-- bt-tp4h4-TS rc=0
+ddexp: DS4_TSTAMP=1: stamps in publish / ar_sum / dd_join / the helpers' head and flag kernels and the lane (decode windows of one row); dumped at the end to ./tstamp-*.txt
+batch-test B=1: 255 steps in 3861 ms (15.1 ms a step): 66.05 tok/s a sequence, 66.05 tok/s in all (solo 64.93 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4675 ms (18.3 ms a step): 54.55 tok/s a sequence, 109.10 tok/s in all (solo 64.93 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10516 ms (41.2 ms a step): 24.25 tok/s a sequence, 193.99 tok/s in all (solo 64.93 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- fxd-tp4h4-ABDDS rc=0
+decode: 256 tokens in 3672 ms (69.45 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- fxd-tp4h4-NLW rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+decode: 256 tokens in 3654 ms (69.79 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 10101 joins, 10101 lane waits skipped (100.0 %); waited for a CPU-possible pick 0, a host-answered helper 0, the ring guard 0
+-- fx-tp3h3-ABDDS-1 rc=0
+batch-test B=1: 255 steps in 4172 ms (16.4 ms a step): 61.13 tok/s a sequence, 61.13 tok/s in all (solo 59.87 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 11133 ms (43.7 ms a step): 22.91 tok/s a sequence, 183.24 tok/s in all (solo 59.87 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- fx-tp3h3-ABDDS-2 rc=0
+batch-test B=1: 255 steps in 4189 ms (16.4 ms a step): 60.88 tok/s a sequence, 60.88 tok/s in all (solo 59.34 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 11223 ms (44.0 ms a step): 22.72 tok/s a sequence, 181.78 tok/s in all (solo 59.34 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- fx-tp3h3-ABDDS-3 rc=0
+batch-test B=1: 255 steps in 4180 ms (16.4 ms a step): 61.01 tok/s a sequence, 61.01 tok/s in all (solo 59.87 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 11172 ms (43.8 ms a step): 22.83 tok/s a sequence, 182.61 tok/s in all (solo 59.87 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- fx-tp3h3-NLW-1 rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+batch-test B=1: 255 steps in 4182 ms (16.4 ms a step): 60.97 tok/s a sequence, 60.97 tok/s in all (solo 59.81 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 11270 ms (44.2 ms a step): 22.63 tok/s a sequence, 181.01 tok/s in all (solo 59.81 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 99450 joins, 98651 lane waits skipped (99.2 %); waited for a CPU-possible pick 799, a host-answered helper 0, the ring guard 0
+-- fx-tp3h3-NLW-2 rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+batch-test B=1: 255 steps in 4169 ms (16.3 ms a step): 61.17 tok/s a sequence, 61.17 tok/s in all (solo 60.05 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 11253 ms (44.1 ms a step): 22.66 tok/s a sequence, 181.29 tok/s in all (solo 60.05 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 99450 joins, 98651 lane waits skipped (99.2 %); waited for a CPU-possible pick 799, a host-answered helper 0, the ring guard 0
+-- fx-tp3h3-NLW-3 rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+batch-test B=1: 255 steps in 4172 ms (16.4 ms a step): 61.12 tok/s a sequence, 61.12 tok/s in all (solo 59.30 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 11335 ms (44.4 ms a step): 22.50 tok/s a sequence, 179.98 tok/s in all (solo 59.30 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 99450 joins, 98651 lane waits skipped (99.2 %); waited for a CPU-possible pick 799, a host-answered helper 0, the ring guard 0
+-- fx-tp4h4-ABDDS-1 rc=0
+batch-test B=1: 255 steps in 3886 ms (15.2 ms a step): 65.62 tok/s a sequence, 65.62 tok/s in all (solo 64.62 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 10507 ms (41.2 ms a step): 24.27 tok/s a sequence, 194.16 tok/s in all (solo 64.62 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- fx-tp4h4-ABDDS-2 rc=0
+batch-test B=1: 255 steps in 3869 ms (15.2 ms a step): 65.92 tok/s a sequence, 65.92 tok/s in all (solo 64.79 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 10461 ms (41.0 ms a step): 24.38 tok/s a sequence, 195.01 tok/s in all (solo 64.79 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- fx-tp4h4-ABDDS-3 rc=0
+batch-test B=1: 255 steps in 3869 ms (15.2 ms a step): 65.92 tok/s a sequence, 65.92 tok/s in all (solo 64.74 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 10775 ms (42.3 ms a step): 23.67 tok/s a sequence, 189.34 tok/s in all (solo 64.74 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- fx-tp4h4-NLW-1 rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+batch-test B=1: 255 steps in 3858 ms (15.1 ms a step): 66.10 tok/s a sequence, 66.10 tok/s in all (solo 64.95 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 11152 ms (43.7 ms a step): 22.87 tok/s a sequence, 182.93 tok/s in all (solo 64.95 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 99450 joins, 99450 lane waits skipped (100.0 %); waited for a CPU-possible pick 0, a host-answered helper 0, the ring guard 0
+-- fx-tp4h4-NLW-2 rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+batch-test B=1: 255 steps in 3853 ms (15.1 ms a step): 66.18 tok/s a sequence, 66.18 tok/s in all (solo 64.97 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 10824 ms (42.4 ms a step): 23.56 tok/s a sequence, 188.47 tok/s in all (solo 64.97 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 99450 joins, 99450 lane waits skipped (100.0 %); waited for a CPU-possible pick 0, a host-answered helper 0, the ring guard 0
+-- fx-tp4h4-NLW-3 rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+batch-test B=1: 255 steps in 3851 ms (15.1 ms a step): 66.21 tok/s a sequence, 66.21 tok/s in all (solo 65.05 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=8: 255 steps in 10984 ms (43.1 ms a step): 23.22 tok/s a sequence, 185.72 tok/s in all (solo 65.05 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 99450 joins, 99450 lane waits skipped (100.0 %); waited for a CPU-possible pick 0, a host-answered helper 0, the ring guard 0
+-- id-tp3h3-ABDDS rc=0
+decode: 256 tokens in 4279 ms (59.59 tok/s); CPU lane: 31 of 61200 experts; the cache moved 0 (0 in all)
+-- id-tp3h3-NLW rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+decode: 256 tokens in 4256 ms (59.91 tok/s); CPU lane: 31 of 61200 experts; the cache moved 0 (0 in all)
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 9945 joins, 9915 lane waits skipped (99.7 %); waited for a CPU-possible pick 30, a host-answered helper 0, the ring guard 0
+-- id-tp4h4-ABDDS rc=0
+decode: 256 tokens in 3916 ms (65.12 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-tp4h4-INJ rc=0
+ddexp: DS4_INJECT_EMPTY=lead_moe:5: 5 empty kernels a trunk layer on lead_moe (trunk layers 40)
+decode: 256 tokens in 4040 ms (63.11 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp inject (DS4_INJECT_EMPTY): 51000 empty kernels launched, 51000 in windows of one row (5 a trunk layer, segment 1, device -1)
+-- id-tp4h4-LD50 rc=0
+ddexp: DS4_DD_LANE_DELAY_US=50: the lane spins that long before each DD request's answer word
+decode: 256 tokens in 3943 ms (64.67 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp lane delay (DS4_DD_LANE_DELAY_US): 50 us before 9945 DD answers
+-- id-tp4h4-NLW rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+decode: 256 tokens in 3905 ms (65.30 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+ddexp no-lane-wait (DS4_DD_NO_LANE_WAIT): 9945 joins, 9945 lane waits skipped (100.0 %); waited for a CPU-possible pick 0, a host-answered helper 0, the ring guard 0
+-- id-tp4h4-TS rc=0
+ddexp: DS4_TSTAMP=1: stamps in publish / ar_sum / dd_join / the helpers' head and flag kernels and the lane (decode windows of one row); dumped at the end to ./tstamp-*.txt
+decode: 256 tokens in 3929 ms (64.90 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- qc16-tp3h3-ABDDS rc=0
+-- qc16-tp3h3-NLW rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+-- qc16-tp4h4-ABDDS rc=0
+-- qc16-tp4h4-INJ rc=0
+ddexp: DS4_INJECT_EMPTY=lead_moe:5: 5 empty kernels a trunk layer on lead_moe (trunk layers 40)
+-- qc16-tp4h4-LD50 rc=0
+ddexp: DS4_DD_LANE_DELAY_US=50: the lane spins that long before each DD request's answer word
+-- qc16-tp4h4-NLW rc=0
+ddexp: DS4_DD_NO_LANE_WAIT=1: a DD join waits for the lane's answer only when it can carry a CPU row (a pick with no VRAM slot and no owner, a host-answered helper, or the lane > 32 requests behind)
+-- qc16-tp4h4-TS rc=0
+ddexp: DS4_TSTAMP=1: stamps in publish / ar_sum / dd_join / the helpers' head and flag kernels and the lane (decode windows of one row); dumped at the end to ./tstamp-*.txt
+-- ts rc=0
+ddexp: DS4_TSTAMP=1: stamps in publish / ar_sum / dd_join / the helpers' head and flag kernels and the lane (decode windows of one row); dumped at the end to <path>
+decode: 64 tokens in 886 ms (71.09 tok/s); CPU lane: 0 of 15120 experts; the cache moved 0 (0 in all)

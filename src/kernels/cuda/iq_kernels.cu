@@ -54,9 +54,11 @@ __device__ __forceinline__ uint32_t unpack_ksigns(const uint8_t v) {
     return s * 0x01010101;
 }
 __device__ __forceinline__ int2 get_int_from_table_16(const int& q4, const int8_t* table) {
-#if defined(STRATA_HIP_GFX906)
+#if defined(STRATA_HIP_GFX906) || defined(__gfx906__)
     // AMD: llama.cpp's HIP lookup (vecdotq.cuh) - v_perm_b32 takes 3-bit byte indices, so the low and high halves
     // of the table are looked up and the index MSB picks between them: 4 perms per 8 values.
+    // (STRATA_HIP_GFX906: the gfx906 build; __gfx906__: the gfx906 device pass of the helper fat binary,
+    // STRATA_HIP_HELPER_ARCHS - the same bytes come out either way; this is the path the MI50 build validated.)
     const uint32_t* v32 = reinterpret_cast<const uint32_t*>(table);
     const uint32_t q_even = (uint32_t) q4, q_odd = (uint32_t) q4 >> 4;
     const uint32_t el = __builtin_amdgcn_perm(v32[1], v32[0], q_even & 0x07070707u);
@@ -5540,15 +5542,141 @@ size_t native_expert_scratch_bytes(int64_t cap, int64_t n_ff) {
 #else
 #define STRATA_EXP_LAYOUTS 0
 #endif
-#if defined(STRATA_HIP_GFX906)
-constexpr int kExpModeDefault = 7;
-constexpr int kExpFallback = 2;   // modes 5-8 on a format without an LDS kernel: R2
-constexpr bool kExpLds16 = false; // IQ2_XXS gate/up: R2 as measured on gfx906
+// dflash2-kern: Strix Halo (gfx1151) takes mode 8 (gate/up + SwiGLU + q8_1 in one launch, the group's activations in LDS) for the
+// IQ packs' gate/up: native_expert_bench on the IQ3_S pack's real rows, 45 groups of one entry (a 8-token verify window's call),
+// gate/up -25% (IQ2_S), -8% (IQ3_XXS), -6% (IQ3_S), bitwise equal to mode 0.  STRATA_GFX1151_EXP8=0 keeps the old layout.
+bool gfx1151_exp8(int dev) {
+#if defined(__HIPCC__) && !defined(STRATA_HIP_GFX906)
+    static int per_dev[64];   // 0 unknown, 1 no, 2 yes
+    if (dev < 0 || dev >= 64) return false;
+    if (!per_dev[dev]) {
+        const char* v = std::getenv("STRATA_GFX1151_EXP8");
+        cudaDeviceProp p;
+        per_dev[dev] = !(v != nullptr && v[0] == '0') && cudaGetDeviceProperties(&p, dev) == cudaSuccess &&
+                               strata::kernels::gfx_arch_is_gfx1151(p.gcnArchName) ? 2 : 1;
+        (void) cudaGetLastError();
+    }
+    return per_dev[dev] == 2;
 #else
-constexpr int kExpModeDefault = 0;
-constexpr int kExpFallback = 0;   // ... the CUDA layout (V100, IQ2_XXS gate/up: R2 183 us vs 113)
-constexpr bool kExpLds16 = true;  // IQ2_XXS gate/up in LDS too
+    (void) dev;
+    return false;
 #endif
+}
+
+// (docs/dsv41/cards/EB-01.md): the expert-kernel policy is decided PER DEVICE at run time, not per build.  One HIP
+// binary may carry wave32 code (gfx11 / gfx12, CMAKE_HIP_ARCHITECTURES) and wave64 helper code (gfx906,
+// STRATA_HIP_HELPER_ARCHS) at once, and the helper expert caches (--expert-cache-device1..3) run this very function on
+// the wave64 cards.  A wave64 device takes exactly the policy the gfx906 build (STRATA_HIP_GFX906) has always had, so
+// an MI50 helper runs the code path validated in that build; a wave32 (or CUDA) device keeps the policy it had.  The
+// gfx906 build itself keeps its constants without a device query.  Cached once per device ordinal (64 at most, as the
+// other per-device tables in this file).
+struct ExpDevPolicy {
+    bool wave64 = false;        // hipDeviceProp_t::warpSize == 64 (always false on CUDA)
+    int mode_default = 0;       // exp_mode() when neither STRATA_EXP_MODE nor native_expert_set_mode forces one
+    int fallback = 0;           // modes 5-8 on a format without an LDS kernel: 2 (R2) on wave64, 0 (the CUDA layout) elsewhere
+                                // (V100, IQ2_XXS gate/up: R2 183 us vs 113)
+    bool lds16 = true;          // IQ2_XXS gate/up in LDS too (wave64: no, R2 as measured on gfx906)
+    bool stride_mode0 = true;   // a call that strides its groups (grid_groups < cap_groups) keeps the CUDA layout (not on wave64)
+    bool swiglu_fused = true;   // SwiGLU + q8_1 in one pass (wave64: the separate passes unless STRATA_HIP_SWIGLU_FUSED=1)
+    bool v2k = false;           // STRATA_EXPERT_V2K's default when the variable is unset: gfx12 only, never on wave64
+};
+constexpr int kExpModeWave64 = 7;   // the gfx906 build's default mode and its companions (the LDS gate/up + down, R2 fallback)
+
+ExpDevPolicy exp_dev_policy_of(int dev) {
+    ExpDevPolicy p;
+#if defined(STRATA_HIP_GFX906)
+    (void) dev;
+    p.wave64 = true;   // the gfx906 build: every device it runs on is wave64 (generate.cpp refuses the others at start)
+#elif defined(__HIPCC__)
+    cudaDeviceProp prop;
+    if (cudaGetDeviceProperties(&prop, dev) == cudaSuccess) {
+        p.wave64 = prop.warpSize == 64;
+        // STRATA_EXPERT_V2K unset: on by default on gfx12 (MODEL-UPDATE; R9700, UD-Q4_K_XL decode, 5 interleaved pairs:
+        // story +1.2% 5/5, code +0.8% 5/5, after 6K +0.2% 4/5), off elsewhere (not measured on other cards)
+        p.v2k = !p.wave64 && strata::kernels::gfx_arch_is_gfx12(prop.gcnArchName);
+    } else {
+        (void) cudaGetLastError();   // no properties: the wave32 policy, and the device check at start has already refused it
+    }
+#else
+    (void) dev;   // CUDA: warpSize is 32 by definition
+#endif
+    if (p.wave64) {
+        p.mode_default = kExpModeWave64;
+        p.fallback = 2;
+        p.lds16 = false;
+        p.stride_mode0 = false;
+        // gfx906: the separate SwiGLU and q8_1 passes stay the default (the A/B baseline); the RDNA one-pass kernel
+        // (bitwise the same) with STRATA_HIP_SWIGLU_FUSED=1
+        p.swiglu_fused = env_on("STRATA_HIP_SWIGLU_FUSED");
+        return p;
+    }
+    // wave32 and CUDA: mode 0 (the CUDA layout) unless the card below takes another
+    int mode = 0;
+    if (gfx1151_exp8(dev)) {
+        mode = 8;
+    } else {
+        int major = 0, minor = 0;
+        cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
+        cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, dev);
+        (void) cudaGetLastError();
+        // Volta (sm_70): mode 8, the grid and the group's activations in shared memory with SwiGLU + q8_1 fused
+        // (V100-SXM2, a verify window's VRAM call: 227 -> 159 us); every other CUDA card keeps the CUDA layout
+        const char* sm70 = std::getenv("STRATA_SM70_TABLE");   // PR 1401: Volta's mode 8 is opt-in until confirmed on a V100
+        // Pascal GP100 (sm_60): mode 8 too, on by default (Tesla P100: bitwise equal on the model's layers, the down
+        // projection 116 -> 94 us and IQ3_S gate/up 360 -> 229 us in a 28-group VRAM call); STRATA_SM60_TABLE=0 keeps the CUDA layout
+        const char* sm60 = std::getenv("STRATA_SM60_TABLE");
+        const bool p100 = major == 6 && minor == 0 && (sm60 == nullptr || std::atoi(sm60) != 0);
+        // Pascal with dp4a (sm_61): mode 8 as well, on by default (Tesla P40, native_expert_bench on the IQ3_S pack's
+        // layers, an 18-group call at 2 tokens: IQ3_S 390 -> 255 us, IQ3_XXS 345 -> 252 us, IQ2_S 290 -> 238 us,
+        // IQ4_XS 328 -> 261 us, bitwise equal); STRATA_SM61_TABLE=0 keeps the CUDA layout
+        const char* sm61 = std::getenv("STRATA_SM61_TABLE");
+        const bool p40 = major == 6 && minor == 1 && (sm61 == nullptr || std::atoi(sm61) != 0);
+        // Turing (sm_75): mode 4 (native_expert_bench, real Q2_0 rows of Flash-Next, bitwise equal to mode 0 on an RTX
+        // 2080 Ti: 10 experts x 1 entry 47.3 -> 41.4 us, 30 x 1 120.2 -> 100.2 us); the down projection keeps the CUDA
+        // layout in windows of 4+ tokens (sm75_down_em below).  STRATA_SM75_EXP=0 keeps the CUDA layout.
+        // (off unless STRATA_SM75_PERF=1; STRATA_SM75_EXP=0 / 1 forces it off / on)
+        const bool turing = strata::sm75_switch("STRATA_SM75_EXP", major, minor);
+        mode = (major == 7 && minor == 0 && sm70 != nullptr && std::atoi(sm70) != 0) || p100 || p40 ? 8 : turing ? 4 : 0;
+    }
+    p.mode_default = mode;
+    return p;
+}
+
+// The current device's policy.  The 64-entry cache is filled once per device (std::call_once: native_expert_grouped
+// runs on several threads when several helper caches are open); without a current device (cudaGetDevice failed) the
+// wave32 policy, which is what every build before this one had.
+const ExpDevPolicy& exp_dev_policy() {
+    static ExpDevPolicy per_dev[64];
+    static std::once_flag once[64];
+    static const ExpDevPolicy no_device{};
+    int dev = 0;
+    if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) { (void) cudaGetLastError(); return no_device; }
+    std::call_once(once[dev], [dev] { per_dev[dev] = exp_dev_policy_of(dev); });
+    return per_dev[dev];
+}
+
+// A forced mode (STRATA_EXP_MODE, native_expert_set_mode) that the device cannot run: mode 1 (W64, row_dot64's
+// width-64 butterfly) needs a 64-lane wavefront; on wave32 it read the other wave's lanes and was SILENTLY wrong when the
+// variable was read process-wide.  Loud, like check(): the message names the device, then exit.
+void exp_mode_refuse_if_wrong(int mode, const ExpDevPolicy& P) {
+    if (mode == 1 && !P.wave64) {
+        int dev = -1;
+        cudaGetDevice(&dev);
+        std::fprintf(stderr, "native_expert_grouped: STRATA_EXP_MODE=1 (W64, one row per 64-lane wavefront) needs a wave64 "
+                             "device (gfx906); device %d is wave32.  Unset STRATA_EXP_MODE or choose 0, 2, 4, 5-8.\n", dev);
+        std::exit(1);
+    }
+}
+
+// STRATA_EXPERT_V2K: set, the variable decides for every device (as before); unset, the device's default (gfx12 on,
+// wave64 off, elsewhere off)
+bool v2k_on(const ExpDevPolicy& P) {
+    static const int env = [] {
+        const char* v = std::getenv("STRATA_EXPERT_V2K");
+        return v != nullptr && v[0] != '\0' ? (v[0] == '1' ? 1 : 0) : -1;
+    }();
+    return env >= 0 ? env == 1 : P.v2k;
+}
 #if STRATA_EXP_LAYOUTS
 // ---- AMD layouts for the grouped native experts (STRATA_EXP_MODE; 0 = the CUDA one above).
 // 1 (W64): a row per 64-lane wavefront - 4x the wavefronts, ~1-2 calls per lane, a 64-lane butterfly.
@@ -5562,11 +5690,14 @@ __device__ __forceinline__ float row_dot64(const uint8_t* row, const block_q8_1*
         const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
         s += F::dot(row, x + kbx * (F::qk / 32), kbx, iqs);
     }
+#if defined(STRATA_HIP_GFX906) || defined(__gfx906__)
+    // a real 64-lane wavefront (the gfx906 build, or the gfx906 device pass of the helper fat binary)
 #pragma unroll
-#if defined(__HIPCC__)
     for (int o = 32; o > 0; o >>= 1) s += __shfl_xor(s, o, 64);
 #else
-    __trap();   // a 64-lane wavefront: mode 1 is gfx906's only
+    // wave32 (gfx10+, CUDA): a width-64 shuffle would read the other wave.  Never launched here: exp_mode() refuses
+    // STRATA_EXP_MODE=1 on a wave32 device before any launch (per-device policy).
+    __trap();
 #endif
     return s;
 }
@@ -6123,63 +6254,20 @@ __global__ void __launch_bounds__(256) native_gu_fused_kernel(const unsigned lon
     }
 }
 
-// dflash2-kern: Strix Halo (gfx1151) takes mode 8 (gate/up + SwiGLU + q8_1 in one launch, the group's activations in LDS) for the
-// IQ packs' gate/up: native_expert_bench on the IQ3_S pack's real rows, 45 groups of one entry (a 8-token verify window's call),
-// gate/up -25% (IQ2_S), -8% (IQ3_XXS), -6% (IQ3_S), bitwise equal to mode 0.  STRATA_GFX1151_EXP8=0 keeps the old layout.
-bool gfx1151_exp8(int dev) {
-#if defined(__HIPCC__) && !defined(STRATA_HIP_GFX906)
-    static int per_dev[64];   // 0 unknown, 1 no, 2 yes
-    if (dev < 0 || dev >= 64) return false;
-    if (!per_dev[dev]) {
-        const char* v = std::getenv("STRATA_GFX1151_EXP8");
-        cudaDeviceProp p;
-        per_dev[dev] = !(v != nullptr && v[0] == '0') && cudaGetDeviceProperties(&p, dev) == cudaSuccess &&
-                               strata::kernels::gfx_arch_is_gfx1151(p.gcnArchName) ? 2 : 1;
-        (void) cudaGetLastError();
-    }
-    return per_dev[dev] == 2;
-#else
-    (void) dev;
-    return false;
-#endif
-}
+// (gfx1151_exp8 and the per-card default modes moved into exp_dev_policy_of above: one per-device policy)
 int g_exp_mode = -1;   // native_expert_set_mode (the bench); -1 = STRATA_EXP_MODE, else the card's default
+// The CURRENT device's expert mode: native_expert_set_mode's, else STRATA_EXP_MODE's, else the device's default
+// (exp_dev_policy: 7 on a wave64 device, the card's CUDA / RDNA default otherwise).  A forced mode the device cannot run
+// (mode 1 on wave32) stops the process here, before any launch.
 int exp_mode() {
     static const int m = [] { const char* v = std::getenv("STRATA_EXP_MODE"); return v ? std::atoi(v) : -1; }();
-    if (g_exp_mode >= 0) return g_exp_mode;
-    if (m >= 0) return m;
-#if defined(STRATA_HIP_GFX906)
-    return kExpModeDefault;
-#else
-    // Volta (sm_70): mode 8, the grid and the group's activations in shared memory with SwiGLU + q8_1 fused
-    // (V100-SXM2, a verify window's VRAM call: 227 -> 159 us); every other CUDA card keeps the CUDA layout
-    static int per_dev[64];   // 0 unknown, else mode + 1
-    int dev = 0;
-    if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) return kExpModeDefault;
-    if (!per_dev[dev] && gfx1151_exp8(dev)) per_dev[dev] = 1 + 8;
-    if (!per_dev[dev]) {
-        int major = 0, minor = 0;
-        cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
-        cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, dev);
-        const char* sm70 = std::getenv("STRATA_SM70_TABLE");   // PR 1401: Volta's mode 8 is opt-in until confirmed on a V100
-        // Pascal GP100 (sm_60): mode 8 too, on by default (Tesla P100: bitwise equal on the model's layers, the down
-        // projection 116 -> 94 us and IQ3_S gate/up 360 -> 229 us in a 28-group VRAM call); STRATA_SM60_TABLE=0 keeps the CUDA layout
-        const char* sm60 = std::getenv("STRATA_SM60_TABLE");
-        const bool p100 = major == 6 && minor == 0 && (sm60 == nullptr || std::atoi(sm60) != 0);
-        // Pascal with dp4a (sm_61): mode 8 as well, on by default (Tesla P40, native_expert_bench on the IQ3_S pack's
-        // layers, an 18-group call at 2 tokens: IQ3_S 390 -> 255 us, IQ3_XXS 345 -> 252 us, IQ2_S 290 -> 238 us,
-        // IQ4_XS 328 -> 261 us, bitwise equal); STRATA_SM61_TABLE=0 keeps the CUDA layout
-        const char* sm61 = std::getenv("STRATA_SM61_TABLE");
-        const bool p40 = major == 6 && minor == 1 && (sm61 == nullptr || std::atoi(sm61) != 0);
-        // Turing (sm_75): mode 4 (native_expert_bench, real Q2_0 rows of Flash-Next, bitwise equal to mode 0 on an RTX
-        // 2080 Ti: 10 experts x 1 entry 47.3 -> 41.4 us, 30 x 1 120.2 -> 100.2 us); the down projection keeps the CUDA
-        // layout in windows of 4+ tokens (sm75_down_em below).  STRATA_SM75_EXP=0 keeps the CUDA layout.
-        // (off unless STRATA_SM75_PERF=1; STRATA_SM75_EXP=0 / 1 forces it off / on)
-        const bool turing = strata::sm75_switch("STRATA_SM75_EXP", major, minor);
-        per_dev[dev] = 1 + ((major == 7 && minor == 0 && sm70 != nullptr && std::atoi(sm70) != 0) || p100 || p40 ? 8 : turing ? 4 : kExpModeDefault);
+    const ExpDevPolicy& P = exp_dev_policy();
+    const int forced = g_exp_mode >= 0 ? g_exp_mode : m;
+    if (forced >= 0) {
+        exp_mode_refuse_if_wrong(forced, P);
+        return forced;
     }
-    return per_dev[dev] - 1;
-#endif
+    return P.mode_default;
 }
 #endif
 int g_exp_phase = 0;   // the bench: 0 all, 1 gate/up + swiglu + quantize only, 2 down only, 3 gate/up only
@@ -6256,6 +6344,8 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
     float* h = (float*) ((uint8_t*) scratch + 2 * fa);
     block_q8_1* hq = (block_q8_1*) ((uint8_t*) scratch + 3 * fa);
     const auto* X = (const block_q8_1*) x_q8_1;
+    // the CURRENT device's expert-kernel policy (wave64 helper: the gfx906 build's choices; wave32 / CUDA: as before)
+    const ExpDevPolicy& P = exp_dev_policy();
 #if !STRATA_EXPERT_NIBBLE_BUILT
     if (L.gu_nib) {   // STRATA_EXPERT_NIBBLE's slots: the switch is refused at start in a build without the kernels
         std::fprintf(stderr, "native_expert_grouped: 4-bit gate/up slots are not built into this engine\n");
@@ -6280,21 +6370,9 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
     // stream B: UD-Q4_K_XL's Q4_K / Q5_K gate/up and Q5_1 / Q8_0 down (see S27 above)
     // MODEL-UPDATE: on by default on gfx12 (every output the old kernels' bits; R9700, UD-Q4_K_XL decode, 5 interleaved
     // pairs: story +1.2% 5/5, code +0.8% 5/5, after 6K +0.2% 4/5); STRATA_EXPERT_V2K=0 turns it off, =1 turns it on
-    // elsewhere (not measured on other cards)
-    static const bool v2k = [] {
-        const char* v = std::getenv("STRATA_EXPERT_V2K");
-        if (v != nullptr && v[0] != '\0') return v[0] == '1';
-#if defined(__HIPCC__) && !defined(STRATA_HIP_GFX906)
-        int dev = 0;
-        cudaDeviceProp p;
-        const bool g12 = cudaGetDevice(&dev) == cudaSuccess && cudaGetDeviceProperties(&p, dev) == cudaSuccess &&
-                         strata::kernels::gfx_arch_is_gfx12(p.gcnArchName);
-        (void) cudaGetLastError();
-        return g12;
-#else
-        return false;
-#endif
-    }();
+    // elsewhere (not measured on other cards).  decided per device (exp_dev_policy_of), not once per process - a
+    // process with a gfx12 primary and a gfx906 helper would otherwise have given the helper the first card's answer.
+    const bool v2k = v2k_on(P);
     // Qwen3.6-35B-A3B (n_embd 2048, n_ff 512, Q4_K / Q5_K gate+up, Q5_K down): the same kernels, the geometry only sizes the grid
     const bool q36geo = L.n_embd == 2048 && L.n_ff == 512 && L.d_type == 13;
     if (v2k && (L.gu_type == 12 || L.gu_type == 13) &&
@@ -6326,16 +6404,13 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
                          gu_qk(L.gu_type) != 128 && L.gu_type != 12 && L.gu_type != 13) ? 16 : GU_ROWS;   // qk 128 (APR trellis): no sub-16 rows, see launch_gu
     const dim3 ggu((unsigned) ((2 * L.n_ff + gu_rows - 1) / gu_rows), (unsigned) gy);
 #if STRATA_EXP_LAYOUTS
-#if defined(STRATA_HIP_GFX906)
-    const int em0 = exp_mode();
-#else
-    // CUDA: the AMD layouts launch a block row per possible group, so a call that strides (a verify window's PCIe
-    // call, grid_groups 1..cap) keeps the CUDA layout: V100, 0 groups 11.3 vs 6.5 us, 1 group of 2 29.6 vs 21.3
-    const int em0 = (grid_groups > 0 && grid_groups < cap_groups) ? 0 : exp_mode();
-#endif
+    // wave64 (the gfx906 build's rule): the device's mode as is.  Elsewhere the AMD layouts launch a block row per
+    // possible group, so a call that strides (a verify window's PCIe call, grid_groups 1..cap) keeps the CUDA layout:
+    // V100, 0 groups 11.3 vs 6.5 us, 1 group of 2 29.6 vs 21.3.  (per device, P.stride_mode0)
+    const int em0 = (P.stride_mode0 && grid_groups > 0 && grid_groups < cap_groups) ? 0 : exp_mode();
 #endif
 #if STRATA_EXP_LAYOUTS
-    const bool fused_gu = !nib_layout(L) && em0 == 8 && ((kExpLds16 && L.gu_type == 16) || L.gu_type == 18 || L.gu_type == 21 || L.gu_type == 22 || L.gu_type == 23) &&
+    const bool fused_gu = !nib_layout(L) && em0 == 8 && ((P.lds16 && L.gu_type == 16) || L.gu_type == 18 || L.gu_type == 21 || L.gu_type == 22 || L.gu_type == 23) &&
                           L.n_ff % 32 == 0;
     if (fused_gu && g_exp_phase != 2) {
         const dim3 gl((unsigned) (L.n_ff / 32), (unsigned) cap_groups);
@@ -6372,7 +6447,7 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
     if (g_exp_phase != 2 && !gs_done) {
 #endif
 #if STRATA_EXP_LAYOUTS
-    const bool lds_gu = !nib_layout(L) && (em0 == 5 || em0 == 6 || em0 == 7 || em0 == 8) && ((kExpLds16 && L.gu_type == 16) || L.gu_type == 18 || L.gu_type == 21 || L.gu_type == 22 || L.gu_type == 23);
+    const bool lds_gu = !nib_layout(L) && (em0 == 5 || em0 == 6 || em0 == 7 || em0 == 8) && ((P.lds16 && L.gu_type == 16) || L.gu_type == 18 || L.gu_type == 21 || L.gu_type == 22 || L.gu_type == 23);
     if (lds_gu) {
         const dim3 gl((unsigned) ((2 * L.n_ff + LDS_RB - 1) / LDS_RB), (unsigned) cap_groups);
         const size_t sh = (size_t) LDS_NT * (size_t) (L.n_embd / 32) * sizeof(block_q8_1);
@@ -6384,7 +6459,7 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
             default: if (em0 >= 7) native_gu_lds_kernel<22, 1, true><<<gl, 256, sh, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); else if (em0 == 6) native_gu_lds_kernel<22, 1><<<gl, 256, sh, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); else native_gu_lds_kernel<22, 0><<<gl, 256, sh, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
         }
     } else {
-    const int em = em0 >= 5 ? kExpFallback : em0;
+    const int em = em0 >= 5 ? P.fallback : em0;
     const dim3 ggu_amd((unsigned) ((2 * L.n_ff + (em == 1 ? 3 : em == 4 ? 31 : 15)) / (em == 1 ? 4 : em == 4 ? 32 : 16)), (unsigned) cap_groups);
 #define STRATA_GU_AMD(T) \
     case T: if (em == 1) native_gu_amd_kernel<T, 1><<<ggu_amd, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); \
@@ -6420,14 +6495,10 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
     check("native_expert_grouped/gu");
     if (g_exp_phase == 3) return;   // the bench: gate/up only
     const long long nh = (long long) cap_entries * L.n_ff;
-#if defined(STRATA_HIP_GFX906)
-    // gfx906: the separate SwiGLU and q8_1 passes stay the default (the A/B baseline); the RDNA one-pass
-    // kernel (bitwise the same) with STRATA_HIP_SWIGLU_FUSED=1
-    static const bool sw_fused = env_on("STRATA_HIP_SWIGLU_FUSED");
-    const bool sw_v1 = v1 || !sw_fused;
-#else
-    const bool sw_v1 = v1;
-#endif
+    // wave64 (the gfx906 build's rule): the separate SwiGLU and q8_1 passes stay the default (the A/B baseline), the
+    // RDNA one-pass kernel (bitwise the same) with STRATA_HIP_SWIGLU_FUSED=1; wave32 / CUDA: the one-pass kernel.
+    // (per device, P.swiglu_fused)
+    const bool sw_v1 = v1 || !P.swiglu_fused;
     // APR: Hadamard-folded down weights take the rotated h, so h exists as floats first (the separate passes)
     if (sw_v1 || L.had_block > 0) {
         swiglu_entries_kernel<<<(unsigned) ((nh + 255) / 256), 256, 0, s>>>(gate, up, h, nh);
@@ -6466,7 +6537,7 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
         check("native_expert_grouped/down");
         return;
     }
-    const int em = em0d >= 5 ? kExpFallback : em0d;
+    const int em = em0d >= 5 ? P.fallback : em0d;
     const dim3 gd_amd((unsigned) ((L.n_embd + (em == 1 ? 3 : em == 4 ? 31 : 15)) / (em == 1 ? 4 : em == 4 ? 32 : 16)), (unsigned) cap_groups);
 #define STRATA_D_AMD(T) \
     case T: if (em == 1) native_down_amd_kernel<T, 1><<<gd_amd, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out); \

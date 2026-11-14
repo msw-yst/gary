@@ -1,0 +1,107 @@
+fusionrun fusion-20261111T004545Z - NEW <path> (+ B10E: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path>; ABDDS: DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1); tp4h4: --gpus 0,1,2,7 --tp 4 --helper-device 3,4,5,6; N 256; arms OFF AP1 AP3 AM1 ALL
+== identity (pass: every one IDENTICAL; '-' = that reference missing)
+ID OFF vs SKREF ABDDS (best11): decode IDENTICAL | bt IDENTICAL (rc=0)
+ID AP1 vs OFF: decode IDENTICAL | drafter IDENTICAL | bt IDENTICAL | check lines 8 | 
+ID AP3 vs OFF: decode IDENTICAL | drafter IDENTICAL | bt IDENTICAL | check lines 8 | 
+ID AM1 vs OFF: decode IDENTICAL | drafter IDENTICAL | bt IDENTICAL | check lines 4 | 
+ID ALL vs OFF: decode IDENTICAL | drafter IDENTICAL | bt IDENTICAL | check lines 16 | 
+== the flags' load-time check lines (every flag-on arm must show its check; FAILED = stop)
+      3 ds4: CUDA0 DS4_AR_POST check (16 rows): the folded hc_post (and put) against the launches, random / edges, byte for byte, every guard intact
+      3 ds4: CUDA0 DS4_AR_POST check (1 rows): the folded hc_post (and put) against the launches, random / edges, byte for byte, every guard intact
+      1 ds4: CUDA0 DS4_ATTN_MERGE check (16 rows): 4 runs (first / last layers; q's norm with and without its int8 rows): q, ext, the ring, the int8 rows byte for byte, every guard intact
+      2 ds4: CUDA0 DS4_ATTN_MERGE check (1 rows): 4 runs (first / last layers; q's norm with and without its int8 rows): q, ext, the ring, the int8 rows byte for byte, every guard intact
+      3 ds4: CUDA1 DS4_AR_POST check (16 rows): the folded hc_post (and put) against the launches, random / edges, byte for byte, every guard intact
+      3 ds4: CUDA1 DS4_AR_POST check (1 rows): the folded hc_post (and put) against the launches, random / edges, byte for byte, every guard intact
+      1 ds4: CUDA1 DS4_ATTN_MERGE check (16 rows): 4 runs (first / last layers; q's norm with and without its int8 rows): q, ext, the ring, the int8 rows byte for byte, every guard intact
+      2 ds4: CUDA1 DS4_ATTN_MERGE check (1 rows): 4 runs (first / last layers; q's norm with and without its int8 rows): q, ext, the ring, the int8 rows byte for byte, every guard intact
+      3 ds4: CUDA2 DS4_AR_POST check (16 rows): the folded hc_post (and put) against the launches, random / edges, byte for byte, every guard intact
+      3 ds4: CUDA2 DS4_AR_POST check (1 rows): the folded hc_post (and put) against the launches, random / edges, byte for byte, every guard intact
+      1 ds4: CUDA2 DS4_ATTN_MERGE check (16 rows): 4 runs (first / last layers; q's norm with and without its int8 rows): q, ext, the ring, the int8 rows byte for byte, every guard intact
+      2 ds4: CUDA2 DS4_ATTN_MERGE check (1 rows): 4 runs (first / last layers; q's norm with and without its int8 rows): q, ext, the ring, the int8 rows byte for byte, every guard intact
+      3 ds4: CUDA7 DS4_AR_POST check (16 rows): the folded hc_post (and put) against the launches, random / edges, byte for byte, every guard intact
+      3 ds4: CUDA7 DS4_AR_POST check (1 rows): the folded hc_post (and put) against the launches, random / edges, byte for byte, every guard intact
+      1 ds4: CUDA7 DS4_ATTN_MERGE check (16 rows): 4 runs (first / last layers; q's norm with and without its int8 rows): q, ext, the ring, the int8 rows byte for byte, every guard intact
+      2 ds4: CUDA7 DS4_ATTN_MERGE check (1 rows): 4 runs (first / last layers; q's norm with and without its int8 rows): q, ext, the ring, the int8 rows byte for byte, every guard intact
+      1 ds4: DS4_AR_POST=1: a window's all-reduce on the one-phase host path with hc_post folded into the sum kernel (checked at load)
+      2 ds4: DS4_AR_POST=3: a window's all-reduce on the one-phase host path with hc_post and the put folded into the sum kernel (checked at load)
+      1 ds4: DS4_ATTN_MERGE=1: a decoded token's q norm + ring rows + KV finish in one launch, q RoPE + the ring's new row in another (checked at load)
+      1 ds4: DS4_ATTN_MERGE=2: a decoded token's q norm + ring rows + KV finish in one launch, q RoPE + the ring's new row in another; a window's rows too (checked at load)
+== b1 (MEASURED; B1 plain decode, 64-id prompt, N 256, --dspark off; ms a token mean [min-max] nREPS | vs OFF | prediction)
+B1 OFF: 14.345 [14.325-14.362] n3 | +0.000 ms (+0.0%) NOT SEPARABLE FROM NOISE | predicted -
+B1 AP1: 14.405 [14.388-14.415] n3 | +0.060 ms (+0.4%) | predicted -0.20 .. -0.35 (central -0.25)
+B1 AP3: 14.143 [14.110-14.164] n3 | -0.202 ms (-1.4%) | predicted -0.40 .. -0.70 (central -0.50)
+B1 AM1: 13.884 [13.860-13.910] n3 | -0.461 ms (-3.2%) | predicted -0.30 .. -0.70 (central -0.45)
+B1 ALL: 13.678 [13.659-13.716] n3 | -0.667 ms (-4.6%) | predicted -0.70 .. -1.40 (central -0.95)
+== bd (MEASURED; the same with the drafter on, conf 0.4 block 3; ms a token)
+BD OFF: 10.764 [10.666-10.949] n3
+BD ALL: 10.305 [10.290-10.320] n3
+== kt (MEASURED, traced: launches a token a card, decode tokens; prediction OFF lead 1463.5 / members 1358.5, ALL -280 every card (lead 1463.5 -> 1183.5, members 1358.5 -> 1078.5))
+-- kt OFF
+-- kt ALL
+TRIPPED: 0 new lines since start
+-- kt OFF
+-- kt ALL
+decode: 256 tokens in 3498 ms (72.91 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3483 ms (73.21 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3483 ms (73.21 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3547 ms (71.89 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3540 ms (72.04 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3535 ms (72.15 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3669 ms (69.50 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3676 ms (69.37 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3675 ms (69.39 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3598 ms (70.87 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3612 ms (70.60 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3610 ms (70.65 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3653 ms (69.81 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3659 ms (69.69 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 3662 ms (69.63 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 2628 ms (97.04 tok/s); CPU lane: 0 of 70845 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 2632 ms (96.90 tok/s); CPU lane: 0 of 70845 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 2624 ms (97.18 tok/s); CPU lane: 0 of 70845 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 2720 ms (93.76 tok/s); CPU lane: 0 of 70845 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 2723 ms (93.66 tok/s); CPU lane: 0 of 70845 experts; the cache moved 0 (0 in all)
+decode: 256 tokens in 2792 ms (91.33 tok/s); CPU lane: 0 of 70845 experts; the cache moved 0 (0 in all)
+-- bt-ALL rc=0
+batch-test B=1: 255 steps in 3841 ms (15.1 ms a step): 66.38 tok/s a sequence, 66.38 tok/s in all (solo 67.94 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4664 ms (18.3 ms a step): 54.68 tok/s a sequence, 109.36 tok/s in all (solo 67.94 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10045 ms (39.4 ms a step): 25.39 tok/s a sequence, 203.10 tok/s in all (solo 67.94 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- bt-AM1 rc=0
+batch-test B=1: 255 steps in 3867 ms (15.2 ms a step): 65.94 tok/s a sequence, 65.94 tok/s in all (solo 66.79 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4651 ms (18.2 ms a step): 54.82 tok/s a sequence, 109.64 tok/s in all (solo 66.79 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10293 ms (40.4 ms a step): 24.77 tok/s a sequence, 198.19 tok/s in all (solo 66.79 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- bt-AP1 rc=0
+batch-test B=1: 255 steps in 3862 ms (15.1 ms a step): 66.03 tok/s a sequence, 66.03 tok/s in all (solo 64.85 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4663 ms (18.3 ms a step): 54.69 tok/s a sequence, 109.37 tok/s in all (solo 64.85 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10242 ms (40.2 ms a step): 24.90 tok/s a sequence, 199.17 tok/s in all (solo 64.85 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- bt-AP3 rc=0
+batch-test B=1: 255 steps in 3831 ms (15.0 ms a step): 66.56 tok/s a sequence, 66.56 tok/s in all (solo 65.82 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4661 ms (18.3 ms a step): 54.71 tok/s a sequence, 109.41 tok/s in all (solo 65.82 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10153 ms (39.8 ms a step): 25.12 tok/s a sequence, 200.93 tok/s in all (solo 65.82 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- bt-OFF rc=0
+batch-test B=1: 255 steps in 3868 ms (15.2 ms a step): 65.92 tok/s a sequence, 65.92 tok/s in all (solo 64.82 a sequence); greedy vs solo: 1 of 1 identical ( seq 0 identical; )
+batch-test B=2: 255 steps in 4665 ms (18.3 ms a step): 54.66 tok/s a sequence, 109.32 tok/s in all (solo 64.82 a sequence); greedy vs solo: 2 of 2 identical ( seq 0 identical; seq 1 identical; )
+batch-test B=8: 255 steps in 10339 ms (40.5 ms a step): 24.66 tok/s a sequence, 197.32 tok/s in all (solo 64.82 a sequence); greedy vs solo: 8 of 8 identical ( seq 0 identical; seq 1 identical; seq 2 identical; seq 3 ide
+-- id-ALL rc=0
+decode: 256 tokens in 3735 ms (68.28 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-AM1 rc=0
+decode: 256 tokens in 3795 ms (67.19 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-AP1 rc=0
+decode: 256 tokens in 3923 ms (65.00 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-AP3 rc=0
+decode: 256 tokens in 3855 ms (66.15 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- id-OFF rc=0
+decode: 256 tokens in 3926 ms (64.96 tok/s); CPU lane: 0 of 61200 experts; the cache moved 0 (0 in all)
+-- idx-ALL rc=0
+decode: 256 tokens in 2963 ms (86.05 tok/s); CPU lane: 0 of 75915 experts; the cache moved 0 (0 in all)
+-- idx-AM1 rc=0
+decode: 256 tokens in 3030 ms (84.17 tok/s); CPU lane: 0 of 75915 experts; the cache moved 0 (0 in all)
+-- idx-AP1 rc=0
+decode: 256 tokens in 3056 ms (83.45 tok/s); CPU lane: 0 of 75915 experts; the cache moved 0 (0 in all)
+-- idx-AP3 rc=0
+decode: 256 tokens in 3035 ms (84.03 tok/s); CPU lane: 0 of 75915 experts; the cache moved 0 (0 in all)
+-- idx-OFF rc=0
+decode: 256 tokens in 3100 ms (82.26 tok/s); CPU lane: 0 of 75915 experts; the cache moved 0 (0 in all)
+-- kt-ALL rc=0
+decode: 32 tokens in 1035 ms (29.94 tok/s); CPU lane: 0 of 7440 experts; the cache moved 0 (0 in all)
+-- kt-OFF rc=139

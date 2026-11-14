@@ -64,6 +64,28 @@ bool prepare(cudaStream_t s);
 /// row), kFmtMXFP4 (raw = MXFP4 [n][k / 32] blocks, ld bytes a row; 0: mx_row_bytes(k)) - an expert's matrix in VRAM -
 /// or kFmtQ8_0 (raw = Q8_0 [n][k / 32] blocks, ld bytes a row; 0: q8_row_bytes(k)).
 bool mv(const x3::MvJob* jobs, int n, cudaStream_t s);
+/// (DS4_HC_FUSE / DS4_DECODE_TRIM, after Project Maya #511's PreQ8) an F32 input x of k values a row, already rounded
+/// to int8 as mv rounds a Q8_0 or low-bit (kFmtGG) job's input (q [rows][k], d [rows][k / 32]: q8_quant's bytes, see
+/// hc_mix_split_norm / swiglu_q8 / Finish::q8): such a job whose xf is x, its k this k and its activations these rows (k
+/// apart when more than one) reads them instead of rounding x again; every other job (another input, format, k or
+/// rows) rounds its own as before.  With every rounding given, the call launches no rounding at all.
+struct PreQ8 {
+    const float* x = nullptr;
+    const int8_t* q = nullptr;
+    const float* d = nullptr;
+    int k = 0;
+    int rows = 1;
+    // (xtxkern DS4_XK_QO) nslice > 1: nslice inputs slice values apart (x + i slice, q + i slice, d + i slice / 32; one
+    // row each, slice % 32 == 0) - wo_a's groups reading the heads' one rounded vector
+    int nslice = 1;
+    size_t slice = 0;
+};
+bool mv(const x3::MvJob* jobs, int n, cudaStream_t s, const PreQ8* pre);
+/// xtxkern DS4_XK_QA: a Q5_K (kFmtGG) matrix's rows as bytes - w its first row, ld bytes a row; false: another format
+bool q5k_rows(const x3::Mat& m, const uint8_t** w, size_t* ld);
+/// The int8 rounding mv gives a Q8_0 / low-bit job's rows of k F32 values (k apart): q8_quant's, through the batched
+/// launch as mv makes it (one item) - what the load-time checks compare a fused rounding against.
+void q8_round(const float* x, int rows, int k, int8_t* q, float* d, cudaStream_t s);
 /// The columns [c0, c0 + nc) of such a matrix: its rows c0 .. c0 + nc - 1, a contiguous range.
 x3::Mat view(const x3::Mat& m, int c0, int nc);
 /// x3::reconstruct_rows' layout from a BF16 or Q8_0 matrix: dst[r][c] = W[c][r] (n rows of k values), F16 or BF16
@@ -74,12 +96,62 @@ void rows(const x3::Mat& m, uint16_t* dst, bool bf16, cudaStream_t s);
 /// roles' types in lay.K, see expert_type).
 void moe_gate_up(const x3::MoeArgs& a, const float* x, float* h, cudaStream_t s);
 void moe_down(const x3::MoeArgs& a, const float* h, const float* sh_out, float* out, cudaStream_t s);
+/// DS4_HELPER_OVERLAP (docs/dsv41/cards/HX-10.md): moe_down in its two halves, the same launches in the same order on the
+/// same stream (so the same bits) - moe_down_part: h's int8 rounding and the down rows into the stream's scratch part;
+/// moe_combine: the per-token combine of that part with the CPU lane's / helpers' part and the shared expert's.  The caller
+/// may put the wait for the CPU lane's answer between them (nothing in moe_down_part reads cpu_part).
+void moe_down_part(const x3::MoeArgs& a, const float* h, cudaStream_t s);
+void moe_combine(const x3::MoeArgs& a, const float* sh_out, float* out, cudaStream_t s);
 bool win_experts(const x3::WinArgs& a, cudaStream_t s);
+/// DS4_HELPER_DD: win_experts' combine alone (after a win_experts with a.no_combine): the same launch it would have made
+/// (a.part the rows win_experts wrote; a.cpu_part / cpu_stride / cpu_flag as given here; a.wait_ptr ignored).
+void win_combine(const x3::WinArgs& a, cudaStream_t s);
+/// DS4_LP_JOINCOMB (docs/dsv41/cards/HX-21.md): ds4_model.cu's dd_join_k arguments (DdJoin and its launch's), for the
+/// join and the combine after it in one launch on the lead: moe_join_combine (a decoded row: moe_combine's sum over the
+/// stream's scratch part, after moe_down_part) and win_join_combine (a window: win_combine's, after win_experts with
+/// no_combine; a.cpu_part / cpu_flag unused).  The joined row stands where the combine read dd_join_k's part; part / flag
+/// (may be null) are written as dd_join_k writes them.  Bit for bit dd_join_k + the combine.  false: nothing launched.
+struct DdJoinArgs {
+    const unsigned long long* seq[8] = {};
+    const int* has[8] = {};
+    const float* out[8] = {};
+    int nh = 0;
+    const int8_t* own = nullptr;   // (null: every helper waited for)
+    int nexp = 0;
+    unsigned long long* cnt = nullptr;
+    const unsigned* rseq = nullptr;   // the lane's answer word, and the request
+    unsigned want = 0;
+    const float* lane_part = nullptr;   // the lane's rows (lane_stride apart) and flags
+    size_t lane_stride = 0;
+    const int* lane_flag = nullptr;
+    const int* ridx = nullptr;   // the request's routing on this device ([t][8])
+    int il = 0, kexp = 0;
+    float* part = nullptr;   // dd_join_k's outputs
+    int* flag = nullptr;
+};
+bool moe_join_combine(const x3::MoeArgs& a, const DdJoinArgs& j, const float* sh_out, float* out, cudaStream_t s);
+bool win_join_combine(const x3::WinArgs& a, const DdJoinArgs& j, cudaStream_t s);
+/// DS4_LP_FLAGFUSE (a helper's DS4_HELPER_DD body): win_combine, then *flag = *val (helper_flag_kernel's store, between
+/// system fences) by the launch's last block, once every block's rows are out; cnt: a device word, 0 between launches.
+void win_combine_flag(const x3::WinArgs& a, unsigned long long* flag, const unsigned long long* val, unsigned* cnt,
+                      cudaStream_t s);
+/// helperwin DS4_HW_HEADQ8 (docs/dsv41/cards/HX-22.md): the stream's int8 x rows and scales (the scratch win_experts
+/// rounds x into: row r at xq + r k, its scales at xd + r k / 32), created as prepare() does; false: none.  And win_experts'
+/// own rounding of x (q8_quant_kernel, rows ldx apart) as a launch of its own - what the head's rounding is checked against.
+bool q8_scratch(cudaStream_t s, int8_t** xq, float** xd);
+void q8_rows(const float* x, size_t ldx, int rows, int k, int8_t* q, float* d, cudaStream_t s);
 void set_gate_up(const x3::SetArgs& a, const float* x, int ldx, const int* row_idx, uint16_t* h16, int ldh,
                  cudaStream_t s);
 void set_down(const x3::SetArgs& a, const uint16_t* h16, int ldh, float* y, int ldy, cudaStream_t s);
 
 /// Launch failures of these kernels since the process started (each is also printed).
 int launch_errors();
+
+/// PF-12 (DS4_PF_TILE): whether a prompt-helper layer of `rows` rows (every expert's) runs in one pass
+/// (ds4_iq's pft3_choose; GGUF low-bit experts of the four pack types only, gate type == up type), and its arms.
+bool pf_tile_choose(const x3::ExpertLayout& lay, int n_embd, int n_ff, int rows, int* agu, int* adn);
+/// One set of such a layer in one pass (gu: x / row_idx -> h16; else h16in -> y), every expert's rows contiguous.
+bool pf_tile_set(const x3::SetArgs& sa, bool gu, const float* x, int ldx, const int* row_idx, const uint16_t* h16in,
+                 uint16_t* h16, int ldh, float* y, int ldy, int nrows, int arm, cudaStream_t s);
 
 }  // namespace strata::ds4::gguf

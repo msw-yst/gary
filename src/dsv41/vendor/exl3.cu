@@ -74,7 +74,11 @@ thread_local const int* g_skip = nullptr;   // set_skip: the calling thread's fl
 void launch_check(const char* what) {
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        std::fprintf(stderr, "exl3 %s: %s\n", what, cudaGetErrorString(e));
+        bool quiet = false;
+#if defined(STRATA_USE_HIP)
+        quiet = ds4_diag_launch_error("exl3", what, (int) e);   // STRATA_DS4_DIAG=1: the first failure per device in full, the rest counted
+#endif
+        if (!quiet) std::fprintf(stderr, "exl3 %s: %s\n", what, cudaGetErrorString(e));
         g_launch_errors.fetch_add(1, std::memory_order_relaxed);
     }
 }
@@ -1742,6 +1746,17 @@ void rows_f16(const float* x, int ldx, const int* idx, int nrows, int ncols, uin
                                                                                                          ncols, out);
     launch_check("rows_f16");
 }
+
+#if defined(STRATA_USE_HIP)
+// STRATA_DS4_DIAG - hipFuncGetAttributes of this TU's kernels on the current device (-1 past the end, else the hipError_t)
+int diag_probe(int i, const char** name) {
+    hipFuncAttributes a{};
+    switch (i) {
+        case 0: *name = "exl3 rows_f16_kernel"; return (int) hipFuncGetAttributes(&a, (const void*) rows_f16_kernel);
+        default: return -1;
+    }
+}
+#endif
 
 void reconstruct_inner(const Mat& m, uint16_t* dst, cudaStream_t s) {
     if (!supported(m) || !dispatch<RunInner>(m.K, m.cb, m, dst, s)) {

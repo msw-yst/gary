@@ -1182,6 +1182,7 @@ void dn_ne(const Args& a, int groups, int ne, cudaStream_t s) {
     else launch_dn<T, 16>(a, groups, s);
 }
 #include "ds4_iq_hip.inc"
+#include "ds4_iq_g906.inc"
 template <int T, bool GU>
 void launch_set(const SetArgs& a, dim3 grid, cudaStream_t s) {
 #if defined(STRATA_USE_HIP)
@@ -1393,6 +1394,263 @@ __global__ void __launch_bounds__(kThreads) dq_rows_kernel(const uint8_t* __rest
     }
 }
 
+
+#if !defined(__HIP_DEVICE_COMPILE__) || defined(__gfx906__)   // PF-12: the one-pass sets in the host and gfx906 (helper) passes only
+// ---------------------------------------------------------------- PF-12 v2 (the prompt helper's sets in one pass; bench only)
+// See PF-12/mk-iq-pft2.py: C weight rows a lane (one x load -> C sub_dots), the kb loop outer and an RC-row chunk inner,
+// optional LDS staging of the chunk's x; per (row, output) light_kernel_rows' arithmetic in its order (the same bits).
+
+// grid (k / 32 / 8, nrows): light_q8_kernel's operations, indexed by the set's local row
+__global__ void __launch_bounds__(kThreads) pft2_q8_kernel(const float* __restrict__ xf, const uint16_t* __restrict__ xh,
+                                                          const int* __restrict__ idx, int ldx, int k, int nrows,
+                                                          int8_t* __restrict__ q, float* __restrict__ d) {
+    const int lr = blockIdx.y;
+    const int b = blockIdx.x * kWarps + (threadIdx.x >> 5), lane = threadIdx.x & 31;
+    if (lr >= nrows || b * 32 >= k) return;
+    const size_t at = (size_t) b * 32 + lane;
+    const float v = xf != nullptr ? xf[(size_t) idx[lr] * ldx + at] : __half2float(__ushort_as_half(xh[(size_t) lr * ldx + at]));
+    float am = fabsf(v);
+#pragma unroll
+    for (int o = 16; o > 0; o >>= 1) am = fmaxf(am, __shfl_xor_sync(0xffffffffu, am, o));
+    const float sc = am / 127.0f;
+    q[(size_t) lr * k + at] = (int8_t) (am > 0.0f ? __float2int_rn(v / sc) : 0);
+    if (lane == 0) d[(size_t) lr * (k / 32) + b] = sc;
+}
+
+// grid (N / OPB, n_exp).  Lane group g (32 lanes) owns outputs o0 .. o0 + OPL - 1 (gate / up: OPL = C / 2 outputs, weight rows
+// gate(o), up(o) alternating; down: OPL = C outputs, C adjacent weight rows); every row of expert e in chunks of RC.
+template <int T, int C, int RC, bool GATE_UP, bool LDS>
+__global__ void __launch_bounds__(kThreads) pft2_kernel(const SetArgs a, const int8_t* __restrict__ xq,
+                                                       const float* __restrict__ xd) {
+    static_assert(!GATE_UP || C % 2 == 0, "gate / up: whole pairs");
+    constexpr int OPL = GATE_UP ? C / 2 : C, OPB = kWarps * OPL;
+    __shared__ uint32_t tab[Ty<T>::TAB > 0 ? Ty<T>::TAB : 1];
+    __shared__ __align__(16) int8_t xs[LDS ? RC : 1][LDS ? 1024 : 16];   // (LDS: the chunk's sub-blocks 32 j .. 32 j + 31)
+    __shared__ float ds[LDS ? RC : 1][LDS ? 32 : 1];
+    const int e = blockIdx.y;
+    const int lo = a.bounds[e] - a.row0, ne = a.bounds[e + 1] - a.bounds[e];
+    if (ne <= 0) return;   // (uniform)
+    load_tab<T>(tab);
+    __syncthreads();
+    const int K = GATE_UP ? a.n_embd : a.n_ff, N = GATE_UP ? a.n_ff : a.n_embd, nsb = K / 32, J = (nsb + 31) / 32;
+    const int g = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    const int o0 = blockIdx.x * OPB + g * OPL;
+    const uint8_t* blob = a.wbase + (size_t) e * a.stride;
+    const size_t rb = row_bytes_t<T>(K);
+    for (int r0 = 0; r0 < ne; r0 += RC) {
+        float acc[C][RC];
+#pragma unroll
+        for (int c = 0; c < C; ++c)
+#pragma unroll
+            for (int i = 0; i < RC; ++i) acc[c][i] = 0.0f;
+        for (int j = 0; j < J; ++j) {   // (increasing kb for every (row, output): light_kernel_rows' order)
+            const int kb = lane + 32 * j;
+            if constexpr (LDS) {
+                __syncthreads();   // (the previous step's reads done)
+                for (int t = threadIdx.x; t < RC * 64; t += kThreads) {
+                    const int r = t >> 6, q = t & 63, sbk = 32 * j + (q >> 1);
+                    int4 v = make_int4(0, 0, 0, 0);
+                    if (r0 + r < ne && sbk < nsb) v = ((const int4*) (xq + (size_t) (lo + r0 + r) * K + (size_t) sbk * 32))[q & 1];
+                    ((int4*) xs[r])[q] = v;
+                }
+                for (int t = threadIdx.x; t < RC * 32; t += kThreads) {
+                    const int r = t >> 5, q = t & 31, sbk = 32 * j + q;
+                    ds[r][q] = r0 + r < ne && sbk < nsb ? xd[(size_t) (lo + r0 + r) * nsb + sbk] : 0.0f;
+                }
+                __syncthreads();
+            }
+            if (kb < nsb) {   // (no barrier inside)
+                Sub sb[C];
+#pragma unroll
+                for (int c = 0; c < C; ++c) {
+                    const int o = o0 + (GATE_UP ? c / 2 : c);
+                    const int m = GATE_UP ? (c & 1) : 2;
+                    decode<T>(blob + a.tr[m] + (size_t) (o < N ? o : 0) * rb, kb, tab, sb[c]);
+                }
+#pragma unroll
+                for (int i = 0; i < RC; ++i)
+                    if (r0 + i < ne) {
+                        int4 xa, xb;
+                        float dx;
+                        if constexpr (LDS) {
+                            xa = ((const int4*) xs[i])[2 * lane];
+                            xb = ((const int4*) xs[i])[2 * lane + 1];
+                            dx = ds[i][lane];
+                        } else {
+                            const size_t xr = (size_t) (lo + r0 + i);
+                            const int4* xp = (const int4*) (xq + xr * K + (size_t) kb * 32);
+                            xa = xp[0];
+                            xb = xp[1];
+                            dx = xd[xr * nsb + kb];
+                        }
+#pragma unroll
+                        for (int c = 0; c < C; ++c) acc[c][i] = fmaf(dx, sub_dot<T>(sb[c], xa, xb), acc[c][i]);
+                    }
+            }
+        }
+#pragma unroll
+        for (int i = 0; i < RC; ++i)
+            if (r0 + i < ne) {   // (uniform)
+                float v[C];
+#pragma unroll
+                for (int c = 0; c < C; ++c) v[c] = warp_sum(acc[c][i]);
+                if (lane == 0) {
+                    const size_t lr = (size_t) (lo + r0 + i);
+#pragma unroll
+                    for (int p = 0; p < OPL; ++p) {
+                        const int o = o0 + p;
+                        if (o >= N) continue;
+                        if constexpr (GATE_UP) a.h[lr * a.ldo + o] = __half_as_ushort(__float2half_rn(swiglu(v[2 * p], v[2 * p + 1], a.limit)));
+                        else a.y[lr * a.ldo + o] = v[p];
+                    }
+                }
+            }
+    }
+}
+struct Pft2Buf {
+    int8_t* q = nullptr;
+    float* d = nullptr;
+    size_t cap = 0;
+};
+std::mutex g_p2mu;
+std::map<std::pair<int, cudaStream_t>, Pft2Buf> g_pft2;
+Pft2Buf* pft2_buf(cudaStream_t s, size_t need) {
+    std::lock_guard<std::mutex> lk(g_p2mu);
+    int dev = 0;
+    cudaGetDevice(&dev);
+    Pft2Buf& b = g_pft2[{dev, s}];
+    if (b.cap < need) {
+        if (b.q != nullptr) cudaFree(b.q);
+        if (b.d != nullptr) cudaFree(b.d);
+        b = Pft2Buf{};
+        if (cudaMalloc(&b.q, need) != cudaSuccess || cudaMalloc(&b.d, need / 32 * sizeof(float)) != cudaSuccess) {
+            std::fprintf(stderr, "ds4 iq pft2: the scratch (%zu MB) failed\n", need >> 20);
+            return nullptr;
+        }
+        b.cap = need;
+    }
+    return &b;
+}
+template <int T, int C, bool GU, bool L>
+void pft2_go(const SetArgs& a, const Pft2Buf& b, cudaStream_t s) {
+    constexpr int RC = C == 2 ? 16 : C == 4 ? 8 : 4;
+    constexpr int OPB = kWarps * (GU ? C / 2 : C);
+    const int N = GU ? a.n_ff : a.n_embd;
+    const dim3 grid((unsigned) ((N + OPB - 1) / OPB), (unsigned) a.n_exp);
+    strata_ds4_launch(pft2_kernel<T, C, RC, GU, L>, grid, kThreads, 0, s, a, b.q, b.d);
+}
+template <int T, bool GU>
+bool pft2_c(const SetArgs& a, int C, bool lds, const Pft2Buf& b, cudaStream_t s) {
+    switch (C * 2 + (lds ? 1 : 0)) {
+        case 4: pft2_go<T, 2, GU, false>(a, b, s); return true;
+        case 5: pft2_go<T, 2, GU, true>(a, b, s); return true;
+        case 8: pft2_go<T, 4, GU, false>(a, b, s); return true;
+        case 9: pft2_go<T, 4, GU, true>(a, b, s); return true;
+        case 16: pft2_go<T, 8, GU, false>(a, b, s); return true;
+        case 17: pft2_go<T, 8, GU, true>(a, b, s); return true;
+        default: return false;
+    }
+}
+
+// ---------------------------------------------------------------- PF-12 v3: LP arms (LDS x, transposed, double buffered)
+template <int T, int C, int RC, bool GATE_UP>
+__global__ void __launch_bounds__(kThreads) pft3_kernel(const SetArgs a, const int8_t* __restrict__ xq,
+                                                       const float* __restrict__ xd) {
+    static_assert(!GATE_UP || C % 2 == 0, "gate / up: whole pairs");
+    constexpr int OPL = GATE_UP ? C / 2 : C, OPB = kWarps * OPL;
+    __shared__ uint32_t tab[Ty<T>::TAB > 0 ? Ty<T>::TAB : 1];
+    __shared__ int4 xs[2][RC][2][32];   // [buffer][row][half: values 0-15 / 16-31][sub-block 32 j + lane]
+    __shared__ float ds[2][RC][32];
+    const int e = blockIdx.y;
+    const int lo = a.bounds[e] - a.row0, ne = a.bounds[e + 1] - a.bounds[e];
+    if (ne <= 0) return;   // (uniform)
+    load_tab<T>(tab);
+    __syncthreads();
+    const int K = GATE_UP ? a.n_embd : a.n_ff, N = GATE_UP ? a.n_ff : a.n_embd, nsb = K / 32, J = (nsb + 31) / 32;
+    const int g = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    const int o0 = blockIdx.x * OPB + g * OPL;
+    const uint8_t* blob = a.wbase + (size_t) e * a.stride;
+    const size_t rb = row_bytes_t<T>(K);
+    auto stage = [&](int r0, int j, int buf) {   // (coalesced global reads: t -> sub-block t / 2, half t % 2)
+        for (int t = threadIdx.x; t < RC * 64; t += kThreads) {
+            const int r = t >> 6, q = t & 63, sl = q >> 1, hf = q & 1, sbk = 32 * j + sl;
+            int4 v = make_int4(0, 0, 0, 0);
+            if (r0 + r < ne && sbk < nsb) v = ((const int4*) (xq + (size_t) (lo + r0 + r) * K + (size_t) sbk * 32))[hf];
+            xs[buf][r][hf][sl] = v;
+        }
+        for (int t = threadIdx.x; t < RC * 32; t += kThreads) {
+            const int r = t >> 5, q = t & 31, sbk = 32 * j + q;
+            ds[buf][r][q] = r0 + r < ne && sbk < nsb ? xd[(size_t) (lo + r0 + r) * nsb + sbk] : 0.0f;
+        }
+    };
+    for (int r0 = 0; r0 < ne; r0 += RC) {
+        float acc[C][RC];
+#pragma unroll
+        for (int c = 0; c < C; ++c)
+#pragma unroll
+            for (int i = 0; i < RC; ++i) acc[c][i] = 0.0f;
+        stage(r0, 0, 0);
+        __syncthreads();
+        for (int j = 0; j < J; ++j) {   // (increasing kb: the same order)
+            const int b = j & 1;
+            if (j + 1 < J) stage(r0, j + 1, b ^ 1);   // (buffer b ^ 1 was last read in step j - 1, before its barrier)
+            const int kb = lane + 32 * j;
+            if (kb < nsb) {
+                Sub sb[C];
+#pragma unroll
+                for (int c = 0; c < C; ++c) {
+                    const int o = o0 + (GATE_UP ? c / 2 : c);
+                    const int m = GATE_UP ? (c & 1) : 2;
+                    decode<T>(blob + a.tr[m] + (size_t) (o < N ? o : 0) * rb, kb, tab, sb[c]);
+                }
+#pragma unroll
+                for (int i = 0; i < RC; ++i)
+                    if (r0 + i < ne) {
+                        const int4 xa = xs[b][i][0][lane], xb = xs[b][i][1][lane];
+                        const float dx = ds[b][i][lane];
+#pragma unroll
+                        for (int c = 0; c < C; ++c) acc[c][i] = fmaf(dx, sub_dot<T>(sb[c], xa, xb), acc[c][i]);
+                    }
+            }
+            __syncthreads();
+        }
+#pragma unroll
+        for (int i = 0; i < RC; ++i)
+            if (r0 + i < ne) {   // (uniform)
+                float v[C];
+#pragma unroll
+                for (int c = 0; c < C; ++c) v[c] = warp_sum(acc[c][i]);
+                if (lane == 0) {
+                    const size_t lr = (size_t) (lo + r0 + i);
+#pragma unroll
+                    for (int p = 0; p < OPL; ++p) {
+                        const int o = o0 + p;
+                        if (o >= N) continue;
+                        if constexpr (GATE_UP) a.h[lr * a.ldo + o] = __half_as_ushort(__float2half_rn(swiglu(v[2 * p], v[2 * p + 1], a.limit)));
+                        else a.y[lr * a.ldo + o] = v[p];
+                    }
+                }
+            }
+    }
+}
+template <int T, int C, bool GU>
+void pft3_go(const SetArgs& a, const Pft2Buf& b, cudaStream_t s) {
+    constexpr int RC = 8;   // (double-buffered x: 2 x RC KB + scales + the codebook; RC 16 would leave one block a CU)
+    constexpr int OPB = kWarps * (GU ? C / 2 : C);
+    const int N = GU ? a.n_ff : a.n_embd;
+    const dim3 grid((unsigned) ((N + OPB - 1) / OPB), (unsigned) a.n_exp);
+    strata_ds4_launch(pft3_kernel<T, C, RC, GU>, grid, kThreads, 0, s, a, b.q, b.d);
+}
+template <int T, bool GU>
+bool pft3_arm(const SetArgs& a, int arm, const Pft2Buf& b, cudaStream_t s) {
+    switch (arm) {   // (0..5: v2's C2 C4 C8 C2L C4L C8L; 6: C2LP, 7: C4LP)
+        // (PF-12: only the arms pft3_choose picks are instantiated - the others return false)
+        case 1: pft2_go<T, 4, GU, false>(a, b, s); return true;   // C4
+        case 3: pft2_go<T, 2, GU, true>(a, b, s); return true;    // C2L
+        default: return false;
+    }
+}
+#endif   // (PF-12: host and gfx906 passes only)
 }  // namespace
 
 // Which dense dequantizer: dq_rows_kernel2 (the coalesced transpose, 0.2.7 DS Support: 566 -> 592 ppts on the R9700, ids identical) or the
@@ -1449,8 +1707,24 @@ bool dequant_rows(int type, const void* raw, size_t ld, int k, int n, uint16_t* 
         default: return false;
     }
 #undef DS4_DQ
-    return cudaGetLastError() == cudaSuccess;
+    const cudaError_t le = cudaGetLastError();
+#if defined(STRATA_USE_HIP)
+    if (le != cudaSuccess) (void) ds4_diag_launch_error("ds4 iq", "dequant_rows", (int) le);   // STRATA_DS4_DIAG (the raw code; the caller's text names none)
+#endif
+    return le == cudaSuccess;
 }
+
+#if defined(STRATA_USE_HIP)
+// STRATA_DS4_DIAG - hipFuncGetAttributes of this TU's dequantizers on the current device (-1 past the end, else the hipError_t)
+int diag_probe(int i, const char** name) {
+    hipFuncAttributes a{};
+    switch (i) {
+        case 0: *name = "iq dq_rows_kernel2<Q5_K>"; return (int) hipFuncGetAttributes(&a, (const void*) dq_rows_kernel2<kQ5_K>);
+        case 1: *name = "iq dq_rows_kernel<Q5_K>"; return (int) hipFuncGetAttributes(&a, (const void*) dq_rows_kernel<kQ5_K>);
+        default: return -1;
+    }
+}
+#endif
 
 bool supported(int t) {
 #if defined(STRATA_METAL)
@@ -1533,6 +1807,7 @@ bool gate_up(const Args& a, int groups, int ne_max, cudaStream_t s) {
 #endif
     if (is_tq(a.tg)) return tq::gate_up(a, groups, ne_max, s);
     if (a.n_embd % 256 != 0 || a.n_ff % (kWarps * kGuRW) != 0) return false;
+    if (g906::gate_up(a, groups, ne_max, s)) return true;   // (gfx906 only: the same bits, laid out for the MI50)
 #define GU_(T) gu_ne<T>(a, groups, ne_max, s)
     DS4_IQ_SWITCH(a.tg, GU_)
 #undef GU_
@@ -1548,6 +1823,7 @@ bool down(const Args& a, int groups, int ne_max, cudaStream_t s) {
 #endif
     if (is_tq(a.td)) return tq::down(a, groups, ne_max, s);
     if (a.n_ff % 256 != 0 || a.n_embd % (kWarps * kDnRW) != 0) return false;
+    if (g906::down(a, groups, ne_max, s)) return true;
 #define DN_(T) dn_ne<T>(a, groups, ne_max, s)
     DS4_IQ_SWITCH(a.td, DN_)
 #undef DN_
@@ -1572,6 +1848,18 @@ bool hipk_force(int mode) {
 #else
     (void) mode;
     return false;
+#endif
+}
+bool g906_force(int mode) {
+    g906::force_mode().store(mode, std::memory_order_relaxed);
+    return g906::ok_device();
+}
+long long g906_launches() { return g906::launches().load(std::memory_order_relaxed); }
+void set_hipk_tp(bool tp_groups) {
+#if defined(STRATA_USE_HIP)
+    hipk::tp_groups().store(tp_groups ? 1 : 0);
+#else
+    (void) tp_groups;
 #endif
 }
 long long hipk_launches() {
@@ -1733,4 +2021,45 @@ bool mv(const MvJob* jobs, int n, cudaStream_t s) {
     return true;
 }
 
+
+// (PF-12: the v2 bench entry pft2_set is not part of the engine)
+
+#if !defined(__HIP_DEVICE_COMPILE__) || defined(__gfx906__)   // PF-12: host and gfx906 passes only
+// PF-12 v3: a prompt set in one pass with arm `arm` (0 C2, 1 C4, 2 C8, 3 C2L, 4 C4L, 5 C8L, 6 C2LP, 7 C4LP); rows
+// expert-major, nrows in all.  false: not covered (nothing launched).
+bool pft3_set(const SetArgs& a, bool gu, int nrows, int arm, cudaStream_t s) {
+    static const int kC[8] = {2, 4, 8, 2, 4, 8, 2, 4};
+    if (arm < 0 || arm > 7) return false;
+    const int K = gu ? a.n_embd : a.n_ff, N = gu ? a.n_ff : a.n_embd, nsb = K / 32, C = kC[arm];
+    const int t = gu ? a.tg : a.td;
+    if (a.n_exp <= 0 || nrows <= 0 || K % 256 != 0 || N % (kWarps * (gu ? C / 2 : C)) != 0) return false;
+    if (t != kIQ2_XXS && t != kIQ2_XS && t != kIQ2_S && t != kIQ3_XXS) return false;
+    Pft2Buf* b = pft2_buf(s, (size_t) nrows * (size_t) K);
+    if (b == nullptr) return false;
+    const dim3 gq((unsigned) ((nsb + kWarps - 1) / kWarps), (unsigned) nrows);
+    strata_ds4_launch(pft2_q8_kernel, gq, kThreads, 0, s, gu ? a.xf : nullptr, gu ? nullptr : a.xh, a.idx, a.ldx, K, nrows, b->q, b->d);
+    switch (t) {
+        case kIQ2_XXS: return gu ? pft3_arm<kIQ2_XXS, true>(a, arm, *b, s) : pft3_arm<kIQ2_XXS, false>(a, arm, *b, s);
+        case kIQ2_XS: return gu ? pft3_arm<kIQ2_XS, true>(a, arm, *b, s) : pft3_arm<kIQ2_XS, false>(a, arm, *b, s);
+        case kIQ2_S: return gu ? pft3_arm<kIQ2_S, true>(a, arm, *b, s) : pft3_arm<kIQ2_S, false>(a, arm, *b, s);
+        default: return gu ? pft3_arm<kIQ3_XXS, true>(a, arm, *b, s) : pft3_arm<kIQ3_XXS, false>(a, arm, *b, s);
+    }
+}
+// The DISPATCH rule (docs/dsv41/cards/PF-12.md, derived from v2's pftile2-20261113T004916Z cells): for a layer set of `rows` rows (all
+// experts) with gate / up type tg and down type td.  false: the layer keeps the helper's rounds (OLD light path) for BOTH sets
+// (one row layout a layer).  true: one pass, gate / up with arm *agu, down with arm *adn.
+//   rows < 189 (below v2's smallest chunk, T512): OLD - nothing measured there;
+//   gate / up: IQ2_XXS and rows >= 758 (v2's T2048): C2L (v2 x0.67-0.80 at T2048 / T8192); otherwise C4 (v2: never slower than
+//              OLD in any cell, x0.70-0.92; best of all arms for IQ2_XS / IQ2_S gates and for T512);
+//   down:      rows >= 758: C2L (with IQ2_XXS gates C2L's totals stay x0.67-0.73 for every down type, so its down is not the
+//              loss); otherwise C4.
+bool pft3_choose(int tg, int td, int rows, int* agu, int* adn) {
+    (void) td;
+    if (rows < 189) return false;
+    const bool big = rows >= 758;
+    *agu = tg == kIQ2_XXS && big ? 3 : 1;
+    *adn = big ? 3 : 1;
+    return true;
+}
+#endif   // (PF-12)
 }  // namespace strata::ds4::gguf::iq

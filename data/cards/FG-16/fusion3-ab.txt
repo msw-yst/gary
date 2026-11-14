@@ -1,0 +1,37 @@
+# Fusion item 3 (DS4_ATTN_MERGE=3, ON) against =2 (OFF) and a placebo on a later build (F3, on F1); B1, drafter off,
+# 4 rotated rounds, 4 helpers. Part A of the run (part B, the helper prompt cap, is in data/cards/PF-13/). F1 / F3 / EC / PT / TS / UF = builds made after build 15; F1, F3, EC and UF went into build 16, the build in this release; PT and TS are not in it.
+== identity
+mkp: source <path> 524032 tokens, sha256 <hash>
+mkp: p4k: tokens [0, 4096) n 4096 sha256 324dd50440bc24dc
+mkp: p24k: tokens [131072, 155648) n 24576 sha256 d6abf6b1b51a21ac
+mkp: MKP OK
+FUSID id-M3 vs id-F1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok | ref lines ok
+FUSID id-M3d vs id-F1d: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok | ref lines ok
+id: identity A PASSED (F3 =3 == F1 =2 token for token, drafter off and on; same placement)
+FUSID mx-M4 vs mx-ON4: stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok | ref lines ok
+FUSID mx-M24 vs mx-OFF24: stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok | ref lines ok
+mxid: identity B PASSED (4K MAXP == helper ON, 24K MAXP == helper OFF, token for token, same placement)
+FUSID ab-OFF-1 vs id-F1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-ON-1 vs ab-OFF-1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-PLA-1 vs ab-OFF-1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+ab: rep 1: OFF decode: 256 tokens in 3295 ms (77.39 tok/s); CPU lane: 0 of  | ON decode: 256 tokens in 3257 ms (78.29 tok/s); CPU lane: 0 of  | PLA decode: 256 tokens in 3302 ms (77.23 tok/s); CPU lane: 0 of  |
+FUSID ab-OFF-2 vs id-F1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-ON-2 vs ab-OFF-2: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-PLA-2 vs ab-OFF-2: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+ab: rep 2: OFF decode: 256 tokens in 3307 ms (77.10 tok/s); CPU lane: 0 of  | ON decode: 256 tokens in 3263 ms (78.15 tok/s); CPU lane: 0 of  | PLA decode: 256 tokens in 3300 ms (77.28 tok/s); CPU lane: 0 of  |
+FUSID ab-OFF-3 vs id-F1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-ON-3 vs ab-OFF-3: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-PLA-3 vs ab-OFF-3: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+ab: rep 3: OFF decode: 256 tokens in 3308 ms (77.10 tok/s); CPU lane: 0 of  | ON decode: 256 tokens in 3265 ms (78.09 tok/s); CPU lane: 0 of  | PLA decode: 256 tokens in 3301 ms (77.25 tok/s); CPU lane: 0 of  |
+FUSID ab-OFF-4 vs id-F1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-ON-4 vs ab-OFF-4: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-PLA-4 vs ab-OFF-4: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+ab: rep 4: OFF decode: 256 tokens in 3300 ms (77.26 tok/s); CPU lane: 0 of  | ON decode: 256 tokens in 3265 ms (78.10 tok/s); CPU lane: 0 of  | PLA decode: 256 tokens in 3300 ms (77.26 tok/s); CPU lane: 0 of  |
+ab: identity PASSED every rep (ON / PLA == OFF == F1)
+== A: B1 timing (the run script)
+== ab: B1 decode, 64-id prompt, --dspark off, greedy, one session, N 256; ms a token, valid reps
+OFF: mean 12.9513 spread 0.0486 n 4 | 12.9216 12.9702 12.9702 12.9433
+ON: mean 12.7947 spread 0.0327 n 4 | 12.7730 12.7959 12.8057 12.8041
+PLA: mean 12.9441 spread 0.0084 n 4 | 12.9483 12.9400 12.9450 12.9433
+prediction (pre-registration, pre-registered): ON - OFF -0.10 ms a token, range [-0.13, -0.04]
+VERDICT M3: PASS - ON - OFF -0.1566 ms (spread 0.0486), PLA - OFF -0.0072 (spread 0.0486); OUTSIDE the predicted range [-0.13, -0.04]

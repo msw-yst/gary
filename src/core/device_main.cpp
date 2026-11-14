@@ -46,6 +46,8 @@ int main(int argc, char** argv) {
     //   device N: <name>
     //     arch gfx1201, 15.9 GiB, wave32          (CUDA: compute capability 12.0, 11.9 GiB)
     //     cannot run: <why>                       (only for a card this binary cannot run)
+    //     helper-only (gfx906, wave64): ...       (instead of "cannot run", for a card a build with
+    //                                              STRATA_HIP_HELPER_ARCHS runs only as a helper expert cache)
     if (list_devices) {
         const int count = strata::core::device_count();
         if (count == 0) std::printf("(no GPU device)\n");
@@ -56,8 +58,14 @@ int main(int argc, char** argv) {
                 continue;
             }
             std::printf("device %d: %s\n  %s\n", ordinal, name.c_str(), detail.c_str());
-            if (const std::string why = strata::core::gpu_arch_problem(ordinal); !why.empty())
-                std::printf("  cannot run: %s\n", why.c_str());
+            if (const std::string why = strata::core::gpu_arch_problem(ordinal); !why.empty()) {
+                // gpu_helper_arch is always "" without STRATA_HIP_HELPER_ARCHS, so such a build prints what it did
+                if (const std::string helper = strata::core::gpu_helper_arch(ordinal); !helper.empty())
+                    std::printf("  helper-only (%s, wave64): a helper expert cache (--expert-cache-device1..3) only, "
+                                "not the primary GPU, a --layer-split stage or the --peer-device\n", helper.c_str());
+                else
+                    std::printf("  cannot run: %s\n", why.c_str());
+            }
         }
         return 0;
     }

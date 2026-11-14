@@ -1,0 +1,17 @@
+# Server counters, cumulative since the server started; final sample after the task set stopped.
+# Sampled every 2 s from the server's /metrics endpoint. Wall-clock times removed.
+strata:live_prefill_tok_s_mean 0
+strata:live_prompt_read 0
+strata:live_tok_s 0
+strata:totals_decode_seconds_total 552.947
+strata:totals_prompt_seconds_total 173.411
+vllm:generation_tokens_total 48223
+vllm:kv_cache_usage_perc 0
+vllm:num_requests_running 0
+vllm:prefix_cache_hits_total 2665572
+vllm:prompt_tokens_total 2810517
+vllm:request_success_total 51
+vllm:spec_decode_num_accepted_tokens_total 24523
+vllm:spec_decode_num_draft_tokens_total 41524
+max_kv_cache_usage_perc_seen 0.8781
+samples 364

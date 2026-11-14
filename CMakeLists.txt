@@ -150,6 +150,9 @@ if(STRATA_ENABLE_CUDA AND STRATA_ENABLE_HIP AND NOT STRATA_HIP_GFX906)
 endif()
 if(STRATA_ENABLE_HIP)
   include(cmake/hip_backend.cmake)
+elseif(NOT "${STRATA_HIP_HELPER_ARCHS}" STREQUAL "")
+  # the helper architectures are extra targets of the wave32 HIP build only (cmake/hip_backend.cmake)
+  message(FATAL_ERROR "STRATA_HIP_HELPER_ARCHS ('${STRATA_HIP_HELPER_ARCHS}') needs STRATA_ENABLE_HIP=ON")
 endif()
 # The test suite and the micro benchmarks live in tests/ and bench/micro/, which the published source leaves out.
 set(_strata_tests_default OFF)
@@ -649,6 +652,17 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
     # FMA changes tie results. The embedding gather also relies on separately rounded operations.
     set_source_files_properties(src/kernels/cuda/elementwise.cu src/kernels/cuda/quantize_act.cu
       PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+    # (docs/dsv41/cards/EB-01.md): the helper-path sources also carry device code for the wave64 helper
+    # architectures.  CMake turns the target's HIP_ARCHITECTURES (CMAKE_HIP_ARCHITECTURES) into one --offload-arch per
+    # entry; clang takes the union of every --offload-arch on the line, so this adds a code object rather than
+    # replacing one.  APPEND, after the set above (it would overwrite quantize_act.cu's -ffp-contract=off otherwise).
+    # Source properties are per directory: these four are compiled only here (strata_kernels, strata_engine).
+    # With STRATA_HIP_HELPER_ALLTU the end of this file adds them to every HIP source of every target instead.
+    if(STRATA_HIP_HELPER_OFFLOAD_OPTIONS AND NOT STRATA_HIP_HELPER_ALLTU)
+      set_property(SOURCE src/kernels/cuda/iq_kernels.cu src/kernels/cuda/s2_expert_grouped.cu
+                          src/kernels/cuda/quantize_act.cu src/core/remote_expert_opt.cu
+                   APPEND PROPERTY COMPILE_OPTIONS ${STRATA_HIP_HELPER_OFFLOAD_OPTIONS})
+    endif()
   endif()
 
   set(STRATA_ORACLE_SOURCE_DIR "" CACHE PATH "Pinned llama.cpp source for independent CUDA parity tests")
@@ -917,7 +931,18 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
     target_link_libraries(strata_dsv41_kernels PUBLIC ${_strata_gpu_runtime_target})
     add_executable(strata-dsv41 src/dsv41/ds4_main.cpp src/dsv41/ds4_model.cu src/dsv41/ds4_kernels.cu src/dsv41/ds4_vision.cu
                    src/dsv41/ds4_gguf.cu src/dsv41/ds4_gguf_cpu.cpp src/dsv41/ds4_iq.cu src/dsv41/ds4_iq_cpu.cpp
-                   src/dsv41/ds4_tq.cu src/dsv41/ds4_tq_cpu.cpp src/dsv41/ds4_gg_cpu.cpp src/dsv41/ds4_packinfo.cpp)
+                   src/dsv41/ds4_tq.cu src/dsv41/ds4_tq_cpu.cpp src/dsv41/ds4_gg_cpu.cpp src/dsv41/ds4_packinfo.cpp
+                   src/dsv41/ds4_helper.cu)
+    # prototype (docs/dsv41/cards/EB-01.md): with STRATA_HIP_HELPER_ARCHS (cmake/hip_backend.cmake) the expert TUs
+    # the helper runs - ds4_iq.cu, ds4_gguf.cu, ds4_tq.cu - and the helper's own TU are compiled for the helper's wave64
+    # architecture as well (a fat binary, as the main engine's four helper TUs at the quantize_act.cu rule above).  Not
+    # ds4_kernels.cu (attention, ballots, WMMA), ds4_model.cu, ds4_vision.cu or the vendored kernels.  Source properties, so
+    # the ds4_iq_test / ds4_tq_test binaries carry the helper arch too (gate A: the kernel-parity tests run on the MI50).
+    if(STRATA_ENABLE_HIP AND STRATA_HIP_HELPER_OFFLOAD_OPTIONS)
+      set_property(SOURCE src/dsv41/ds4_iq.cu src/dsv41/ds4_gguf.cu src/dsv41/ds4_tq.cu src/dsv41/ds4_helper.cu
+                   tests/dsv41/iq_helper_bench.cpp
+                   APPEND PROPERTY COMPILE_OPTIONS ${STRATA_HIP_HELPER_OFFLOAD_OPTIONS})
+    endif()
     # the commit the binary was built from, readable with --version (set -DSTRATA_BUILD_ID=... for a tree without .git)
     if(NOT STRATA_BUILD_ID AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/BUILD_ID)   # (a git archive has no .git: the packer writes the commit here)
       file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/BUILD_ID STRATA_BUILD_ID LIMIT_COUNT 1)
@@ -935,6 +960,12 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
     # strata_prefill: the RDNA3 WMMA dense GEMM (src/prefill/wmma_gemm.cu), which gemm() prefers over hipBLAS on gfx11 (measured
     # 4.97 -> 20-40 TFLOPS on this part: the chunked prompt's dense GEMM is 11.1 s of a 4K prompt at the library's rate)
     target_link_libraries(strata-dsv41 PRIVATE strata_prefill strata_dsv41_kernels ${_strata_gpu_runtime_target} ${_strata_gpu_blas_target})
+    # (FG-04): the mHC mix's F32 GEMM through a tuned rocBLAS solution (STRATA_ROCBLAS_TUNING f32 rows,
+    # tools/hip/tune_rocblas --dsv41-mix; src/prefill/rocblas_tuning.hpp)
+    if(STRATA_ENABLE_HIP AND STRATA_ROCBLAS_AVAILABLE)
+      target_compile_definitions(strata-dsv41 PRIVATE STRATA_ROCBLAS_AVAILABLE=1)
+      target_link_libraries(strata-dsv41 PRIVATE roc::rocblas)
+    endif()
     find_package(Threads REQUIRED)
     target_link_libraries(strata-dsv41 PRIVATE Threads::Threads)
     if(WIN32 AND STRATA_ENABLE_HIP)   # cudaMemGetInfo is the DXGI-budgeted hip_compat::mem_get_info (src/core/device.cu): on a Strix Halo the
@@ -995,6 +1026,72 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
       if(STRATA_ENABLE_HIP)
         target_compile_options(ds4_iq_test PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")
       endif()
+      # (docs/dsv41/cards/PF-02.md): the chunked prompt's attention - the scalar kernel against each DS4_FAST_ATTN_MODE variant of
+      # the matrix-core kernel on identical inputs (error, non-finite counts, time a call at 2K / 8K / 16K rows); HIP only
+      if(STRATA_ENABLE_HIP)
+        set_source_files_properties(tests/dsv41/fattn_test.cpp PROPERTIES LANGUAGE HIP)
+        add_executable(ds4_fattn_test tests/dsv41/fattn_test.cpp src/dsv41/ds4_kernels.cu)
+        target_include_directories(ds4_fattn_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${_strata_gpu_include_directories}
+                                   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml ${CMAKE_CURRENT_SOURCE_DIR}/src/dsv41)
+        target_link_libraries(ds4_fattn_test PRIVATE ${_strata_gpu_runtime_target} Threads::Threads)
+        target_compile_options(ds4_fattn_test PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")
+        # (docs/dsv41/cards/FG-05.md): DS4_MULTI_ATTN's shared launches against the per-run ones, bit for bit (and --time); one GPU
+        set_source_files_properties(tests/dsv41/multi_attn_test.cpp PROPERTIES LANGUAGE HIP)
+        add_executable(ds4_multi_attn_test tests/dsv41/multi_attn_test.cpp src/dsv41/ds4_kernels.cu)
+        target_include_directories(ds4_multi_attn_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${_strata_gpu_include_directories}
+                                   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml ${CMAKE_CURRENT_SOURCE_DIR}/src/dsv41)
+        target_link_libraries(ds4_multi_attn_test PRIVATE ${_strata_gpu_runtime_target} Threads::Threads)
+        target_compile_options(ds4_multi_attn_test PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")
+      endif()
+      # (docs/dsv41/cards/HX-04.md): the helper's expert kernels alone at decode shapes (us / expert,
+      # GB/s, and an A/B bitwise check of the gfx906 token kernels against the portable ones on one device)
+      set_source_files_properties(tests/dsv41/iq_helper_bench.cpp PROPERTIES LANGUAGE ${_ds4_test_lang})
+      add_executable(ds4_iq_helper_bench tests/dsv41/iq_helper_bench.cpp src/dsv41/ds4_iq.cu src/dsv41/ds4_iq_cpu.cpp
+                     src/dsv41/ds4_gg_cpu.cpp src/dsv41/ds4_tq.cu src/dsv41/ds4_tq_cpu.cpp)
+      target_include_directories(ds4_iq_helper_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${_strata_gpu_include_directories}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml ${CMAKE_CURRENT_SOURCE_DIR}/src/kernels/cpu)
+      target_link_libraries(ds4_iq_helper_bench PRIVATE strata_kernels_cpu ${_strata_gpu_runtime_target} Threads::Threads)
+      target_compile_definitions(ds4_iq_helper_bench PRIVATE STRATA_DSV41_TQ_CPU=1)
+      if(STRATA_ENABLE_HIP)
+        target_compile_options(ds4_iq_helper_bench PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")
+      endif()
+      # one helper GPU serving K concurrent synthetic clients (serial / union-batched / several streams), MI50 alone
+      set_source_files_properties(tests/dsv41/helper_pool_bench.cpp PROPERTIES LANGUAGE ${_ds4_test_lang})
+      add_executable(ds4_helper_pool_bench tests/dsv41/helper_pool_bench.cpp src/dsv41/ds4_gguf.cu src/dsv41/ds4_iq.cu src/dsv41/ds4_tq.cu
+                     src/dsv41/ds4_gguf_cpu.cpp src/dsv41/ds4_iq_cpu.cpp src/dsv41/ds4_tq_cpu.cpp src/dsv41/ds4_gg_cpu.cpp)
+      target_include_directories(ds4_helper_pool_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${_strata_gpu_include_directories}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml ${CMAKE_CURRENT_SOURCE_DIR}/src/kernels/cpu)
+      target_link_libraries(ds4_helper_pool_bench PRIVATE strata_dsv41_kernels strata_kernels_cpu ${_strata_gpu_runtime_target} Threads::Threads)
+      target_compile_definitions(ds4_helper_pool_bench PRIVATE STRATA_DSV41_TQ_CPU=1)
+      if(STRATA_ENABLE_HIP)
+        target_compile_options(ds4_helper_pool_bench PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")
+      endif()
+      # (docs/dsv41/cards/HX-06.md): one helper request's round trip, by stage and by mechanism
+      set_source_files_properties(tests/dsv41/helper_rt_bench.cpp PROPERTIES LANGUAGE ${_ds4_test_lang})
+      add_executable(ds4_helper_rt_bench tests/dsv41/helper_rt_bench.cpp src/dsv41/ds4_gguf.cu src/dsv41/ds4_iq.cu src/dsv41/ds4_tq.cu
+                     src/dsv41/ds4_gguf_cpu.cpp src/dsv41/ds4_iq_cpu.cpp src/dsv41/ds4_tq_cpu.cpp src/dsv41/ds4_gg_cpu.cpp)
+      target_include_directories(ds4_helper_rt_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${_strata_gpu_include_directories}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml ${CMAKE_CURRENT_SOURCE_DIR}/src/kernels/cpu)
+      target_link_libraries(ds4_helper_rt_bench PRIVATE strata_dsv41_kernels strata_kernels_cpu ${_strata_gpu_runtime_target} Threads::Threads)
+      target_compile_definitions(ds4_helper_rt_bench PRIVATE STRATA_DSV41_TQ_CPU=1)
+      if(STRATA_ENABLE_HIP)
+        target_compile_options(ds4_helper_rt_bench PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")
+      endif()
+      # (docs/dsv41/cards/EB-01.md): the helper's device path (gg::win_experts) on two devices of the fat binary,
+      # bitwise compared.  Two GPUs needed to run (exit 77 otherwise); builds for the helper arch through the source rule above.
+      set_source_files_properties(tests/dsv41/helper_parity_test.cpp PROPERTIES LANGUAGE ${_ds4_test_lang})
+      add_executable(ds4_helper_parity_test tests/dsv41/helper_parity_test.cpp src/dsv41/ds4_gguf.cu src/dsv41/ds4_iq.cu src/dsv41/ds4_tq.cu
+                     src/dsv41/ds4_gguf_cpu.cpp src/dsv41/ds4_iq_cpu.cpp src/dsv41/ds4_tq_cpu.cpp src/dsv41/ds4_gg_cpu.cpp)
+      target_include_directories(ds4_helper_parity_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${_strata_gpu_include_directories}
+                                 ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml ${CMAKE_CURRENT_SOURCE_DIR}/src/kernels/cpu)
+      target_link_libraries(ds4_helper_parity_test PRIVATE strata_dsv41_kernels strata_kernels_cpu ${_strata_gpu_runtime_target} Threads::Threads)
+      target_compile_definitions(ds4_helper_parity_test PRIVATE STRATA_DSV41_TQ_CPU=1)
+      if(STRATA_ENABLE_HIP)
+        target_compile_options(ds4_helper_parity_test PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")
+      endif()
+      # (docs/dsv41/cards/FG-05.md): DS4_MULTI_ATTN's shared window buffer plan (Project Maya's plan test), CPU only
+      add_executable(ds4_multi_attn_plan_test tests/dsv41/multi_attn_plan_test.cpp)
+      target_compile_features(ds4_multi_attn_plan_test PRIVATE cxx_std_17)
       # the kept conversations' .meta file and prefix matching (ds4_slotmeta.hpp): no GPU, no model
       add_executable(ds4_slot_test tests/dsv41/slot_test.cpp)
       target_include_directories(ds4_slot_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/dsv41)
@@ -2486,6 +2583,11 @@ if(STRATA_NATIVE_EXPERTS)
     add_executable(native_expert_bench src/kernels/native_expert_bench.cpp)
     target_include_directories(native_expert_bench PRIVATE ${_strata_gpu_include_directories})
     target_link_libraries(native_expert_bench PRIVATE strata_kernels strata_kernels_cpu strata_artifact ${_strata_gpu_runtime_target})
+    # the gfx906 helper prototype's own tests (cross-device parity), next to native_expert_parity
+    # (STRATA_HIP_HELPER_ARCH_LIST: STRATA_HIP_HELPER_ARCHS validated and split, cmake/hip_backend.cmake)
+    if(STRATA_ENABLE_HIP AND STRATA_HIP_HELPER_ARCH_LIST)
+      include(cmake/gfx906_helper_tests.cmake)
+    endif()
     if(STRATA_ENABLE_CUDA AND STRATA_EXPERIMENTAL_SM60)
       # STRATA_EXPERT_NIBBLE (include/strata/core/expert_nibble.hpp): the 4-bit gate/up expert slots against the
       # production kernels and the GGUF blobs, bit for bit, on a real model's layers (needs a GP100); --header: the
@@ -2791,4 +2893,10 @@ if(STRATA_BUILD_DSV41 AND NOT STRATA_ENABLE_CUDA AND NOT STRATA_ENABLE_HIP AND N
     target_link_libraries(ds4_gg_bench PRIVATE strata_kernels_cpu Threads::Threads)
     target_compile_definitions(ds4_gg_bench PRIVATE STRATA_DSV41_TQ_CPU=1)
   endif()
+endif()
+
+# fallback (docs/dsv41/cards/EB-04.md): the helper architectures on every HIP source of every target.  Last, so that every
+# target of every directory exists.
+if(COMMAND strata_hip_helper_alltu_apply)
+  strata_hip_helper_alltu_apply()
 endif()

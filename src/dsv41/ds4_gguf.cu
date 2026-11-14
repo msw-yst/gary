@@ -34,12 +34,20 @@ std::atomic<int> g_errors{0};
 void check(const char* what) {
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        std::fprintf(stderr, "ds4 gguf %s: %s\n", what, cudaGetErrorString(e));
+        bool quiet = false;
+#if defined(STRATA_USE_HIP)
+        quiet = ds4_diag_launch_error("ds4 gguf", what, (int) e);   // STRATA_DS4_DIAG
+#endif
+        if (!quiet) std::fprintf(stderr, "ds4 gguf %s: %s\n", what, cudaGetErrorString(e));
         g_errors.fetch_add(1, std::memory_order_relaxed);
     }
 }
 void fail(const char* what) {
-    std::fprintf(stderr, "ds4 gguf %s\n", what);
+    bool quiet = false;
+#if defined(STRATA_USE_HIP)
+    quiet = ds4_diag_launch_error("ds4 gguf", what, 0);   // STRATA_DS4_DIAG (counted with the device's launch failures)
+#endif
+    if (!quiet) std::fprintf(stderr, "ds4 gguf %s\n", what);
     g_errors.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -642,12 +650,18 @@ struct CombArgs {
     float* out;
     size_t out_stride;
     int k, n_embd;
+    int skip_empty;   // DS4_HELPER_DD_SKIP (a helper's DD body only; 0 everywhere else): a token without a pick writes no row
 };
 // grid (n_embd / 128, T): each token's outputs - the experts in plan order (an expert off the device adds 0), then
 // the CPU lane's part and the shared expert's (x3's combine)
 __global__ void __launch_bounds__(128) mx_combine_kernel(const CombArgs a) {
     const int t = blockIdx.y, r = blockIdx.x * 128 + threadIdx.x;
     if (r >= a.n_embd) return;
+    if (a.skip_empty) {   // (the head wrote has[t] = 0 for this token: no reader takes its row, so it never crosses the bus)
+        bool any = false;
+        for (int i = 0; i < a.k; ++i) any |= a.plan_ptr[t * 8 + i] != 0ull;
+        if (!any) return;
+    }
     float p[8];
     for (int i = 0; i < a.k; ++i) {
         const int e = t * 8 + i;
@@ -667,6 +681,125 @@ __global__ void mx_wait_kernel(const unsigned* p, unsigned v) {
 #endif
     }
     __threadfence_system();
+}
+
+// DS4_LP_JOINCOMB (docs/dsv41/cards/HX-21.md; default off; exact by construction): ds4_model.cu's dd_join_k and the
+// combine after it (mx_combine_kernel on its part / flag) in one launch on the lead.  grid (ceil(D / 1024), T), 256 threads,
+// 4 outputs a thread: every block works out the needed helpers from the request's routing (dd_join_k's pass), its thread 0
+// waits for the lane's answer and each needed helper's seq word, then each thread joins its 4 values exactly as dd_join_k
+// does (the lane's row when flagged, then the helpers' in helper order: a copy for the first, __fadd_rn for the rest) and
+// sums each of the 4 outputs exactly as mx_combine_kernel does (combine(): the experts in plan order, then the joined value
+// when the row has one - dd_join_k's flag - then the shared expert's).  part / flag are written as dd_join_k writes them.
+__global__ void __launch_bounds__(256) dd_join_comb_kernel(const CombArgs c, const DdJoinArgs j) {
+    __shared__ unsigned need;
+    if (threadIdx.x == 0) need = j.own != nullptr ? 0u : 0xffffffffu;
+    __syncthreads();
+    if (j.own != nullptr && (int) threadIdx.x < (int) gridDim.y * 8) {   // (every token of the request, not just this block's)
+        const int tt = threadIdx.x / 8, i = threadIdx.x % 8;
+        if (i < j.kexp) {
+            const int e = j.ridx[(size_t) tt * 8 + i];
+            if (e >= 0 && e < j.nexp) {
+                const int o = j.own[(size_t) j.il * (size_t) j.nexp + (size_t) e];
+                if (o >= 0) atomicOr(&need, 1u << o);
+            }
+        }
+    }
+    __syncthreads();
+    const unsigned nd = need;
+    if (threadIdx.x == 0) {
+        while (*(const volatile unsigned*) j.rseq != j.want) {
+#if defined(STRATA_USE_HIP)
+            __builtin_amdgcn_s_sleep(1);
+#endif
+        }
+        for (int k = 0; k < j.nh; ++k)
+            if ((nd >> k) & 1u)
+                while (*(const volatile unsigned long long*) j.seq[k] != (unsigned long long) j.want) {
+#if defined(STRATA_USE_HIP)
+                    __builtin_amdgcn_s_sleep(1);
+#endif
+                }
+        __threadfence_system();
+        if (j.cnt != nullptr && blockIdx.x == 0 && blockIdx.y == 0) {
+            int sk = 0;
+            for (int k = 0; k < j.nh; ++k) sk += ((nd >> k) & 1u) ? 0 : 1;
+            j.cnt[0] += (unsigned long long) sk;
+            j.cnt[1] += (unsigned long long) j.nh;
+        }
+    }
+    __syncthreads();
+    const int D = c.n_embd;
+    const int t = blockIdx.y, q = blockIdx.x * blockDim.x + threadIdx.x, r = q * 4;
+    bool f = *(const volatile int*) &j.lane_flag[t] != 0;
+    float4 v = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    if (r < D && f) v = *(const float4*) &j.lane_part[(size_t) t * j.lane_stride + r];
+    for (int k = 0; k < j.nh; ++k) {
+        if (((nd >> k) & 1u) == 0) continue;
+        if (*(const volatile int*) &j.has[k][t] == 0) continue;
+        if (r < D) {
+            const float4 y = *(const float4*) &j.out[k][(size_t) t * D + r];
+            if (f) {
+                v.x = __fadd_rn(v.x, y.x);
+                v.y = __fadd_rn(v.y, y.y);
+                v.z = __fadd_rn(v.z, y.z);
+                v.w = __fadd_rn(v.w, y.w);
+            } else {
+                v = y;
+            }
+        }
+        f = true;
+    }
+    if (j.part != nullptr && r < D) *(float4*) &j.part[(size_t) t * D + r] = v;
+    if (j.flag != nullptr && blockIdx.x == 0 && threadIdx.x == 0) j.flag[t] = f ? 1 : 0;
+    if (r >= D) return;
+    const float vv[4] = {v.x, v.y, v.z, v.w};
+    for (int e4 = 0; e4 < 4; ++e4) {
+        const int rr = r + e4;
+        float p[8];
+        for (int i = 0; i < c.k; ++i) {
+            const int e = t * 8 + i;
+            p[i] = c.plan_ptr[e] != 0ull ? c.part[(size_t) e * D + rr] : 0.0f;
+        }
+        c.out[(size_t) t * c.out_stride + rr] =
+            combine(c.plan_w + t * 8, p, c.k, f ? &vv[e4] : nullptr, c.sh_out != nullptr ? c.sh_out[(size_t) t * D + rr] : 0.0f);
+    }
+}
+
+// DS4_LP_FLAGFUSE (docs/dsv41/cards/HX-21.md; a helper's DS4_HELPER_DD body only; default off; exact by construction):
+// mx_combine_kernel, then helper_flag_kernel's store (*flag = *val, between system fences) by the last block to finish -
+// every block's rows fenced to the system before it counts itself in (cnt: device, 0 between launches; the last block
+// sets it back) - so the window's answer word follows its rows in the same launch instead of a launch after the graph.
+__global__ void __launch_bounds__(128) mx_combine_flag_kernel(const CombArgs a, unsigned long long* flag,
+                                                              const unsigned long long* val, unsigned* cnt) {
+    const int t = blockIdx.y, r = blockIdx.x * 128 + threadIdx.x;
+    bool act = r < a.n_embd;
+    if (act && a.skip_empty) {
+        bool any = false;
+        for (int i = 0; i < a.k; ++i) any |= a.plan_ptr[t * 8 + i] != 0ull;
+        act = any;
+    }
+    if (act) {
+        float p[8];
+        for (int i = 0; i < a.k; ++i) {
+            const int e = t * 8 + i;
+            p[i] = a.plan_ptr[e] != 0ull ? a.part[(size_t) e * a.n_embd + r] : 0.0f;
+        }
+        a.out[(size_t) t * a.out_stride + r] =
+            combine(a.plan_w + t * 8, p, a.k,
+                    a.cpu_flag != nullptr && a.cpu_flag[t] ? a.cpu_part + (size_t) t * a.cpu_stride + r : nullptr,
+                    a.sh_out != nullptr ? a.sh_out[(size_t) t * a.n_embd + r] : 0.0f);
+    }
+    __threadfence_system();
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        const unsigned nb = gridDim.x * gridDim.y;
+        if (atomicAdd(cnt, 1u) == nb - 1u) {
+            *cnt = 0u;
+            __threadfence_system();
+            *(volatile unsigned long long*) flag = *(const volatile unsigned long long*) val;
+            __threadfence_system();
+        }
+    }
 }
 
 // ---------------------------------------------------------------- the prompt path's expert sets
@@ -1170,8 +1303,36 @@ x3::Mat view(const x3::Mat& m, int c0, int nc) {
     return v;
 }
 
-bool mv(const x3::MvJob* jobs, int n, cudaStream_t s) {
+void q8_round(const float* x, int rows, int k, int8_t* q, float* d, cudaStream_t s) {
+    QuantItems QI;
+    QI.n = 0;
+    (void) quant_add(QI, x, (size_t) k, rows, k, q, d);
+    quant_flush(QI, s);
+}
+
+bool mv(const x3::MvJob* jobs, int n, cudaStream_t s) { return mv(jobs, n, s, nullptr); }
+
+bool mv(const x3::MvJob* jobs, int n, cudaStream_t s, const PreQ8* pre) {
     if (n <= 0 || n > x3::kMaxMvJobs) return false;
+    // (a job whose int8 input is given - PreQ8, see ds4_gguf.cuh)
+    // (xtxkern DS4_XK_QO: or slice i of nslice; -1 not given, else the slice - its q / d below)
+    auto given_at = [pre](const x3::MvJob& q, const x3::Mat& m) -> int {
+        if (pre == nullptr || pre->q == nullptr || pre->d == nullptr || m.k != pre->k) return -1;
+        if (pre->nslice > 1) {
+            if (q.ncol != 1 || pre->slice % 32 != 0) return -1;
+            for (int i = 0; i < pre->nslice; ++i)
+                if (q.xf == pre->x + (size_t) i * pre->slice) return i;
+            return -1;
+        }
+        return q.xf == pre->x && q.ncol == pre->rows && (q.ncol == 1 || q.xf_cs == (size_t) m.k) ? 0 : -1;
+    };
+    auto given = [&given_at](const x3::MvJob& q, const x3::Mat& m) { return given_at(q, m) >= 0; };
+    auto given_q = [pre, &given_at](const x3::MvJob& q, const x3::Mat& m) {
+        return pre->q + (size_t) given_at(q, m) * pre->slice;
+    };
+    auto given_d = [pre, &given_at](const x3::MvJob& q, const x3::Mat& m) {
+        return pre->d + (size_t) given_at(q, m) * (pre->slice / 32);
+    };
 #if defined(STRATA_METAL)
     if (ds4_dbg("DS4_MV_LOG")) {   // how the engine batches its matvec jobs (one call = one quantiser dispatch)
         static std::atomic<unsigned long long> calls{0}, jobsum{0};
@@ -1210,17 +1371,22 @@ bool mv(const x3::MvJob* jobs, int n, cudaStream_t s) {
                 g_errors.fetch_add(1, std::memory_order_relaxed);
                 return false;
             }
-            const size_t at = (size_t) i * x3::kMaxMvCols * kMaxQK;
-            const int qi = quant_add(QI, q.xf, q.ncol > 1 ? q.xf_cs : (size_t) m.k, q.ncol, m.k, sc->mq + at, sc->md + at / 32);
             iq::MvJob& b = IJ[nij++];
+            if (given(q, m)) {   // (PreQ8: x rounded where it was made, q8_quant's bytes)
+                b.xq = given_q(q, m);
+                b.xd = given_d(q, m);
+            } else {
+                const size_t at = (size_t) i * x3::kMaxMvCols * kMaxQK;
+                const int qi = quant_add(QI, q.xf, q.ncol > 1 ? q.xf_cs : (size_t) m.k, q.ncol, m.k, sc->mq + at, sc->md + at / 32);
+                b.xq = QI.q[qi];
+                b.xd = QI.d[qi];
+            }
             b.w = (const uint8_t*) m.raw;
             b.ld = row_stride(m);
             b.type = m.K;
             b.k = m.k;
             b.n = m.n;
             b.ncol = q.ncol;
-            b.xq = QI.q[qi];
-            b.xd = QI.d[qi];
             b.y = q.y;
             b.ycs = q.y_cs;
             b.bias = q.bias;
@@ -1251,7 +1417,11 @@ bool mv(const x3::MvJob* jobs, int n, cudaStream_t s) {
         max_n[f] = std::max(max_n[f], m.n);
         max_c[f] = std::max(max_c[f], q.ncol);
         const bool xa = ((uintptr_t) b.x & 15u) == 0 && (q.ncol == 1 || b.xcs % 4 == 0);
-        if (f == 2) {   // the activations rounded to int8 first (each job its own rows of the scratch)
+        if (f == 2 && given(q, m)) {   // (PreQ8: x rounded where it was made, q8_quant's bytes)
+            b.xq = given_q(q, m);
+            b.xd = given_d(q, m);
+            vec[f] = vec[f] && b.ld % 4 == 0 && ((uintptr_t) b.w & 3u) == 0 && (m.k / 32) % 2 == 0;
+        } else if (f == 2) {   // the activations rounded to int8 first (each job its own rows of the scratch)
             Scratch* sc = scratch(s);
             if (sc == nullptr || m.k > kMaxQK) {
                 fail("mv: Q8_0 inputs past the scratch");
@@ -1348,6 +1518,18 @@ void rows(const x3::Mat& m, uint16_t* dst, bool bf16, cudaStream_t s) {
     check("rows");
 }
 
+#if defined(STRATA_USE_HIP)
+// STRATA_DS4_DIAG - hipFuncGetAttributes of this TU's rows kernels on the current device (-1 past the end, else the hipError_t)
+int diag_probe(int i, const char** name) {
+    hipFuncAttributes a{};
+    switch (i) {
+        case 0: *name = "gguf q8_rows_kernel"; return (int) hipFuncGetAttributes(&a, (const void*) q8_rows_kernel);
+        case 1: *name = "gguf bf16_rows_kernel"; return (int) hipFuncGetAttributes(&a, (const void*) bf16_rows_kernel);
+        default: return -1;
+    }
+}
+#endif
+
 namespace {
 // (staged when the matrix's rows are 4-byte aligned: 17 nb % 4 == 0; the blobs' offsets are)
 template <int NE>
@@ -1416,11 +1598,19 @@ void moe_gate_up(const x3::MoeArgs& a, const float* x, float* h, cudaStream_t s)
     launch_groups<GateUpK>(m, a.n_ff, a.k, 1, s);
     check("moe_gate_up");
 }
+bool q5k_rows(const x3::Mat& m, const uint8_t** w, size_t* ld) {   // (xtxkern DS4_XK_QA)
+    if (m.fmt != kFmtGG || m.K != iq::kQ5_K || m.raw == nullptr) return false;
+    *w = (const uint8_t*) m.raw;
+    *ld = row_stride(m);
+    return true;
+}
 
-void moe_down(const x3::MoeArgs& a, const float* h, const float* sh_out, float* out, cudaStream_t s) {
-    if (!mx_geometry("moe_down", a.k, a.n_embd, a.n_ff) || h == nullptr) return;
+// DS4_HELPER_OVERLAP: moe_down's two halves (moe_down calls both, unchanged in effect: the same launches in the same order)
+namespace {
+bool moe_down_part_(const x3::MoeArgs& a, const float* h, cudaStream_t s) {
+    if (!mx_geometry("moe_down", a.k, a.n_embd, a.n_ff) || h == nullptr) return false;
     Scratch* sc = scratch(s);
-    if (sc == nullptr) return;
+    if (sc == nullptr) return false;
     MxArgs m = mx_args(a.lay, a.n_embd, a.n_ff, a.limit);
     m.plan_ptr = a.plan_ptr;
     m.h = const_cast<float*>(h);
@@ -1430,7 +1620,7 @@ void moe_down(const x3::MoeArgs& a, const float* h, const float* sh_out, float* 
     q8_quant(h, (size_t) a.n_ff, a.k, a.n_ff, sc->hq, sc->hd, s);
     if (!mx_experts(a.lay)) {   // low-bit experts: ds4_iq's down, then the same combine
         iq::Args ia;
-        if (!iq_args(a.lay, a.n_embd, a.n_ff, a.limit, ia, "moe_down")) return;
+        if (!iq_args(a.lay, a.n_embd, a.n_ff, a.limit, ia, "moe_down")) return false;
         ia.plan_ptr = a.plan_ptr;
         ia.part = sc->part;
         ia.hq = sc->hq;
@@ -1444,6 +1634,11 @@ void moe_down(const x3::MoeArgs& a, const float* h, const float* sh_out, float* 
 #endif
             launch_groups<DownK>(m, a.n_embd, a.k, 1, s);
     }
+    return true;
+}
+void moe_combine_(const x3::MoeArgs& a, const float* sh_out, float* out, cudaStream_t s) {
+    Scratch* sc = scratch(s);
+    if (sc == nullptr) return;
     CombArgs c{};
     c.plan_ptr = a.plan_ptr;
     c.plan_w = a.plan_w;
@@ -1461,7 +1656,25 @@ void moe_down(const x3::MoeArgs& a, const float* h, const float* sh_out, float* 
                                                  c.cpu_flag, c.sh_out, c.out, c.out_stride, 1, c.k, c.n_embd))
 #endif
     strata_ds4_launch(mx_combine_kernel, dim3((unsigned) ((a.n_embd + 127) / 128), 1), 128, 0, s, c);
+}
+}  // namespace
+
+void moe_down(const x3::MoeArgs& a, const float* h, const float* sh_out, float* out, cudaStream_t s) {
+    if (!moe_down_part_(a, h, s)) return;
+    moe_combine_(a, sh_out, out, s);
     check("moe_down");
+}
+void moe_down_part(const x3::MoeArgs& a, const float* h, cudaStream_t s) {
+    moe_down_part_(a, h, s);
+    check("moe_down");
+}
+void moe_combine(const x3::MoeArgs& a, const float* sh_out, float* out, cudaStream_t s) {
+    moe_combine_(a, sh_out, out, s);
+    check("moe_down");
+}
+
+namespace {
+void win_combine_(const x3::WinArgs& a, cudaStream_t s);   // (DS4_HELPER_DD: below)
 }
 
 bool win_experts(const x3::WinArgs& a, cudaStream_t s) {
@@ -1501,7 +1714,7 @@ bool win_experts(const x3::WinArgs& a, cudaStream_t s) {
         ia.hq = sc->hq;
         ia.hd = sc->hd;
     }
-    q8_quant(a.x, a.x_stride, a.T, a.n_embd, sc->xq, sc->xd, s);
+    if (!a.x_q8_given) q8_quant(a.x, a.x_stride, a.T, a.n_embd, sc->xq, sc->xd, s);   // (DS4_HW_HEADQ8: the head's)
     if (mx) {
 #if defined(STRATA_METAL)
         // mx_gate_up_kernel on the Metal dispatch; the launch below is the fallback
@@ -1523,10 +1736,33 @@ bool win_experts(const x3::WinArgs& a, cudaStream_t s) {
     } else {
         iq::down(ia, groups, a.T, s);
     }
+    if (a.no_combine) {   // DS4_HELPER_DD: the caller's win_combine later
+        check("win_experts");
+        return true;
+    }
 #if !defined(STRATA_METAL)
     // (this port's dispatches are synchronous and nothing is published to wait for: ds4_kernels.cu's wait_seq)
     if (a.wait_ptr != nullptr) strata_ds4_launch(mx_wait_kernel, 1, 32, 0, s, a.wait_ptr, a.wait_val);
 #endif
+    win_combine_(a, s);
+    return true;
+}
+
+void win_combine(const x3::WinArgs& a, cudaStream_t s) { win_combine_(a, s); }
+
+// helperwin DS4_HW_HEADQ8 (see ds4_gguf.cuh)
+bool q8_scratch(cudaStream_t s, int8_t** xq, float** xd) {
+    Scratch* sc = scratch(s);
+    if (sc == nullptr) return false;
+    *xq = sc->xq;
+    *xd = sc->xd;
+    return true;
+}
+void q8_rows(const float* x, size_t ldx, int rows, int k, int8_t* q, float* d, cudaStream_t s) { q8_quant(x, ldx, rows, k, q, d, s); }
+
+// DS4_LP_JOINCOMB / DS4_LP_FLAGFUSE (docs/dsv41/cards/HX-21.md)
+namespace {
+CombArgs comb_of(const x3::WinArgs& a) {   // (win_combine_'s arguments)
     CombArgs c{};
     c.plan_ptr = a.plan_ptr;
     c.plan_w = a.plan_w;
@@ -1539,6 +1775,75 @@ bool win_experts(const x3::WinArgs& a, cudaStream_t s) {
     c.out_stride = a.out_stride;
     c.k = a.k;
     c.n_embd = a.n_embd;
+    c.skip_empty = a.skip_empty && a.cpu_flag == nullptr && a.sh_out == nullptr ? 1 : 0;
+    return c;
+}
+}  // namespace
+bool moe_join_combine(const x3::MoeArgs& a, const DdJoinArgs& j, const float* sh_out, float* out, cudaStream_t s) {
+#if defined(STRATA_METAL)
+    (void) a; (void) j; (void) sh_out; (void) out; (void) s;
+    return false;
+#else
+    if (a.n_embd % 4 != 0 || a.k < 1 || a.k > 8) return false;
+    Scratch* sc = scratch(s);
+    if (sc == nullptr) return false;
+    CombArgs c{};   // (moe_combine_'s, the part the scratch's; the lane / helper part the join's)
+    c.plan_ptr = a.plan_ptr;
+    c.plan_w = a.plan_w;
+    c.part = sc->part;
+    c.sh_out = sh_out;
+    c.out = out;
+    c.out_stride = (size_t) a.n_embd;
+    c.k = a.k;
+    c.n_embd = a.n_embd;
+    strata_ds4_launch(dd_join_comb_kernel, dim3((unsigned) ((a.n_embd / 4 + 255) / 256), 1u), 256, 0, s, c, j);
+    check("moe_join_combine");
+    return true;
+#endif
+}
+bool win_join_combine(const x3::WinArgs& a, const DdJoinArgs& j, cudaStream_t s) {
+#if defined(STRATA_METAL)
+    (void) a; (void) j; (void) s;
+    return false;
+#else
+    if (a.n_embd % 4 != 0 || a.k < 1 || a.k > 8 || a.T < 1) return false;
+    CombArgs c = comb_of(a);
+    c.cpu_part = nullptr;   // (the join's)
+    c.cpu_flag = nullptr;
+    c.skip_empty = 0;
+    strata_ds4_launch(dd_join_comb_kernel, dim3((unsigned) ((a.n_embd / 4 + 255) / 256), (unsigned) a.T), 256, 0, s, c, j);
+    check("win_join_combine");
+    return true;
+#endif
+}
+void win_combine_flag(const x3::WinArgs& a, unsigned long long* flag, const unsigned long long* val, unsigned* cnt,
+                      cudaStream_t s) {
+#if defined(STRATA_METAL)
+    (void) flag; (void) val; (void) cnt;
+    win_combine_(a, s);
+#else
+    const CombArgs c = comb_of(a);
+    strata_ds4_launch(mx_combine_flag_kernel, dim3((unsigned) ((a.n_embd + 127) / 128), (unsigned) a.T), 128, 0, s, c, flag, val, cnt);
+    check("win_combine_flag");
+#endif
+}
+
+namespace {
+void win_combine_(const x3::WinArgs& a, cudaStream_t s) {
+    CombArgs c{};
+    c.plan_ptr = a.plan_ptr;
+    c.plan_w = a.plan_w;
+    c.part = a.part;
+    c.cpu_part = a.cpu_part;
+    c.cpu_stride = a.cpu_stride != 0 ? a.cpu_stride : (size_t) a.n_embd;
+    c.cpu_flag = a.cpu_flag;
+    c.sh_out = a.sh_out;
+    c.out = a.out;
+    c.out_stride = a.out_stride;
+    c.k = a.k;
+    c.n_embd = a.n_embd;
+    // (DS4_HELPER_DD_SKIP: only a row made of nothing but this device's experts - no CPU part, no shared expert)
+    c.skip_empty = a.skip_empty && a.cpu_flag == nullptr && a.sh_out == nullptr ? 1 : 0;
 #if defined(STRATA_METAL)
     // mx_combine_kernel on the Metal dispatch; the launch below is the fallback
     if (!::strata::dsv41::metal_host::mx_combine(c.plan_ptr, c.plan_w, c.part, c.cpu_part, c.cpu_stride,
@@ -1546,8 +1851,8 @@ bool win_experts(const x3::WinArgs& a, cudaStream_t s) {
 #endif
     strata_ds4_launch(mx_combine_kernel, dim3((unsigned) ((a.n_embd + 127) / 128), (unsigned) a.T), 128, 0, s, c);
     check("win_experts");
-    return true;
 }
+}  // namespace
 
 namespace {
 iq::SetArgs iq_set(const x3::SetArgs& sa) {   // a set as ds4_iq's arguments (the inputs / outputs and types to fill in)
@@ -1689,6 +1994,39 @@ void set_down(const x3::SetArgs& sa, const uint16_t* h16, int ldh, float* y, int
     else
         strata_ds4_launch(mx_set_kernel<false>, grid, kThreads, 0, s, k);
     check("set_down");
+}
+
+
+// PF-12 (DS4_PF_TILE): the prompt helper's one-pass sets (ds4_iq.cu pft3_*; see ds4_gguf.cuh)
+bool pf_tile_choose(const x3::ExpertLayout& lay, int n_embd, int n_ff, int rows, int* agu, int* adn) {
+    if (mx_experts(lay)) return false;
+    const int tg = expert_type(lay, 0), tu = expert_type(lay, 1), td = expert_type(lay, 2);
+    auto four = [](int t) { return t == iq::kIQ2_XXS || t == iq::kIQ2_XS || t == iq::kIQ2_S || t == iq::kIQ3_XXS; };
+    if (tg != tu || !four(tg) || !four(td)) return false;
+    // (pft3_set's geometry for every arm the dispatch picks: K % 256, K / 32 <= 160, N a multiple of 64)
+    if (n_embd % 256 != 0 || n_ff % 256 != 0 || n_embd > 5120 || n_ff > 5120 || n_embd % 64 != 0 || n_ff % 64 != 0) return false;
+    return iq::pft3_choose(tg, td, rows, agu, adn);
+}
+bool pf_tile_set(const x3::SetArgs& sa, bool gu, const float* x, int ldx, const int* row_idx, const uint16_t* h16in,
+                 uint16_t* h16, int ldh, float* y, int ldy, int nrows, int arm, cudaStream_t s) {
+    iq::SetArgs q = iq_set(sa);
+    q.tg = expert_type(sa.lay, 0);
+    q.td = expert_type(sa.lay, 2);
+    if (gu) {
+        q.xf = x;
+        q.idx = row_idx;
+        q.ldx = ldx;
+        q.h = h16;
+        q.ldo = ldh;
+    } else {
+        q.xh = h16in;
+        q.ldx = ldh;
+        q.y = y;
+        q.ldo = ldy;
+    }
+    const bool ok = iq::pft3_set(q, gu, nrows, arm, s);
+    check(gu ? "pf_tile_set gate_up" : "pf_tile_set down");
+    return ok;
 }
 
 }  // namespace strata::ds4::gguf

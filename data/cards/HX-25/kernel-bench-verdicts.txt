@@ -1,0 +1,65 @@
+# fused down kernel (mi50fb-20261112T165338Z), microseconds a window vs the kernels of the time
+== verdicts (prereg.md 3)
+  FD (vs OFF): T1 rule FAIL: T1 gate mean +10.18 (passes +9.86 +10.49; need <= -3.0 and each <= -1.5) | worst T1 cell +50.64 at 1-1-16-16 gate (need <= +1.0)
+      TN rule FAIL: worst T 2-4 cell +395.75 at 4-4-18-18 G6 (need <= +2.0); T 2-4 gate mean +54.64 (need <= 0.0)
+      T1 gate 16:16 +31.84: predicted -10.0 .. -4.0: above
+      T1 gate 16:17 +8.92: predicted -12.0 .. -7.0: above
+      T1 gate 22:22 +1.70: predicted -12.0 .. -7.0: above
+      T1 gate 18:18 -1.74: predicted -12.0 .. -7.0: above
+      TNne1 mean +45.00: predicted -10.0 .. -3.0: above
+      TNmultiG1 mean +59.46: predicted -4.0 .. +3.0: above
+      TNmultiG6 mean +230.08: predicted -2.0 .. +8.0: above
+  VERDICT FD: NO WIN
+  FDT (vs OFF): T1 rule FAIL: T1 gate mean +1.31 (passes +0.99 +1.62; need <= -3.0 and each <= -1.5) | worst T1 cell +19.53 at 1-1-16-17 gate (need <= +1.0)
+      TN rule FAIL: worst T 2-4 cell +416.00 at 4-4-22-22 G6 (need <= +2.0); T 2-4 gate mean +64.27 (need <= 0.0)
+      T1 gate 16:16 -2.62: predicted -11.0 .. -5.0: above
+      T1 gate 16:17 +8.70: predicted -12.0 .. -7.0: above
+      T1 gate 22:22 +1.55: predicted -12.0 .. -7.0: above
+      T1 gate 18:18 -2.40: predicted -12.0 .. -7.0: above
+      TNne1 mean +33.52: predicted -12.0 .. -5.0: above
+      TNmultiG1 mean +79.64: predicted -4.0 .. +3.0: above
+      TNmultiG6 mean +287.26: predicted -2.0 .. +8.0: above
+  VERDICT FDT: NO WIN
+  FDW (vs WIN): T1 rule FAIL: T1 gate mean +6.59 (passes +6.84 +6.34; need <= -3.0 and each <= -1.5) | worst T1 cell +43.05 at 1-1-16-16 gate (need <= +1.0)
+      TN rule FAIL: worst T 2-4 cell +397.23 at 4-4-18-18 G6 (need <= +2.0); T 2-4 gate mean +54.62 (need <= 0.0)
+      T1 gate 16:16 +22.13: predicted -10.0 .. -4.0: above
+      T1 gate 16:17 +5.27: predicted -12.0 .. -7.0: above
+      T1 gate 22:22 +1.12: predicted -12.0 .. -7.0: above
+      T1 gate 18:18 -2.14: predicted -12.0 .. -7.0: above
+      TNne1 mean +44.99: predicted -10.0 .. -3.0: above
+      TNmultiG1 mean +59.43: predicted -4.0 .. +3.0: above
+      TNmultiG6 mean +229.90: predicted -2.0 .. +8.0: above
+  VERDICT FDW: NO WIN
+  FDWT (vs WIN): T1 rule FAIL: T1 gate mean +1.94 (passes +2.01 +1.87; need <= -3.0 and each <= -1.5) | worst T1 cell +17.48 at 1-1-16-17 gate (need <= +1.0)
+      TN rule FAIL: worst T 2-4 cell +823.86 at 4-4-18-18 G6 (need <= +2.0); T 2-4 gate mean +100.46 (need <= 0.0)
+      T1 gate 16:16 +2.53: predicted -11.0 .. -5.0: above
+      T1 gate 16:17 +5.69: predicted -12.0 .. -7.0: above
+      T1 gate 22:22 +1.59: predicted -12.0 .. -7.0: above
+      T1 gate 18:18 -2.04: predicted -12.0 .. -7.0: above
+      TNne1 mean +61.51: predicted -12.0 .. -5.0: above
+      TNmultiG1 mean +119.94: predicted -4.0 .. +3.0: above
+      TNmultiG6 mean +397.04: predicted -2.0 .. +8.0: above
+  VERDICT FDWT: NO WIN
+  WIN (info, the MI50K flags vs OFF) T1 gate mean -2.79 us
+CHOSEN: none (-)
+WINNERS: none (winners.txt)
+# multi-row kernels (mi50mb-20261112T173607Z)
+  MR: T 2-4 gate mean over the ksigns8 types -0.65 us (passes -0.49 -0.80; need <= -1.5 and each <= -0.75) | T 2-4 worst gate/gate +0.97 at 3-3-22-22 gate (need <= +2.0), worst G6 +1.52 at 2-1-22-22 G6 (need <= +4.0) | batch mean -28.12 (need <= 0.0), batch worst gate/gate +0.23 at 8-1-16-17 gate (need <= +2.0), worst G6 -12.79 at 6-1-16-17 G6 (need <= +4.0)
+      MR on IQ2_S cells (not applied: predicted 0 +- 0.5) mean +0.16
+VERDICT MR: NO WIN
+  RL: T 2-4 gate mean +40.19 us (passes +40.30 +40.08; need <= -5.0 and each <= -2.5) | ne1 gate mean +44.78 (need <= 0.0) | T 2-4 worst gate/gate +262.61 at 2-1-22-22 gate (need <= +2.0), worst G6 +819.10 at 2-1-22-22 G6 (need <= +4.0) | batch mean +37.74 (need <= 0.0), batch worst gate/gate +68.60 at 6-1-16-17 gate (need <= +2.0), worst G6 +356.15 at 6-1-16-17 G6 (need <= +4.0)
+      RL T 2-4 ne 1 gate mean +44.78 us (predicted -25 .. +5 % of the base)
+      RL T 2-4 ne 2 gate mean +40.06 us (predicted -32 .. -5 % of the base)
+      RL T 2-4 ne 3 gate mean +33.39 us (predicted -36 .. -10 % of the base)
+      RL T 2-4 ne 4 gate mean +28.35 us (predicted -40 .. -15 % of the base)
+      RL T 2-4 ne mix gate mean +44.21 us (predicted -30 .. +0 % of the base)
+VERDICT RL: NO WIN
+  RLA: T 2-4 gate mean +38.35 us (passes +38.53 +38.17; need <= -5.0 and each <= -2.5) | ne1 gate mean +39.23 (need <= 0.0) | T 2-4 worst gate/gate +159.31 at 2-1-22-22 gate (need <= +2.0), worst G6 +716.39 at 2-1-18-18 G6 (need <= +4.0) | batch mean +22.07 (need <= 0.0), batch worst gate/gate +49.83 at 6-1-16-17 gate (need <= +2.0), worst G6 +274.05 at 6-1-16-17 G6 (need <= +4.0)
+      RLA T 2-4 ne 1 gate mean +39.23 us (predicted -25 .. +5 % of the base)
+      RLA T 2-4 ne 2 gate mean +39.37 us (predicted -32 .. -5 % of the base)
+      RLA T 2-4 ne 3 gate mean +36.72 us (predicted -36 .. -10 % of the base)
+      RLA T 2-4 ne 4 gate mean +34.83 us (predicted -40 .. -15 % of the base)
+      RLA T 2-4 ne mix gate mean +38.71 us (predicted -30 .. +0 % of the base)
+VERDICT RLA: NO WIN
+CHOSEN ROWLANE: none
+WINNERS: none (winners.txt)

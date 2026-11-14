@@ -1,0 +1,14 @@
+== P1 (high) vs P2 (manual + top sclk / mclk), tp4h4 ABDDS (MEASURED; ms a step mean [min-max] nREPS)
+B1 ABDDS high: 15.20 [15.20-15.20] n2
+B1 ABDDS sclk8: 15.20 [15.20-15.20] n2
+B1 AB high: 16.1 (1 rep)
+B1 AB sclk8: 16.5 (1 rep)
+B1 ABDD high: 15.4 (1 rep)
+B1 ABDD sclk8: 15.4 (1 rep)
+B8 ABDDS high: 41.15 [41.10-41.20] n2
+B8 ABDDS sclk8: 44.25 [43.20-45.30] n2
+B8 AB high: 48.5 (1 rep)
+B8 AB sclk8: 58.8 (1 rep)
+B8 ABDD high: 42.6 (1 rep)
+B8 ABDD sclk8: 48.7 (1 rep)
+stdout skp-sclk8-1 vs skp-high-1: IDENTICAL

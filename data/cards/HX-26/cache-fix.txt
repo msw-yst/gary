@@ -1,0 +1,144 @@
+# Expert-cache leak fix (DS4_EC_FIX=1) on a later build (EC, on F3); served, 4 slots; per arm 50 cold 2K prompts then
+# 3 x 8K: A flag off (build 15's behaviour), F flag on, B --no-expert-cache; greedy identity sets before and after. F1 / F3 / EC / PT / TS / UF = builds made after build 15; F1, F3, EC and UF went into build 16, the build in this release; PT and TS are not in it.
+== CACHEFIX per request (TTFT s | decode ms a token | unheld experts streamed in the request's prompt-helper lines)
+-- ecr F3 (flag-off reference, id0 only): rc rc=0 | first VRAM line (6826 of 15744 in VRAM) | FLOW_STATS in ds.json True | DS4_EC_FIX=1 in ds.json False | --no-expert-cache False
+   id0     greedy mix set: 8 sequences rc 0
+-- eca A (EC, flag off): rc rc=0 | first VRAM line (6826 of 15744 in VRAM) | FLOW_STATS in ds.json True | DS4_EC_FIX=1 in ds.json False | --no-expert-cache False
+   id0     greedy mix set: 8 sequences rc 0
+   p2k-1   ptok  1657 ttft 2.25 dec 10.13 unheld 72 (1 lines, engine 2204 ms) wall 3.5 rc 0
+   p2k-2   ptok  1657 ttft 2.25 dec 10.33 unheld 80 (1 lines, engine 2204 ms) wall 3.6 rc 0
+   p2k-3   ptok  1658 ttft 2.24 dec 9.77 unheld 88 (1 lines, engine 2204 ms) wall 3.5 rc 0
+   p2k-4   ptok  1658 ttft 2.24 dec 8.94 unheld 96 (1 lines, engine 2204 ms) wall 3.4 rc 0
+   p2k-5   ptok  1657 ttft 2.25 dec 10.85 unheld 104 (1 lines, engine 2204 ms) wall 3.6 rc 0
+   p2k-6   ptok  1657 ttft 2.25 dec 9.63 unheld 112 (1 lines, engine 2204 ms) wall 3.5 rc 0
+   p2k-7   ptok  1657 ttft 2.25 dec 9.58 unheld 120 (1 lines, engine 2209 ms) wall 3.5 rc 0
+   p2k-8   ptok  1658 ttft 2.29 dec 9.26 unheld 128 (1 lines, engine 2254 ms) wall 3.5 rc 0
+   p2k-9   ptok  1658 ttft 2.29 dec 8.88 unheld 136 (1 lines, engine 2254 ms) wall 3.4 rc 0
+   p2k-10  ptok  1658 ttft 2.29 dec 8.84 unheld 144 (1 lines, engine 2253 ms) wall 3.4 rc 0
+   p2k-11  ptok  1657 ttft 2.30 dec 8.20 unheld 152 (1 lines, engine 2253 ms) wall 3.3 rc 0
+   p2k-12  ptok  1657 ttft 2.34 dec 9.05 unheld 160 (1 lines, engine 2303 ms) wall 3.5 rc 0
+   p2k-13  ptok  1657 ttft 2.35 dec 9.14 unheld 168 (1 lines, engine 2303 ms) wall 3.5 rc 0
+   p2k-14  ptok  1658 ttft 2.34 dec 9.44 unheld 176 (1 lines, engine 2303 ms) wall 3.5 rc 0
+   p2k-15  ptok  1658 ttft 2.34 dec 10.82 unheld 184 (1 lines, engine 2304 ms) wall 3.7 rc 0
+   p2k-16  ptok  1657 ttft 2.35 dec 9.46 unheld 192 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-17  ptok  1657 ttft 2.39 dec 11.17 unheld 200 (1 lines, engine 2354 ms) wall 3.8 rc 0
+   p2k-18  ptok  1657 ttft 2.39 dec 9.37 unheld 208 (1 lines, engine 2354 ms) wall 3.6 rc 0
+   p2k-19  ptok  1657 ttft 2.40 dec 8.92 unheld 216 (1 lines, engine 2354 ms) wall 3.5 rc 0
+   p2k-20  ptok  1658 ttft 2.40 dec 9.77 unheld 224 (1 lines, engine 2358 ms) wall 3.6 rc 0
+   p2k-21  ptok  1658 ttft 2.39 dec 9.33 unheld 232 (1 lines, engine 2354 ms) wall 3.6 rc 0
+   p2k-22  ptok  1657 ttft 2.44 dec 9.47 unheld 240 (1 lines, engine 2404 ms) wall 3.6 rc 0
+   p2k-23  ptok  1657 ttft 2.44 dec 9.80 unheld 248 (1 lines, engine 2404 ms) wall 3.7 rc 0
+   p2k-24  ptok  1657 ttft 2.45 dec 9.96 unheld 256 (1 lines, engine 2405 ms) wall 3.7 rc 0
+   p2k-25  ptok  1658 ttft 2.44 dec 9.66 unheld 264 (1 lines, engine 2404 ms) wall 3.7 rc 0
+   p2k-26  ptok  1658 ttft 2.44 dec 9.55 unheld 272 (1 lines, engine 2404 ms) wall 3.6 rc 0
+   p2k-27  ptok  1658 ttft 2.44 dec 9.62 unheld 280 (1 lines, engine 2410 ms) wall 3.7 rc 0
+   p2k-28  ptok  1657 ttft 2.49 dec 9.57 unheld 288 (1 lines, engine 2454 ms) wall 3.7 rc 0
+   p2k-29  ptok  1657 ttft 2.49 dec 10.29 unheld 296 (1 lines, engine 2454 ms) wall 3.8 rc 0
+   p2k-30  ptok  1657 ttft 2.49 dec 9.85 unheld 304 (1 lines, engine 2454 ms) wall 3.7 rc 0
+   p2k-31  ptok  1658 ttft 2.49 dec 9.61 unheld 312 (1 lines, engine 2454 ms) wall 3.7 rc 0
+   p2k-32  ptok  1658 ttft 2.49 dec 8.91 unheld 320 (1 lines, engine 2458 ms) wall 3.6 rc 0
+   p2k-33  ptok  1657 ttft 2.49 dec 9.95 unheld 328 (1 lines, engine 2454 ms) wall 3.8 rc 0
+   p2k-34  ptok  1657 ttft 2.50 dec 10.42 unheld 336 (1 lines, engine 2458 ms) wall 3.8 rc 0
+   p2k-35  ptok  1657 ttft 2.54 dec 9.96 unheld 344 (1 lines, engine 2504 ms) wall 3.8 rc 0
+   p2k-36  ptok  1657 ttft 2.55 dec 9.14 unheld 352 (1 lines, engine 2510 ms) wall 3.7 rc 0
+   p2k-37  ptok  1658 ttft 2.59 dec 9.15 unheld 360 (1 lines, engine 2553 ms) wall 3.7 rc 0
+   p2k-38  ptok  1658 ttft 2.59 dec 11.27 unheld 368 (1 lines, engine 2554 ms) wall 4.0 rc 0
+   p2k-39  ptok  1657 ttft 2.59 dec 9.62 unheld 376 (1 lines, engine 2554 ms) wall 3.8 rc 0
+   p2k-40  ptok  1657 ttft 2.59 dec 9.25 unheld 383 (1 lines, engine 2553 ms) wall 3.8 rc 0
+   p2k-41  ptok  1657 ttft 2.59 dec 10.28 unheld 391 (1 lines, engine 2555 ms) wall 3.9 rc 0
+   p2k-42  ptok  1658 ttft 2.60 dec 9.82 unheld 398 (1 lines, engine 2561 ms) wall 3.8 rc 0
+   p2k-43  ptok  1658 ttft 2.60 dec 9.52 unheld 406 (1 lines, engine 2554 ms) wall 3.8 rc 0
+   p2k-44  ptok  1658 ttft 2.59 dec 9.93 unheld 414 (1 lines, engine 2555 ms) wall 3.8 rc 0
+   p2k-45  ptok  1657 ttft 2.59 dec 9.99 unheld 422 (1 lines, engine 2553 ms) wall 3.9 rc 0
+   p2k-46  ptok  1657 ttft 2.65 dec 11.16 unheld 430 (1 lines, engine 2604 ms) wall 4.1 rc 0
+   p2k-47  ptok  1657 ttft 2.64 dec 9.43 unheld 438 (1 lines, engine 2604 ms) wall 3.8 rc 0
+   p2k-48  ptok  1658 ttft 2.64 dec 9.22 unheld 446 (1 lines, engine 2604 ms) wall 3.8 rc 0
+   p2k-49  ptok  1658 ttft 2.64 dec 9.40 unheld 454 (1 lines, engine 2604 ms) wall 3.8 rc 0
+   p2k-50  ptok  1657 ttft 2.64 dec 8.83 unheld 462 (1 lines, engine 2605 ms) wall 3.8 rc 0
+   p8k-1   ptok  6544 ttft 6.23 dec 9.74 unheld 470 (1 lines, engine 6165 ms) wall 7.5 rc 0
+   p8k-2   ptok  6544 ttft 6.16 dec 10.14 unheld 478 (1 lines, engine 6110 ms) wall 7.4 rc 0
+   p8k-3   ptok  6544 ttft 6.16 dec 9.49 unheld 486 (1 lines, engine 6110 ms) wall 7.4 rc 0
+   id1     greedy mix set: 8 sequences rc 0
+-- ecf F (EC, DS4_EC_FIX=1): rc rc=0 | first VRAM line (6826 of 15744 in VRAM) | FLOW_STATS in ds.json True | DS4_EC_FIX=1 in ds.json True | --no-expert-cache False | last EC_FIX line: 205908 helper-held hits left out, 0 swaps (71 lines)
+   id0     greedy mix set: 8 sequences rc 0
+   p2k-1   ptok  1657 ttft 2.27 dec 8.66 unheld 0 (1 lines, engine 2261 ms) wall 3.4 rc 0
+   p2k-2   ptok  1657 ttft 2.32 dec 9.41 unheld 0 (1 lines, engine 2303 ms) wall 3.5 rc 0
+   p2k-3   ptok  1658 ttft 2.32 dec 8.31 unheld 0 (1 lines, engine 2303 ms) wall 3.4 rc 0
+   p2k-4   ptok  1658 ttft 2.27 dec 9.04 unheld 0 (1 lines, engine 2260 ms) wall 3.4 rc 0
+   p2k-5   ptok  1657 ttft 2.27 dec 10.66 unheld 0 (1 lines, engine 2254 ms) wall 3.6 rc 0
+   p2k-6   ptok  1657 ttft 2.32 dec 9.97 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-7   ptok  1657 ttft 2.32 dec 8.99 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-8   ptok  1658 ttft 2.32 dec 9.97 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-9   ptok  1658 ttft 2.32 dec 10.03 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-10  ptok  1658 ttft 2.28 dec 9.17 unheld 0 (1 lines, engine 2262 ms) wall 3.4 rc 0
+   p2k-11  ptok  1657 ttft 2.27 dec 8.46 unheld 0 (1 lines, engine 2254 ms) wall 3.3 rc 0
+   p2k-12  ptok  1657 ttft 2.27 dec 10.29 unheld 0 (1 lines, engine 2261 ms) wall 3.6 rc 0
+   p2k-13  ptok  1657 ttft 2.32 dec 9.69 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-14  ptok  1658 ttft 2.27 dec 10.00 unheld 0 (1 lines, engine 2254 ms) wall 3.5 rc 0
+   p2k-15  ptok  1658 ttft 2.27 dec 8.61 unheld 0 (1 lines, engine 2254 ms) wall 3.4 rc 0
+   p2k-16  ptok  1657 ttft 2.27 dec 10.67 unheld 0 (1 lines, engine 2254 ms) wall 3.6 rc 0
+   p2k-17  ptok  1657 ttft 2.27 dec 10.04 unheld 0 (1 lines, engine 2256 ms) wall 3.5 rc 0
+   p2k-18  ptok  1657 ttft 2.27 dec 9.64 unheld 0 (1 lines, engine 2260 ms) wall 3.5 rc 0
+   p2k-19  ptok  1657 ttft 2.32 dec 9.62 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-20  ptok  1658 ttft 2.32 dec 9.97 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-21  ptok  1658 ttft 2.27 dec 10.53 unheld 0 (1 lines, engine 2254 ms) wall 3.6 rc 0
+   p2k-22  ptok  1657 ttft 2.27 dec 9.81 unheld 0 (1 lines, engine 2260 ms) wall 3.5 rc 0
+   p2k-23  ptok  1657 ttft 2.32 dec 9.53 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-24  ptok  1657 ttft 2.32 dec 9.50 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-25  ptok  1658 ttft 2.28 dec 10.09 unheld 0 (1 lines, engine 2262 ms) wall 3.6 rc 0
+   p2k-26  ptok  1658 ttft 2.27 dec 9.75 unheld 0 (1 lines, engine 2254 ms) wall 3.5 rc 0
+   p2k-27  ptok  1658 ttft 2.27 dec 9.96 unheld 0 (1 lines, engine 2256 ms) wall 3.5 rc 0
+   p2k-28  ptok  1657 ttft 2.32 dec 9.35 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-29  ptok  1657 ttft 2.32 dec 10.02 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-30  ptok  1657 ttft 2.32 dec 8.55 unheld 0 (1 lines, engine 2303 ms) wall 3.4 rc 0
+   p2k-31  ptok  1658 ttft 2.27 dec 9.46 unheld 0 (1 lines, engine 2253 ms) wall 3.5 rc 0
+   p2k-32  ptok  1658 ttft 2.27 dec 8.51 unheld 0 (1 lines, engine 2260 ms) wall 3.3 rc 0
+   p2k-33  ptok  1657 ttft 2.27 dec 9.67 unheld 0 (1 lines, engine 2253 ms) wall 3.5 rc 0
+   p2k-34  ptok  1657 ttft 2.27 dec 10.28 unheld 0 (1 lines, engine 2254 ms) wall 3.6 rc 0
+   p2k-35  ptok  1657 ttft 2.32 dec 9.77 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-36  ptok  1657 ttft 2.32 dec 9.02 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-37  ptok  1658 ttft 2.32 dec 9.61 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-38  ptok  1658 ttft 2.27 dec 9.73 unheld 0 (1 lines, engine 2260 ms) wall 3.5 rc 0
+   p2k-39  ptok  1657 ttft 2.27 dec 9.34 unheld 0 (1 lines, engine 2254 ms) wall 3.5 rc 0
+   p2k-40  ptok  1657 ttft 2.32 dec 9.88 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-41  ptok  1657 ttft 2.32 dec 10.44 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-42  ptok  1658 ttft 2.27 dec 9.34 unheld 0 (1 lines, engine 2254 ms) wall 3.4 rc 0
+   p2k-43  ptok  1658 ttft 2.27 dec 9.39 unheld 0 (1 lines, engine 2254 ms) wall 3.5 rc 0
+   p2k-44  ptok  1658 ttft 2.27 dec 9.21 unheld 0 (1 lines, engine 2254 ms) wall 3.4 rc 0
+   p2k-45  ptok  1657 ttft 2.27 dec 10.76 unheld 0 (1 lines, engine 2254 ms) wall 3.6 rc 0
+   p2k-46  ptok  1657 ttft 2.32 dec 9.43 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-47  ptok  1657 ttft 2.27 dec 9.10 unheld 0 (1 lines, engine 2259 ms) wall 3.4 rc 0
+   p2k-48  ptok  1658 ttft 2.27 dec 8.92 unheld 0 (1 lines, engine 2258 ms) wall 3.4 rc 0
+   p2k-49  ptok  1658 ttft 2.27 dec 9.56 unheld 0 (1 lines, engine 2255 ms) wall 3.5 rc 0
+   p2k-50  ptok  1657 ttft 2.27 dec 9.38 unheld 0 (1 lines, engine 2254 ms) wall 3.5 rc 0
+   p8k-1   ptok  6544 ttft 6.73 dec 8.96 unheld 0 (1 lines, engine 6711 ms) wall 7.9 rc 0
+   p8k-2   ptok  6544 ttft 6.64 dec 10.88 unheld 0 (1 lines, engine 6613 ms) wall 8.0 rc 0
+   p8k-3   ptok  6544 ttft 6.69 dec 9.89 unheld 0 (1 lines, engine 6661 ms) wall 7.9 rc 0
+   id1     greedy mix set: 8 sequences rc 0
+-- ecb B (EC, --no-expert-cache): rc rc=0 | first VRAM line (6866 of 15744 in VRAM) | FLOW_STATS in ds.json True | DS4_EC_FIX=1 in ds.json False | --no-expert-cache True
+   p2k-1   ptok  1657 ttft 2.37 dec 9.59 unheld 0 (1 lines, engine 2353 ms) wall 3.6 rc 0
+   p2k-2   ptok  1657 ttft 2.32 dec 9.01 unheld 0 (1 lines, engine 2303 ms) wall 3.5 rc 0
+   p2k-3   ptok  1658 ttft 2.32 dec 9.14 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-4   ptok  1658 ttft 2.32 dec 10.18 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-5   ptok  1657 ttft 2.32 dec 9.81 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-6   ptok  1657 ttft 2.32 dec 9.51 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-7   ptok  1657 ttft 2.32 dec 8.45 unheld 0 (1 lines, engine 2304 ms) wall 3.4 rc 0
+   p2k-8   ptok  1658 ttft 2.32 dec 9.41 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-9   ptok  1658 ttft 2.32 dec 9.63 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-10  ptok  1658 ttft 2.32 dec 9.64 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p8k-1   ptok  6544 ttft 6.79 dec 10.89 unheld 0 (1 lines, engine 6761 ms) wall 8.2 rc 0
+   p8k-2   ptok  6544 ttft 6.68 dec 9.25 unheld 0 (1 lines, engine 6658 ms) wall 7.9 rc 0
+   p8k-3   ptok  6544 ttft 6.74 dec 9.91 unheld 0 (1 lines, engine 6716 ms) wall 8.0 rc 0
+== CACHEFIX per arm (2K: drift = mean TTFT of the last 10 vs prompts 1-10)
+ARM eca A (EC, flag off): 2K n 50 | unheld slope 7.962 a prompt, largest 486 | TTFT 1-10 2.261 s, last 10 2.617 s, drift 15.75 %, all 2.446 s | decode 9.670 ms a token | 8K n 3 TTFT 6.182 s unheld [470, 478, 486]
+ARM ecf F (EC, DS4_EC_FIX=1): 2K n 50 | unheld slope 0.000 a prompt, largest 0 | TTFT 1-10 2.301 s, last 10 2.279 s, drift -0.92 %, all 2.290 s | decode 9.582 ms a token | 8K n 3 TTFT 6.685 s unheld [0, 0, 0]
+ARM ecb B (EC, --no-expert-cache): 2K n 10 | unheld slope 0.000 a prompt, largest 0 | TTFT 1-10 2.323 s, last 10 - s, drift - %, all 2.323 s | decode 9.437 ms a token | 8K n 3 TTFT 6.735 s unheld [0, 0, 0]
+== identity (greedy mix set, 8 sequences: content / reasoning / tool calls / finish)
+IDF: IDENTICAL (8 of 8 identical)   (F id0 vs F id1, before and after 50 + 3 prompts: history-independent; a GATE)
+IDOFF: IDENTICAL (8 of 8 identical)   (F3 id0 vs EC flag-off id0, fresh processes; expected IDENTICAL)
+IDA: DIFFER (2 of 8 identical; differ: [0, 1, 2, 3, 4, 6])   (A id0 vs A id1, after 50 + 3 prompts of promotions; predicted DIFFER)
+DECODE: F 9.582 vs A 9.670 ms a token: -0.91 % (ABORT above +2 %)
+VERDICT ECLEAK: FIXED (A slope 7.962, F slope 0.000, F largest unheld 0, A drift +15.75 %, F drift -0.92 %, 2K TTFT all prompts A 2.446 / F 2.290 s, decode F vs A -0.91 %)
+VERDICT EC8K: AT B (F 6.685 s, A 6.182 s (+8.1 %), B 6.735 s (-0.7 %))
+VERDICT CACHEFIX: PARTIAL (ECLEAK FIXED, EC8K AT B; IDOFF: IDENTICAL (8 of 8 identical))
+TRIPPED: 0 new lines since start

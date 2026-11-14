@@ -134,6 +134,16 @@ struct WinArgs {
     // part arrives while the device computes the experts); cpu_flag may be null (no CPU part)
     const unsigned* wait_ptr = nullptr;
     unsigned wait_val = 0;
+    // DS4_HELPER_DD (GGUF experts only, gguf::win_experts): true - the experts' rows only, no wait and no combine; the
+    // caller runs gguf::win_combine later with the same arguments (cpu_part / cpu_flag as it then has them)
+    bool no_combine = false;
+    // DS4_HELPER_DD_SKIP (a helper's device-direct body only): a token with no pick in this plan writes no output row
+    // (its has[t] is 0, so no reader takes it); only with cpu_flag and sh_out null
+    bool skip_empty = false;
+    // helperwin DS4_HW_HEADQ8 (a helper's device-direct body only; gguf::win_experts): true - the window's int8 x rows
+    // (gguf::q8_scratch's xq / xd of this stream) were already written by the DD head with q8_quant's arithmetic, so the
+    // body skips its own q8_quant of x
+    bool x_q8_given = false;
 };
 bool win_experts(const WinArgs& a, cudaStream_t s);
 /// Whether the current device runs the several-activation kernels (win_experts; mv's ncol > 1): every device does

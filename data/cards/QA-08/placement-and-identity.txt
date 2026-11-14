@@ -1,0 +1,36 @@
+# identity of the first merged build's default path against build 11, then the per-binary VRAM placement (bisect runs)
+c2-bt
+c2-d
+c2-d-MK
+c2-x
+d-12diag
+d-b11diag
+d-drafter-adapt
+d-hw
+diag.py
+d-loose-ends-ls1
+d-mk
+ID b11 vs OFF: decode DIFFER | drafter DIFFER | bt DIFFER | lines ok
+== c2-bt
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.24 GB (7137 of 15744 in VRAM), caches 0.10 GB, 488 MiB free
+== c2-d
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.34 GB (7177 of 15744 in VRAM), caches 0.01 GB, 480 MiB free
+== c2-d-MK
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.34 GB (7177 of 15744 in VRAM), caches 0.01 GB, 480 MiB free
+mi50kern: 632 mk launches
+== c2-x
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.34 GB (7177 of 15744 in VRAM), caches 0.01 GB, 480 MiB free
+== d-12diag
+BIS vram: group 0 members' budgets 18339594240 18536726528 18534629376 18536726528 | trunk budget 18339594240, used 18284175360 (trunk 6792 experts), slack 55418880, smallest next unit 2280960
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.34 GB (7176 of 15744 in VRAM), caches 0.01 GB, 480 MiB free
+== d-b11diag
+BIS vram: group 0 members' budgets 18341691392 18538823680 18536726528 18538823680 | trunk budget 18341691392, used 18286456320 (trunk 6793 experts), slack 55235072, smallest next unit 2280960
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.34 GB (7177 of 15744 in VRAM), caches 0.01 GB, 480 MiB free
+== d-drafter-adapt
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.34 GB (7177 of 15744 in VRAM), caches 0.01 GB, 480 MiB free
+== d-hw
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.34 GB (7177 of 15744 in VRAM), caches 0.01 GB, 480 MiB free
+== d-loose-ends-ls1
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.34 GB (7177 of 15744 in VRAM), caches 0.01 GB, 480 MiB free
+== d-mk
+ds4: CUDA0 layers [0, 42] (tensor parallel 4, part 0) + head: weights 2.59 GB, experts 18.34 GB (7176 of 15744 in VRAM), caches 0.01 GB, 480 MiB free

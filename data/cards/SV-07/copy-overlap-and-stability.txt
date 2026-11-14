@@ -1,0 +1,43 @@
+== background copy overlap (maintainer: q8ref copy, O_DIRECT, nice 19 / ionice idle, <= 40 MB/s, + a 30 MB/s download)
+copy window 23:15:00Z - 00:51:25Z (NO copy log line after the grid's start found - the maintainer ~23:15Z start used, end unknown (to now))
+  dec-tp3h3-1      22:09:30-22:17:06Z  clean  decset 72.79
+  dec-tp4h4-1      22:17:06-22:24:32Z  clean  decset 80.01
+  dec-old4-1       22:24:32-22:32:04Z  clean  decset 74.24
+  dec-old4-2       22:32:04-22:39:35Z  clean  decset 76.31
+  dec-tp4h4-2      22:39:35-22:47:07Z  clean  decset 79.93
+  dec-tp3h3-2      22:47:07-22:54:45Z  clean  decset 72.73
+  dec-tp3h3-3      22:54:45-23:02:19Z  clean  decset 72.74
+  dec-tp4h4-3      23:02:19-23:09:45Z  clean  decset 79.49
+  dec-old4-3       23:09:45-23:17:16Z  OVERLAP  decset 76.59
+  bt-tp3h3-1       23:17:16-23:21:18Z  OVERLAP  B1 53.76 B2 92.02 B4 135.02 B8 163.91
+  bt-tp4h4-1       23:21:18-23:25:18Z  OVERLAP  B1 59.25 B2 97.79 B4 145.78 B8 163.21
+  bt-old4-1        23:25:18-23:29:35Z  OVERLAP  B1 54.97 B2 80.79 B4 108.42 B8 111.07
+  bt-old4-2        23:29:35-23:33:51Z  OVERLAP  B1 55.05 B2 80.93 B4 107.72 B8 114.52
+  bt-tp4h4-2       23:33:51-23:37:55Z  OVERLAP  B1 59.30 B2 97.89 B4 146.77 B8 163.77
+  bt-tp3h3-2       23:37:55-23:41:59Z  OVERLAP  B1 53.52 B2 91.93 B4 134.67 B8 164.93
+  bt-tp3h3-3       23:41:59-23:45:57Z  OVERLAP  B1 53.84 B2 91.63 B4 135.11 B8 164.89
+  bt-tp4h4-3       23:45:57-23:49:57Z  OVERLAP  B1 59.41 B2 97.81 B4 146.92 B8 162.91
+  bt-old4-3        23:49:57-23:54:13Z  OVERLAP  B1 54.99 B2 80.68 B4 108.00 B8 114.51
+  pf2-tp3h3-1      23:54:13-23:55:55Z  OVERLAP  pf2_ms 3278.00
+  pf2-tp4h4-1      23:55:55-23:57:37Z  OVERLAP  pf2_ms 3460.00
+  pf2-old4-1       23:57:37-23:59:21Z  OVERLAP  pf2_ms 4261.00
+  pf2-old4-2       23:59:21-00:01:05Z  OVERLAP  pf2_ms 4177.00
+  pf2-tp4h4-2      00:01:05-00:02:51Z  OVERLAP  pf2_ms 3456.00
+  pf2-tp3h3-2      00:02:51-00:04:35Z  OVERLAP  pf2_ms 2988.00
+  pf2-tp3h3-3      00:04:35-00:06:15Z  OVERLAP  pf2_ms 2990.00
+  pf2-tp4h4-3      00:06:15-00:07:57Z  OVERLAP  pf2_ms 3512.00
+  pf2-old4-3       00:07:57-00:09:42Z  OVERLAP  pf2_ms 4225.00
+  dec-tp4h4L-1     00:09:42-00:17:18Z  OVERLAP  decset 70.54
+  dec-tp4h4L-2     00:17:18-00:24:54Z  OVERLAP  decset 70.49
+  dec-tp4h4L-3     00:24:54-00:32:28Z  OVERLAP  decset 70.71
+  bt-tp4h4L-1      00:32:28-00:36:38Z  OVERLAP  B1 58.39 B2 93.91 B4 131.90 B8 143.86
+  bt-tp4h4L-2      00:36:38-00:40:48Z  OVERLAP  B1 58.28 B2 93.96 B4 131.84 B8 141.93
+  bt-tp4h4L-3      00:40:48-00:44:57Z  OVERLAP  B1 58.46 B2 94.02 B4 130.41 B8 139.31
+  pf2-tp4h4L-1     00:44:57-00:46:43Z  OVERLAP  pf2_ms 3506.00
+  pf2-tp4h4L-2     00:46:43-00:48:29Z  OVERLAP  pf2_ms 3454.00
+  pf2-tp4h4L-3     00:48:30-00:50:15Z  OVERLAP  pf2_ms 3460.00
+== stability flags (spread (max-min)/mean > 2 %, or a rep > 2 % off the mean of that arm's earlier reps)
+  FLAG old4 B8: spread 3.0 %; rep 2 +3.1 % vs earlier reps (OVERLAP)  [111.07*, 114.52*, 114.51*]  (* = overlapped the copy)
+  FLAG old4 decset: spread 3.1 %; rep 2 +2.8 % vs earlier reps  [74.24, 76.31, 76.59*]  (* = overlapped the copy)
+  FLAG tp3h3 pf2_ms: spread 9.4 %; rep 2 -8.8 % vs earlier reps (OVERLAP); rep 3 -4.6 % vs earlier reps (OVERLAP)  [3278.00*, 2988.00*, 2990.00*]  (* = overlapped the copy)
+  FLAG tp4h4L B8: spread 3.2 %; rep 3 -2.5 % vs earlier reps (OVERLAP)  [143.86*, 141.93*, 139.31*]  (* = overlapped the copy)

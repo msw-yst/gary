@@ -1,0 +1,23 @@
+# Build 15 decode step vs batch size (batch test, drafter off) and the untraced one-row timeline
+== PART 1: step time vs batch size (batch-test, drafter off, deployed env + BTE; ms a step = ms / steps)
+| B | bt-1 | bt-2 | mean | spread % | fit | resid | routed exp | helper exp | helper ms | pre-registration |
+| 1 | 14.545 | 14.525 | 14.535 | 0.1 | 14.53 | +0.01 | 240 | 26.5 | 0.08 | 14.6 [14.1, 15.1] IN |
+| 2 | 18.047 | 17.945 | 17.996 | 0.6 | 17.99 | +0.01 | 480 | 59.3 | 0.16 | 18 [17.4, 18.7] IN |
+| 3 | 21.502 | 21.451 | 21.476 | 0.2 | 21.45 | +0.02 | 720 | 94.4 | 0.21 | 21.8 [20.6, 23] IN |
+| 4 | 24.898 | 24.722 | 24.810 | 0.7 | 24.91 | -0.10 | 960 | 141.4 | 0.26 | 25.4 [24, 26.8] IN |
+| 6 | 31.784 | 32.110 | 31.947 | 1.0 | 31.84 | +0.11 | 1440 | 207.9 | 0.36 | 32.7 [30.7, 34.7] IN |
+| 8 | 38.753 | 38.678 | 38.716 | 0.2 | 38.76 | -0.04 | 1920 | 279.5 | 0.46 | 40 [38, 42.5] IN |
+solo references (plain path, --dspark off, 1024-token prompts, N 256): median 14.023 ms a token [13.957-14.129] n 16; pre-registration 14.1 [13.7, 14.5] IN
+batch-path tax at B1 (B=1 step - solo median): +0.512 ms; pre-registration 0.45 [0.15, 0.8] IN
+identity: every batched sequence == its solo reference
+FIT all points (n 12): step = F + u x B: F 11.068 ms (SE 0.064), u 3.461 ms a user (SE 0.014), r2 0.9998
+  pre-registration: F 10.9 [10, 11.6] IN | u 3.63 [3.3, 4] IN | r2 0.998 [0.99, 1] IN
+  bt-1 alone: F 11.116 u 3.451 r2 1.0000
+  bt-2 alone: F 11.021 u 3.471 r2 0.9997
+  B <= 4 only (B8 drifts in earlier runs): F 11.128 (SE 0.064) u 3.430 r2 0.9997
+== PART 2: one B1 decode timeline (build 15, drafter off, 64-token prompt, N 64)
+tl-U1 untraced: 12.641 ms a token (decode: 64 tokens in 809 ms) | host: layers 3.61 ms, head wait 8.85 ms
+tl-U2 untraced: 12.594 ms a token (decode: 64 tokens in 806 ms) | host: layers 3.73 ms, head wait 8.66 ms
+untraced mean 12.617 ms a token; pre-registration U 13 [12.5, 13.6] IN; U1 vs U2 -0.37 %
+FIXED: F 11.07 ms a step (SE 0.06), per user u 3.46 ms (SE 0.01), r2 0.9998 | the 10.6 ms estimate: CONFIRMED (|F - 10.6| <= 0.6)
+  F / the untraced B1 step (64-token prompt): 88 % shared; u / step 27 %

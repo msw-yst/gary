@@ -1599,9 +1599,45 @@ class StrataEngine:
                     self._yielded = (int(f[1]), int(f[2]))
             elif line.startswith("ERR"):
                 self._ctl_erred = True                   # #1059: the engine refused it and is idle: no DONE follows
+                self._raise_if_fatal_gpu(line)           # upstream fix C3
+                if not line[4:].startswith("BGEN:"):     # upstream fix C2: a failed prompt read / picture prints DONE after its ERR
+                    self._swallow_trailing_done(self.lines)
                 raise ValueError(line[4:].strip())
             if line.startswith("DONE") and self._ctl_mode == "solo":
                 self._ctl_result = ("done", None)
+                return
+
+    def _raise_if_fatal_gpu(self, line: str) -> None:
+        """upstream fix C3 (upstream e1b27d54, #4350): the engine's ERR line "fatal GPU error: ..." means it is ending (its GPU
+        context is gone, it exits with code 3).  The request in flight fails as an engine death (a 503 the client can send
+        again), not as a bad request, and the engine counts as ended, so the next request starts it again at once."""
+        text = line[4:].strip()
+        if not text.startswith("fatal GPU error"):
+            return
+        self.last_err = text
+        self.ended = True
+        raise EngineDied("the GPU reported a fatal error and the engine ended: " + text[len("fatal GPU error:"):].strip()[:200])
+
+    @staticmethod
+    def _swallow_trailing_done(lines_q, wait: float = 0.3) -> None:
+        """upstream fix C2 (upstream 9aea047e): a request that ends on `ERR ...` is over, but the engine also prints that
+        request's `DONE` after the ERR of a failed prompt read or a bad picture span (ds4_main.cpp).  Left in the queue, the
+        NEXT request reads it as its own: 0 tokens at once, and every answer after it one request late.  So a short wait for
+        a trailing DONE (or ERR), taken off the queue and dropped, before the request is reported failed and its lock
+        released.  An ERR with nothing after it costs the wait (error paths only).  The engine's end (None) is put back."""
+        end = time.monotonic() + wait
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                return
+            try:
+                late = lines_q.get(timeout=left)
+            except queue.Empty:
+                return
+            if late is None:
+                lines_q.put(None)                        # (EOF stays visible to the next reader)
+                return
+            if late.startswith(("DONE", "ERR")):
                 return
 
     def _done_finish(self) -> str | None:
@@ -1787,7 +1823,14 @@ class StrataEngine:
                     turn = False                        # the lines: not the engine this request was meant for
                 if not turn:
                     with self.slot_cv:
-                        self.slot_cv.wait(timeout=min(0.5, max(0, left)))
+                        # upstream fix S2 (upstream f1fd753d, #4738): the turn was read, and the lock given up, before this
+                        # wait: a notification sent in between is gone.  Read it again under the lock and only wait when
+                        # this request still has to.
+                        eligible = after_epoch is None or self.ctl_epoch > after_epoch or self.waiting <= 1
+                        if eligible and new and ADMIT_SHORT_FIRST > 0:
+                            eligible = self._admit_next() is entry
+                        if not eligible or not self.alive():
+                            self.slot_cv.wait(timeout=min(0.5, max(0, left)))
                 if cancel.is_set():
                     return False
                 if time.monotonic() - beat >= 10.0:     # a heartbeat every 10 s, as the engine's own wait
@@ -1795,9 +1838,13 @@ class StrataEngine:
                     yield None
         finally:
             with self.slot_cv:
+                previous_waiting = self.waiting
                 self.waiting = max(0, self.waiting - 1)
                 if entry in self.wait_lens:
                     self.wait_lens.remove(entry)
+                if (previous_waiting > 1 and self.waiting <= 1) or (new and ADMIT_SHORT_FIRST > 0):
+                    # (upstream fix S2) a waiter that leaves (cancelled, closed) can make another one the next in turn: tell it
+                    self.slot_cv.notify_all()
         with self.slot_cv:
             self.ctl_epoch += 1
             self.slot_cv.notify_all()
@@ -1883,6 +1930,26 @@ class StrataEngine:
         with self.slot_cv:
             return sum(1 for b in self.slot_busy if b) == 1 and self.waiting == 0
 
+    def _pictures_batched(self) -> bool:
+        """srvbatch: whether a request with pictures may take a batch slot (BGENI).  Engines that say INFO
+        batch_pictures=0 (DeepSeek-V4.1: its banks hold text only) run such a request alone instead."""
+        return str((self.info or {}).get("batch_pictures", 1)) != "0"
+
+    def _wait_slots_idle(self, cancel):
+        """srvbatch: wait (yielding None heartbeats every 10 s) until no batch slot decodes; False when cancelled.
+        The caller holds the control lines, so no new admission starts meanwhile; slots end at their BDONE, which needs none."""
+        beat = time.monotonic()
+        while True:
+            if cancel.is_set():
+                return False
+            with self.slot_cv:
+                if not any(self.slot_busy):
+                    return True
+                self.slot_cv.wait(timeout=0.5)
+            if time.monotonic() - beat >= 10.0:
+                beat = time.monotonic()
+                yield None
+
     def _shorter_waiting(self, plen: int) -> bool:
         """#656: someone waits for the control lines with a prompt under half this one's: worth giving way to."""
         with self.slot_cv:
@@ -1937,7 +2004,16 @@ class StrataEngine:
                     holding, born = True, self.gen                  # (the engine it now has the control lines of)
                 with self.slot_cv:
                     alone = not any(self.slot_busy) and self.waiting == 0
-                if alone and left > 1:
+                # srvbatch: an engine whose slots hold text only (INFO batch_pictures=0, DeepSeek-V4.1's banks) runs a
+                # request with pictures alone: it waits, holding the control lines (no new admission), until no slot
+                # decodes, then takes the solo path to its end - never STOPped into a slot (BGENI would be refused)
+                solo_only = bool(embeddings) and not self._pictures_batched()
+                if solo_only and not alone:
+                    ok = yield from self._wait_slots_idle(cancel)
+                    if not ok:
+                        return
+                    alone = True
+                if (alone and left > 1) or solo_only:
                     head = f"GENI {left}{keys} {embeddings}" if embeddings else f"GEN {left}{keys}"
                     self._last_done = None                  # (#879: this request's DONE decides below)
                     deadline = getattr(cancel, "_strata_queue_deadline", None)
@@ -1953,6 +2029,8 @@ class StrataEngine:
                     self._ctl_mode, self._ctl_result, self._yielded = "solo", None, None
                     self._ctl_erred = False
                     def others():
+                        if solo_only:                       # (srvbatch: it cannot continue in a slot)
+                            return False
                         with self.slot_cv:
                             return self.waiting > 0
 
@@ -2441,6 +2519,8 @@ class StrataEngine:
                     return
                 elif line.startswith("ERR"):
                     done = True
+                    self._raise_if_fatal_gpu(line)        # upstream fix C3
+                    self._swallow_trailing_done(self.lines)   # upstream fix C2: the engine may still print its DONE
                     raise ValueError(line[4:].strip())
         finally:
             if not done:                                  # the consumer stopped early: stop the engine, drain to DONE
@@ -4618,6 +4698,33 @@ class Service:
         except Exception:
             return None
 
+    FATAL_GPU_MAX = 3            # upstream fix C3: fatal GPU errors within FATAL_GPU_WINDOW_S: after that it is not started again
+    FATAL_GPU_WINDOW_S = 600.0
+
+    def _note_fatal_gpu_exit(self, code) -> None:
+        """upstream fix C3 (upstream e1b27d54, #4350): the engine ends itself after a fatal GPU error and says so in its last
+        ERR line.  The next request starts it again, like any engine death, with one log line here.  Three such deaths
+        within ten minutes mean a restart will not help (a bad card, driver or state): the server then stops starting it
+        and answers 503 with the reason until the ten minutes have passed.  Any other death is not counted."""
+        why = getattr(self.engine, "last_err", None) or ""
+        if "fatal GPU error" not in why:
+            return
+        pid = getattr(getattr(self.engine, "proc", None), "pid", None)
+        seen = self.__dict__.setdefault("_fatal_gpu_pids", set())
+        times = self.__dict__.setdefault("_fatal_gpu_times", [])
+        now = time.time()
+        if pid not in seen:                              # one death counts once, however many requests find it dead
+            seen.add(pid)
+            times.append(now)
+        times[:] = [t for t in times if now - t < self.FATAL_GPU_WINDOW_S]
+        print(f"[strata] the GPU reported a fatal error ({why[len('fatal GPU error:'):].strip()[:160]}); the engine ended "
+              f"(exit code {code}) and is started again; the request that was running failed and can be sent again "
+              f"({len(times)} of {self.FATAL_GPU_MAX} allowed in {self.FATAL_GPU_WINDOW_S / 60:g} minutes)", flush=True)
+        if len(times) >= self.FATAL_GPU_MAX:
+            raise EngineDied(f"the GPU reported a fatal error {len(times)} times in {self.FATAL_GPU_WINDOW_S / 60:g} minutes, so "
+                             "the engine is not started again (the last: " + why[:160] + "); a request after "
+                             f"{self.FATAL_GPU_WINDOW_S / 60:g} minutes tries again")
+
     def ensure_loaded(self):
         """Start the engine if it is not running (unloaded, or it died - issue #27), after the before_load hook and
         the free-VRAM check.  The caller holds self.fifo."""
@@ -4686,6 +4793,7 @@ class Service:
             print("[strata] loading the model again (it was unloaded) ...", flush=True)
         else:
             code = self.engine.exit_code() if hasattr(self.engine, "exit_code") else None
+            self._note_fatal_gpu_exit(code)             # upstream fix C3
             print(f"[strata] the engine had stopped (exit code {code}); starting it again "
                   "(a minute or two) ...", flush=True)
         try:
@@ -7887,13 +7995,26 @@ def make_handler(svc: Service):
             chunks = self._capture(chunks, "openai")
             if not req.get("stream"):
                 return self._json(200, openai_collect(chunks))
+            # srv10: stream_options {"include_usage": true} (the Pi agent, the OpenAI SDKs): OpenAI's shape - the
+            # usage leaves the finish_reason chunk and comes in one more chunk of its own, "choices": [], just before
+            # [DONE].  Without it the usage stays on the finish chunk, as before (llama.cpp's shape, what bench reads).
+            so = req.get("stream_options")
+            own_usage = isinstance(so, dict) and so.get("include_usage") is True
             self._sse()
             try:
                 for c in chunks:
                     if c is None:
                         self.wfile.write(b": keep-alive\n\n")      # an SSE comment: clients ignore it
                     else:
+                        usage = None
+                        if own_usage and "usage" in c and (c.get("choices") or [{}])[0].get("finish_reason"):
+                            usage = c["usage"]
+                            c = {k: v for k, v in c.items() if k != "usage"}   # (a copy: the monitor's record keeps it)
                         self.wfile.write(b"data: " + json.dumps(c, ensure_ascii=False).encode() + b"\n\n")
+                        if usage is not None:
+                            tail = {k: c[k] for k in ("id", "object", "created", "model") if k in c}
+                            self.wfile.write(b"data: " + json.dumps({**tail, "choices": [], "usage": usage},
+                                                                    ensure_ascii=False).encode() + b"\n\n")
                     self.wfile.flush()
                 self.wfile.write(b"data: [DONE]\n\n")
             except OSError:

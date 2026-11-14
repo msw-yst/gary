@@ -1,0 +1,12 @@
+== reg (pre-registered: n0 IDENTICAL to tp4 and best9; nfp IDENTICAL; nf may differ - ROUTER_BF16's freed 150 MiB a member move experts)
+reg3-b9 vs reg3-tp4 (engine.stdout): IDENTICAL
+reg3-tp4 vs reg3-n0 (engine.stdout): IDENTICAL
+reg3-tp4 vs reg3-nf (engine.stdout): DIFFER (byte 122, line 1)
+reg3-tp4 vs reg3-nfp (engine.stdout): DIFFER (byte 103, line 1)
+reg4-tp4 vs reg4-n0 (engine.stdout): IDENTICAL
+reg4-tp4 vs reg4-nf (engine.stdout): DIFFER (byte 103, line 1)
+reg4-tp4 vs reg4-nfp (engine.stdout): DIFFER (byte 173, line 1)
+dump3-tp4 vs dump3-n0 (logits.bin): IDENTICAL
+dump3-tp4 vs dump3-nf (logits.bin): DIFFER (byte 1, line 1)
+dump3-tp4 vs dump3-nfp (logits.bin): IDENTICAL
+

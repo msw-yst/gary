@@ -1,0 +1,67 @@
+mi50pwr mi50pwr-20261113T072931Z - NEW <path> (<hash>); served + deploy env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1 DS4_EG_AHEAD=1 DS4_TOPK_MB=1 DS4_PF_HELPER=8192 DS4_G906_SGNLDS=1; tp4h4: --gp
+== identity: ok (4 ID lines)
+== prod PRIMARY: matched mix, 7 of 8 request positions (every arm-rep served, drafts, 16 <= gen < 1024)
+==== C155 (155 W) vs C135 (135 W); placebo C135P
+  prod C135: 9.890 [9.865-9.929] n4  reps 9.929 9.890 9.873 9.865
+  prod C135P: 9.919 [9.882-9.940] n4  reps 9.940 9.882 9.939 9.915
+  prod C155: 9.907 [9.868-10.000] n4  reps 9.872 9.886 9.868 10.000
+  prod C155: delta +0.017 ms (+0.17 %) | placebo +0.029 (bound 0.20) | noise 0.132 | predicted [free] -0.05 .. +0.05 (central +0.00): inside | base GEN-prod at cap 3.3 % of 368 samples -> 'free' prediction set
+  b1 C135: 13.605 [13.565-13.631] n4  reps 13.615 13.631 13.565 13.611
+  b1 C135P: 13.621 [13.596-13.654] n4  reps 13.654 13.600 13.596 13.633
+  b1 C155: 13.597 [13.572-13.630] n4  reps 13.594 13.591 13.630 13.572
+  b1 C155: delta -0.009 ms (-0.06 %) | placebo +0.015 (bound 0.05) | noise 0.067 | predicted [free] -0.03 .. +0.03 (central +0.00): inside | base GEN-b1 at cap 0.0 % of 220 samples -> 'free' prediction set
+  pf-8k C135: 100.000 [100.000-100.000] n2  reps 100.000 100.000
+  pf-8k C135P: 107.967 [100.018-115.917] n2  reps 115.917 100.018
+  pf-8k C155: 98.634 [98.196-99.072] n2  reps 99.072 98.196
+  pf-8k C155: delta -1.366 % | placebo +7.967 (bound 3.00) | noise 15.899 | predicted [capped] -3.00 .. -0.70 (central -1.60): inside | base PROMPT-8k at cap 15.4 % of 52 samples -> 'capped' prediction set
+  pf-32k C135: 100.000 [99.620-100.380] n2  reps 99.620 100.380
+  pf-32k C135P: 101.348 [100.121-102.575] n2  reps 102.575 100.121
+  pf-32k C155: 98.963 [98.802-99.124] n2  reps 98.802 99.124
+  pf-32k C155: delta -1.037 % | placebo +1.348 (bound 3.00) | noise 2.454 | predicted [capped] -2.60 .. +0.30 (central -1.20): inside | base PROMPT-32k at cap 20.6 % of 160 samples -> 'capped' prediction set
+  pf-110k C135: 100.000 [99.772-100.228] n2  reps 100.228 99.772
+  pf-110k C135P: 99.928 [99.710-100.147] n2  reps 100.147 99.710
+  pf-110k C155: 99.489 [98.737-100.241] n2  reps 100.241 98.737
+  pf-110k C155: delta -0.511 % | placebo -0.072 (bound 3.00) | noise 1.504 | predicted [capped] -1.00 .. +0.80 (central -0.25): inside | base PROMPT-110k at cap 17.6 % of 552 samples -> 'capped' prediction set
+VERDICT PROD C155: NOT SEPARABLE
+VERDICT B1 C155: NOT SEPARABLE
+VERDICT PF-8K C155: NOT SEPARABLE (placebo over its bound)
+VERDICT PF-32K C155: NOT SEPARABLE
+VERDICT PF-110K C155: NOT SEPARABLE
+VERDICT MI50PWR C155: NOT SEPARABLE | max junction 70 C
+==== C178 (178 W) vs C135 (135 W); placebo C135P
+  prod C135: 9.890 [9.865-9.929] n4  reps 9.929 9.890 9.873 9.865
+  prod C135P: 9.919 [9.882-9.940] n4  reps 9.940 9.882 9.939 9.915
+  prod C178: 9.922 [9.872-10.005] n3  reps 9.872 9.889 10.005
+  prod C178: delta +0.032 ms (+0.33 %) | placebo +0.029 (bound 0.20) | noise 0.133 | predicted [free] -0.05 .. +0.05 (central +0.00): inside | base GEN-prod at cap 3.3 % of 368 samples -> 'free' prediction set
+  b1 C135: 13.605 [13.565-13.631] n4  reps 13.615 13.631 13.565 13.611
+  b1 C135P: 13.621 [13.596-13.654] n4  reps 13.654 13.600 13.596 13.633
+  b1 C178: 13.617 [13.580-13.641] n4  reps 13.641 13.580 13.615 13.633
+  b1 C178: delta +0.012 ms (+0.09 %) | placebo +0.015 (bound 0.05) | noise 0.067 | predicted [free] -0.03 .. +0.03 (central +0.00): inside | base GEN-b1 at cap 0.0 % of 220 samples -> 'free' prediction set
+  pf-8k C135: 100.000 [100.000-100.000] n2  reps 100.000 100.000
+  pf-8k C135P: 107.967 [100.018-115.917] n2  reps 115.917 100.018
+  pf-8k C178: 97.855 [97.356-98.354] n2  reps 98.354 97.356
+  pf-8k C178: delta -2.145 % | placebo +7.967 (bound 3.00) | noise 15.899 | predicted [capped] -3.50 .. -0.80 (central -1.90): inside | base PROMPT-8k at cap 15.4 % of 52 samples -> 'capped' prediction set
+  pf-32k C135: 100.000 [99.620-100.380] n2  reps 99.620 100.380
+  pf-32k C135P: 101.348 [100.121-102.575] n2  reps 102.575 100.121
+  pf-32k C178: 97.225 [96.961-97.488] n2  reps 97.488 96.961
+  pf-32k C178: delta -2.775 % | placebo +1.348 (bound 3.00) | noise 2.454 | predicted [capped] -3.00 .. +0.30 (central -1.40): inside | base PROMPT-32k at cap 20.6 % of 160 samples -> 'capped' prediction set
+  pf-110k C135: 100.000 [99.772-100.228] n2  reps 100.228 99.772
+  pf-110k C135P: 99.928 [99.710-100.147] n2  reps 100.147 99.710
+  pf-110k C178: 97.614 [97.548-97.681] n2  reps 97.681 97.548
+  pf-110k C178: delta -2.386 % | placebo -0.072 (bound 3.00) | noise 0.456 | predicted [capped] -1.20 .. +0.80 (central -0.30): below (larger gain than predicted) | base PROMPT-110k at cap 17.6 % of 552 samples -> 'capped' prediction set
+VERDICT PROD C178: NOT SEPARABLE
+VERDICT B1 C178: NOT SEPARABLE
+VERDICT PF-8K C178: NOT SEPARABLE (placebo over its bound)
+VERDICT PF-32K C178: PASS
+VERDICT PF-110K C178: PASS
+VERDICT MI50PWR C178: PASS | max junction 73 C
+== prod secondary (all usable requests, the mix NOT matched; info only)
+  prod-all C135: 11.193  reps 11.254 11.201 11.158 11.157
+  prod-all C135P: 11.203  reps 11.247 11.176 11.198 11.189
+  prod-all C155: 11.190  reps 11.167 11.171 11.153 11.271
+  prod-all C178: 11.211  reps 11.162 11.174 11.297
+TRIPPED: 0 new lines since start; MI50 pauses: 0
+== cap writes / restores
+MI50 cap set 135 W 10:22:04: read back 03=135 06=135 09=135 0c=135
+MI50 cap set 135 W 10:25:10: read back 03=135 06=135 09=135 0c=135
+MI50PWR restore 10:28:16: was 03=135 06=135 09=135 0c=135 -> read back 03=135 06=135 09=135 0c=135: OK, all 135 W; extra MI50 (never written): <pci>=135W

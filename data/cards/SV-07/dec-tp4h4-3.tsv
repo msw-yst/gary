@@ -1,0 +1,9 @@
+rep	prompt	kind	generated	finish	prompt_ms	decode_ms	kept	offered	rounds	tok_s	tok_round	ms_round
+1	pr_sum	prose	256	length	3508.7	3464.5	93	118	162	73.892	1.574	21.386
+1	pr_explain	prose	256	length	3549.7	4029.6	62	99	193	63.530	1.321	20.879
+1	pr_email	prose	256	length	3534.3	3624.6	91	124	164	70.628	1.555	22.101
+1	co_explain	code	256	length	3581.0	3381.8	99	150	156	75.699	1.635	21.678
+1	co_tests	code	256	length	3520.1	2584.6	148	194	107	99.048	2.383	24.155
+1	co_refactor	code	256	length	3545.6	2581.6	148	200	107	99.163	2.383	24.127
+1	ag_plan	agent	256	length	3589.8	3673.8	80	113	175	69.683	1.457	20.993
+1	ag_extract	agent	256	length	3577.6	2757.8	135	143	120	92.828	2.125	22.982

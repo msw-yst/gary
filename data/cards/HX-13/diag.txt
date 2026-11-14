@@ -1,0 +1,15 @@
+== DIAG (tp4 helper wait; MEASURED, 1 rep each; best10 binary flags off for D1-D3, the new build flags off for D4-D5)
+D1 [tp3 XTX #1 + XTX #2 + XTX #3 + MI50 #1 + MI50 #2 + MI50 #3] rc=0 | B2 step 21.6 ms, helpers 5.97 ms (99.7 experts) | B8 step 48.2 ms, helpers 17.88 ms (445.8 experts)
+D2 [tp3 XTX #1 + XTX #2 + XTX #4 + MI50 #1 + MI50 #2 + MI50 #3] rc=0 | B2 step 21.7 ms, helpers 5.97 ms (99.7 experts) | B8 step 47.8 ms, helpers 17.57 ms (445.8 experts)
+D3 [tp3 XTX #2 + XTX #3 + XTX #4 + MI50 #1 + MI50 #2 + MI50 #3] rc=0 | B2 step 21.8 ms, helpers 6.05 ms (99.7 experts) | B8 step 48.0 ms, helpers 17.31 ms (445.8 experts)
+D4 [tp4 XTX #1 + XTX #2 + XTX #3 + XTX #4 + MI50 #1 + MI50 #2 + MI50 #3] rc=0 | B2 step 20.0 ms, helpers 4.95 ms (57.7 experts) | B8 step 48.0 ms, helpers 19.88 ms (262.5 experts)
+D5 [tp3 XTX #1 + XTX #2 + XTX #3 + MI50 #1 + MI50 #2 + MI50 #3] rc=0 | B2 step 21.6 ms, helpers 5.96 ms (99.7 experts) | B8 step 47.8 ms, helpers 17.62 ms (445.8 experts)
+VERDICT D2: B8 helper wait 17.57 vs D1 17.88 ms (-0.31) -> TP width, not XTX #4: (c) or (d)
+VERDICT D3: B8 helper wait 17.31 vs D1 17.88 ms (-0.57) -> TP width, not XTX #4: (c) or (d)
+D5 helper timeline T 2: 9167 requests, us each: XTX gap (last answer -> request) 387.1 | request -> issued 17.4 | issued -> CPU lane done 2.9 | -> joined 149.0 | -> published 0.0 | request -> answer 169.5
+D4 helper timeline T 2: 7476 requests, us each: XTX gap (last answer -> request) 371.4 | request -> issued 15.3 | issued -> CPU lane done 0.0 | -> joined 154.2 | -> published 0.0 | request -> answer 169.6
+D4 - D5 T2 us:gap -15.7,issue -2.1,cpu -2.9,join +5.2,publish +0.0,total +0.1
+D5 helper timeline T 8: 10198 requests, us each: XTX gap (last answer -> request) 740.0 | request -> issued 45.1 | issued -> CPU lane done 11.9 | -> joined 397.5 | -> published 0.0 | request -> answer 454.5
+D4 helper timeline T 8: 10155 requests, us each: XTX gap (last answer -> request) 701.6 | request -> issued 39.8 | issued -> CPU lane done 0.1 | -> joined 461.4 | -> published 0.0 | request -> answer 501.2
+D4 - D5 T8 us:gap -38.4,issue -5.3,cpu -11.8,join +63.9,publish +0.0,total +46.7
+XTX junctions after each run: D1 XTX after: 43/40/42/33 C D2 XTX after: 43/41/34/48 C D3 XTX after: 27/41/45/46 C

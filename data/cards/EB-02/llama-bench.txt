@@ -1,0 +1,8 @@
+[12:22:23] arm a: HIP_VISIBLE_DEVICES=0 llama-bench -fa on -ncmoe 41
+[12:28:27] arm b: HIP_VISIBLE_DEVICES=0,1 llama-bench -fa on -sm layer -ts 24/32 -ot blk\.([0-9]|1[0-3]|19|2[0-9]|3[0-5])\.ffn_(up|down|gate)_exps\.=CPU
+=== DeepSeek V4-Flash-0731 UD-Q8_K_XL  (results: <path>) ===
+arm  test            tok/s      +/-  fa  n_cpu_moe  ts / ot
+a    pp8192         114.77     1.93  1         41  0.00 none
+a    tg256           12.35     0.03  1         41  0.00 none
+b    pp8192         119.26     0.31  1          0  24.00/32.00 blk\.([0-9]|1[0-3]|19|2[0-9]|3[0-5])\.ffn_(up|down|gate)_exp
+b    tg256           11.49     0.03  1          0  24.00/32.00 blk\.([0-9]|1[0-3]|19|2[0-9]|3[0-5])\.ffn_(up|down|gate)_exp

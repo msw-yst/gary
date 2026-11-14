@@ -107,6 +107,14 @@ bool set_down(const SetArgs& a, cudaStream_t s);
 /// count of matrix-core launches so far (both do nothing / return -1 where there are no such tiles; hipk_force returns whether this device has them)
 bool hipk_force(int mode);
 long long hipk_launches();
+/// the engine runs tensor-parallel groups (the model's setup, before any prompt): on gfx1100 the matrix-core tiles' default is then on
+void set_hipk_tp(bool tp_groups);
+/// (docs/dsv41/cards/HX-04.md): the gfx906 (MI50 helper) token kernels for gate_up / down - the same
+/// bits as the portable token kernels, laid out for wave64 and HBM2.  mode -1: the default (on for a gfx906 device unless
+/// DS4_IQ_G906=0), 0: never, 1: always where the device is gfx906.  Returns whether the current device would take them now.
+/// g906_launches counts the launches taken (test hook).
+bool g906_force(int mode);
+long long g906_launches();
 /// The busy experts' path (a prompt's experts of many rows): one expert's matrix - n rows of k values, row_bytes(k)
 /// apart - as FP16 rows (ldd apart), the values the tensor-core tiles multiply (their loader's, rounded to FP16 the same
 /// way), for the caller's GEMM: the tiles decode an expert's weights again for every 64 of its rows.
@@ -151,5 +159,12 @@ bool set_gate_up(const SetArgs& a, cudaStream_t s);
 bool set_down(const SetArgs& a, cudaStream_t s);
 bool mv(const MvJob* jobs, int n, cudaStream_t s);
 }  // namespace tq
+
+/// PF-12 (DS4_PF_TILE): a prompt set in one pass, every expert's rows contiguous (nrows in all), with arm
+/// `arm` (0 C2, 1 C4, 2 C8, 3 C2L, 4 C4L, 5 C8L, 6 C2LP, 7 C4LP; PF-12 v1-v3: the same bits as the light kernels in
+/// rounds of <= 16 rows).  IQ2_XXS / IQ2_XS / IQ2_S / IQ3_XXS only.  false: not covered (nothing launched).
+bool pft3_set(const SetArgs& a, bool gu, int nrows, int arm, cudaStream_t s);
+/// The dispatch (docs/dsv41/cards/PF-12.md): false - keep the rounds for the layer; true - gate / up arm *agu, down *adn.
+bool pft3_choose(int tg, int td, int rows, int* agu, int* adn);
 
 }  // namespace strata::ds4::gguf::iq

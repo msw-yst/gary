@@ -1,0 +1,36 @@
+# Kernel trace of one-row decode on build 15 (lead XTX); re-analysed from the captured trace, no re-run
+traced (decode: 64 tokens in 1808 ms): lead Agent 1, 60 tokens used (0 irregular); traced step 28.490 ms (median 16.189); pre-registration Kstep 22 [16, 30] IN
+inflation traced / untraced, whole step: 2.258; pre-registration 1.7 [1.25, 2.4] IN
+inflation of the layer part (traced step - traced tail) / (untraced - 0.737, INFERRED): 1.336; pre-registration 1.4 [1.15, 1.8] IN
+The comparable column is the share of the LAYER part (step - token tail): the tracer inflates the tail (host) most.
+| row (lead) | 11-11 build 11 TS ms | 11-11 % of layers | build 15 traced ms | traced median | build 15 % of layers | build 15 ms at the untraced step (share x (U - 0.737), INFERRED) |
+| attention block (11-11 LUMPED row minus its 0.737 tail ESTIMATE; build 15: no tail) | 7.002 | 52.6 | 7.162 | 6.804 | 45.1 | 5.361 |
+| P: attn-AR out -> publish | 1.945 | 14.6 | 2.006 | 1.854 | 12.6 | 1.502 |
+| G: publish -> join entry | 2.616 | 19.7 | 3.472 | 3.350 | 21.9 | 2.600 |
+| J: join | 0.646 | 4.9 | 1.170 | 0.962 | 7.4 | 0.876 |
+| C: join out / combine -> MoE-AR in | 0.804 | 6.0 | 0.165 | 0.159 | 1.0 | 0.123 |
+| attention AR | 0.171 | 1.3 | 1.135 | 0.771 | 7.2 | 0.849 |
+| MoE AR | 0.120 | 0.9 | 0.759 | 0.574 | 4.8 | 0.568 |
+| J + C (build 15: one dd_join_comb kernel + the gap to the MoE AR) | 1.450 | 10.9 | 1.335 | 1.121 | 8.4 | 0.999 |
+| layer part (embed -> MoE-AR 39 out) | 13.304 | 100 | 15.869 | 14.637 | 100 | 11.880 |
+| token tail (MoE-AR 39 out -> next embed) | >= 0.737 (ESTIMATE) | | 12.620 | 1.363 | | - (traced tail not rescaled) |
+| **step** | 14.041 (TS; untraced 14.37-14.41) | | 28.490 | 16.189 | | 12.617 (untraced mean) |
+| tail on the device (-> sampler end) / host (sampler end -> embed) | head ~0.28 + seed ~0.20 + sampler 0.03 / host ~0.19 (INFERRED) | | 0.697 / 11.924 | 0.690 / 0.678 | | |
+| layer 0's attention block (embed -> attn AR 0; in the attention row) | (layer 0 885 us incl. tail) | | 0.171 | 0.156 | 1.1 | |
+| inter-kernel gaps, layer part (lead kernel union) | ~2.9 incl. host (INFERRED) | | 4.104 | 3.937 | 25.9 | 3.072 |
+| inter-kernel gaps, attention blocks of layers 1-39 | 1.32 (40 x 33 us, INFERRED) | 9.9 | 2.091 (496 kernels) | 2.023 | 13.2 | 1.565 |
+| inter-kernel gaps, whole step incl. the tail | | | 16.231 | 4.835 | | |
+| lead kernel busy, whole step (incl. AR / join spin) | 13.01 (fusion-ALL trace, incl. 3.16 spin) | | 12.258 | 11.147 | | |
+| lead launches a token | 1463.5 (build 11; 1,183.5 with F) | | 1070.5 | | | |
+layer attention-block medians, us (11-11: plain 147-151, 1 Engram 309, 14 401, 2/8 239/244, 20 264, 24-36 215-216, 37-39 165, 0 885 incl. tail):
+  0:156 1:199 2:272 3:146 4:146 5:145 6:145 7:145 8:270 9:146 10:145 11:145 12:145 13:145 14:326 15:146 16:145 17:145 18:145 19:150 20:290 21:148 22:148 23:147 24:222 25:147 26:146 27:146 28:221 29:147 30:146 31:147 32:221 33:147 34:146 35:146 36:221 37:163 38:163 39:165
+layer G / J / C medians, us (11-11 means: G 67.1, J 16.6, C 20.1):
+  G 96 89 77 85 86 76 76 80 94 84 84 81 91 76 81 80 93 83 87 78 87 83 88 83 94 89 86 81 89 79 85 84 92 78 87 79 86 76 83 84
+  J 173 22 20 16 17 20 17 17 16 17 16 17 18 21 17 17 16 19 15 20 17 17 16 17 16 14 15 17 16 16 15 16 16 16 14 16 16 18 18 17
+  C 16 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4
+shares of the layer part vs pre-registration: attn 45.1 % 49 [42, 56] IN | P 12.6 % 11 [8, 15] IN | G 21.9 % 18 [13, 24] IN | JC 8.4 % 10 [6, 15] IN | AR 11.9 % 12 [6, 17] IN | traced tail (median) 1.363 ms 1.4 [0.6, 3] IN | launches 1070 1080 [950, 1250] IN
+== VERDICT
+VERDICT DTRACE: OK (both parts)
+FIXED: F 11.07 ms a step (SE 0.06), per user u 3.46 ms (SE 0.01), r2 0.9998 | the 10.6 ms estimate: CONFIRMED (|F - 10.6| <= 0.6)
+  F / the untraced B1 step (64-token prompt): 88 % shared; u / step 27 %
+TRACE: INFLATED (layer part traced / untraced 1.34 > 1.15; whole step 2.26): read the shares; the ms at the untraced step are a proportional rescale (INFERRED); a stamped build 15 (DS4_TSTAMP port, a build) is the clean measurement

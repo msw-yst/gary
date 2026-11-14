@@ -1,0 +1,129 @@
+# Served build 15, 4 slots: 50 cold 2K prompts then 3 x 8K per arm; A cache on, B --no-expert-cache, A2 fresh cache-on
+== CLEAK per request (TTFT s | decode ms a token | unheld experts streamed in the request's prompt-helper lines)
+-- cla A (cache on): rc rc=0 | first VRAM line (6826 of 15744 in VRAM) | FLOW_STATS in ds.json True | --no-expert-cache False
+   p2k-1   ptok  1657 ttft 2.47 dec 9.26 unheld 0 (1 lines, engine 2408 ms) wall 3.6 rc 0
+   p2k-2   ptok  1657 ttft 2.35 dec 9.56 unheld 8 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-3   ptok  1658 ttft 2.30 dec 10.31 unheld 16 (1 lines, engine 2254 ms) wall 3.6 rc 0
+   p2k-4   ptok  1658 ttft 2.21 dec 8.59 unheld 24 (1 lines, engine 2154 ms) wall 3.3 rc 0
+   p2k-5   ptok  1657 ttft 2.16 dec 10.92 unheld 32 (1 lines, engine 2104 ms) wall 3.5 rc 0
+   p2k-6   ptok  1657 ttft 2.15 dec 9.76 unheld 40 (1 lines, engine 2104 ms) wall 3.4 rc 0
+   p2k-7   ptok  1657 ttft 2.20 dec 9.10 unheld 48 (1 lines, engine 2154 ms) wall 3.4 rc 0
+   p2k-8   ptok  1658 ttft 2.20 dec 9.29 unheld 56 (1 lines, engine 2154 ms) wall 3.4 rc 0
+   p2k-9   ptok  1658 ttft 2.20 dec 9.19 unheld 64 (1 lines, engine 2153 ms) wall 3.4 rc 0
+   p2k-10  ptok  1658 ttft 2.21 dec 8.83 unheld 72 (1 lines, engine 2154 ms) wall 3.3 rc 0
+   p2k-11  ptok  1657 ttft 2.19 dec 8.07 unheld 80 (1 lines, engine 2153 ms) wall 3.2 rc 0
+   p2k-12  ptok  1657 ttft 2.25 dec 9.82 unheld 88 (1 lines, engine 2204 ms) wall 3.5 rc 0
+   p2k-13  ptok  1657 ttft 2.20 dec 8.84 unheld 96 (1 lines, engine 2158 ms) wall 3.3 rc 0
+   p2k-14  ptok  1658 ttft 2.25 dec 10.08 unheld 104 (1 lines, engine 2204 ms) wall 3.5 rc 0
+   p2k-15  ptok  1658 ttft 2.25 dec 9.91 unheld 112 (1 lines, engine 2204 ms) wall 3.5 rc 0
+   p2k-16  ptok  1657 ttft 2.29 dec 9.12 unheld 120 (1 lines, engine 2254 ms) wall 3.4 rc 0
+   p2k-17  ptok  1657 ttft 2.29 dec 9.07 unheld 128 (1 lines, engine 2254 ms) wall 3.4 rc 0
+   p2k-18  ptok  1657 ttft 2.30 dec 8.94 unheld 136 (1 lines, engine 2255 ms) wall 3.4 rc 0
+   p2k-19  ptok  1657 ttft 2.30 dec 9.51 unheld 144 (1 lines, engine 2258 ms) wall 3.5 rc 0
+   p2k-20  ptok  1658 ttft 2.30 dec 9.68 unheld 152 (1 lines, engine 2260 ms) wall 3.5 rc 0
+   p2k-21  ptok  1658 ttft 2.30 dec 8.44 unheld 160 (1 lines, engine 2254 ms) wall 3.4 rc 0
+   p2k-22  ptok  1657 ttft 2.29 dec 9.34 unheld 168 (1 lines, engine 2254 ms) wall 3.5 rc 0
+   p2k-23  ptok  1657 ttft 2.34 dec 9.52 unheld 176 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-24  ptok  1657 ttft 2.39 dec 8.68 unheld 184 (1 lines, engine 2353 ms) wall 3.5 rc 0
+   p2k-25  ptok  1658 ttft 2.39 dec 9.45 unheld 192 (1 lines, engine 2353 ms) wall 3.6 rc 0
+   p2k-26  ptok  1658 ttft 2.39 dec 9.88 unheld 200 (1 lines, engine 2353 ms) wall 3.6 rc 0
+   p2k-27  ptok  1658 ttft 2.39 dec 9.58 unheld 208 (1 lines, engine 2354 ms) wall 3.6 rc 0
+   p2k-28  ptok  1657 ttft 2.44 dec 10.71 unheld 216 (1 lines, engine 2404 ms) wall 3.8 rc 0
+   p2k-29  ptok  1657 ttft 2.44 dec 9.56 unheld 224 (1 lines, engine 2404 ms) wall 3.6 rc 0
+   p2k-30  ptok  1657 ttft 2.44 dec 9.15 unheld 232 (1 lines, engine 2404 ms) wall 3.6 rc 0
+   p2k-31  ptok  1658 ttft 2.44 dec 8.99 unheld 240 (1 lines, engine 2404 ms) wall 3.6 rc 0
+   p2k-32  ptok  1658 ttft 2.44 dec 9.24 unheld 248 (1 lines, engine 2406 ms) wall 3.6 rc 0
+   p2k-33  ptok  1657 ttft 2.44 dec 9.48 unheld 256 (1 lines, engine 2404 ms) wall 3.6 rc 0
+   p2k-34  ptok  1657 ttft 2.44 dec 9.88 unheld 264 (1 lines, engine 2404 ms) wall 3.7 rc 0
+   p2k-35  ptok  1657 ttft 2.49 dec 8.34 unheld 272 (1 lines, engine 2453 ms) wall 3.5 rc 0
+   p2k-36  ptok  1657 ttft 2.49 dec 9.30 unheld 280 (1 lines, engine 2453 ms) wall 3.7 rc 0
+   p2k-37  ptok  1658 ttft 2.50 dec 10.05 unheld 288 (1 lines, engine 2454 ms) wall 3.8 rc 0
+   p2k-38  ptok  1658 ttft 2.49 dec 9.88 unheld 296 (1 lines, engine 2456 ms) wall 3.7 rc 0
+   p2k-39  ptok  1657 ttft 2.49 dec 9.90 unheld 304 (1 lines, engine 2455 ms) wall 3.7 rc 0
+   p2k-40  ptok  1657 ttft 2.50 dec 9.46 unheld 312 (1 lines, engine 2454 ms) wall 3.7 rc 0
+   p2k-41  ptok  1657 ttft 2.55 dec 9.76 unheld 320 (1 lines, engine 2504 ms) wall 3.8 rc 0
+   p2k-42  ptok  1658 ttft 2.54 dec 12.29 unheld 328 (1 lines, engine 2504 ms) wall 4.1 rc 0
+   p2k-43  ptok  1658 ttft 2.54 dec 10.31 unheld 336 (1 lines, engine 2503 ms) wall 3.8 rc 0
+   p2k-44  ptok  1658 ttft 2.54 dec 9.51 unheld 344 (1 lines, engine 2504 ms) wall 3.7 rc 0
+   p2k-45  ptok  1657 ttft 2.54 dec 15.35 unheld 352 (1 lines, engine 2503 ms) wall 4.5 rc 0
+   p2k-46  ptok  1657 ttft 2.59 dec 9.51 unheld 360 (1 lines, engine 2554 ms) wall 3.8 rc 0
+   p2k-47  ptok  1657 ttft 2.54 dec 9.33 unheld 368 (1 lines, engine 2505 ms) wall 3.7 rc 0
+   p2k-48  ptok  1658 ttft 2.59 dec 9.50 unheld 376 (1 lines, engine 2555 ms) wall 3.8 rc 0
+   p2k-49  ptok  1658 ttft 2.59 dec 9.48 unheld 384 (1 lines, engine 2554 ms) wall 3.8 rc 0
+   p2k-50  ptok  1657 ttft 2.54 dec 10.83 unheld 392 (1 lines, engine 2508 ms) wall 3.9 rc 0
+   p8k-1   ptok  6544 ttft 6.18 dec 10.09 unheld 400 (1 lines, engine 6110 ms) wall 7.5 rc 0
+   p8k-2   ptok  6544 ttft 6.11 dec 10.15 unheld 408 (1 lines, engine 6059 ms) wall 7.4 rc 0
+   p8k-3   ptok  6544 ttft 6.06 dec 9.75 unheld 416 (1 lines, engine 6015 ms) wall 7.3 rc 0
+-- clb B (--no-expert-cache): rc rc=0 | first VRAM line (6866 of 15744 in VRAM) | FLOW_STATS in ds.json True | --no-expert-cache True
+   p2k-1   ptok  1657 ttft 2.47 dec 9.61 unheld 0 (1 lines, engine 2455 ms) wall 3.7 rc 0
+   p2k-2   ptok  1657 ttft 2.37 dec 9.04 unheld 0 (1 lines, engine 2354 ms) wall 3.5 rc 0
+   p2k-3   ptok  1658 ttft 2.32 dec 9.13 unheld 0 (1 lines, engine 2311 ms) wall 3.5 rc 0
+   p2k-4   ptok  1658 ttft 2.32 dec 10.19 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-5   ptok  1657 ttft 2.32 dec 9.82 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-6   ptok  1657 ttft 2.32 dec 9.52 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-7   ptok  1657 ttft 2.32 dec 8.48 unheld 0 (1 lines, engine 2304 ms) wall 3.4 rc 0
+   p2k-8   ptok  1658 ttft 2.32 dec 9.41 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-9   ptok  1658 ttft 2.32 dec 9.62 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-10  ptok  1658 ttft 2.32 dec 9.63 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-11  ptok  1657 ttft 2.32 dec 8.93 unheld 0 (1 lines, engine 2304 ms) wall 3.4 rc 0
+   p2k-12  ptok  1657 ttft 2.32 dec 9.47 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-13  ptok  1657 ttft 2.32 dec 9.72 unheld 0 (1 lines, engine 2303 ms) wall 3.5 rc 0
+   p2k-14  ptok  1658 ttft 2.32 dec 10.70 unheld 0 (1 lines, engine 2303 ms) wall 3.7 rc 0
+   p2k-15  ptok  1658 ttft 2.32 dec 9.90 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-16  ptok  1657 ttft 2.32 dec 9.57 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-17  ptok  1657 ttft 2.32 dec 9.82 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-18  ptok  1657 ttft 2.37 dec 10.49 unheld 0 (1 lines, engine 2354 ms) wall 3.7 rc 0
+   p2k-19  ptok  1657 ttft 2.32 dec 9.27 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-20  ptok  1658 ttft 2.32 dec 9.51 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-21  ptok  1658 ttft 2.32 dec 9.56 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-22  ptok  1657 ttft 2.32 dec 9.60 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-23  ptok  1657 ttft 2.32 dec 9.46 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-24  ptok  1657 ttft 2.32 dec 9.04 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-25  ptok  1658 ttft 2.32 dec 9.50 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-26  ptok  1658 ttft 2.32 dec 9.87 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-27  ptok  1658 ttft 2.32 dec 10.21 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-28  ptok  1657 ttft 2.37 dec 9.96 unheld 0 (1 lines, engine 2354 ms) wall 3.6 rc 0
+   p2k-29  ptok  1657 ttft 2.32 dec 10.08 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-30  ptok  1657 ttft 2.32 dec 9.03 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-31  ptok  1658 ttft 2.32 dec 9.78 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-32  ptok  1658 ttft 2.32 dec 9.27 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-33  ptok  1657 ttft 2.32 dec 9.85 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-34  ptok  1657 ttft 2.32 dec 9.92 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-35  ptok  1657 ttft 2.32 dec 9.12 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-36  ptok  1657 ttft 2.37 dec 9.39 unheld 0 (1 lines, engine 2354 ms) wall 3.6 rc 0
+   p2k-37  ptok  1658 ttft 2.37 dec 9.77 unheld 0 (1 lines, engine 2354 ms) wall 3.6 rc 0
+   p2k-38  ptok  1658 ttft 2.32 dec 9.78 unheld 0 (1 lines, engine 2305 ms) wall 3.6 rc 0
+   p2k-39  ptok  1657 ttft 2.32 dec 9.91 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-40  ptok  1657 ttft 2.32 dec 9.99 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-41  ptok  1657 ttft 2.32 dec 9.90 unheld 0 (1 lines, engine 2305 ms) wall 3.6 rc 0
+   p2k-42  ptok  1658 ttft 2.32 dec 10.12 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-43  ptok  1658 ttft 2.32 dec 9.51 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-44  ptok  1658 ttft 2.32 dec 8.81 unheld 0 (1 lines, engine 2304 ms) wall 3.4 rc 0
+   p2k-45  ptok  1657 ttft 2.32 dec 9.80 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p2k-46  ptok  1657 ttft 2.32 dec 9.19 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-47  ptok  1657 ttft 2.32 dec 9.04 unheld 0 (1 lines, engine 2307 ms) wall 3.5 rc 0
+   p2k-48  ptok  1658 ttft 2.32 dec 9.62 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-49  ptok  1658 ttft 2.32 dec 9.34 unheld 0 (1 lines, engine 2304 ms) wall 3.5 rc 0
+   p2k-50  ptok  1657 ttft 2.32 dec 10.06 unheld 0 (1 lines, engine 2304 ms) wall 3.6 rc 0
+   p8k-1   ptok  6544 ttft 6.78 dec 9.70 unheld 0 (1 lines, engine 6761 ms) wall 8.0 rc 0
+   p8k-2   ptok  6544 ttft 6.68 dec 10.32 unheld 0 (1 lines, engine 6661 ms) wall 8.0 rc 0
+   p8k-3   ptok  6544 ttft 6.70 dec 10.45 unheld 0 (1 lines, engine 6673 ms) wall 8.0 rc 0
+-- cla2 A2 (cache on, drift control): rc rc=0 | first VRAM line (6826 of 15744 in VRAM) | FLOW_STATS in ds.json True | --no-expert-cache False
+   p2k-1   ptok  1657 ttft 2.35 dec 9.19 unheld 0 (1 lines, engine 2303 ms) wall 3.5 rc 0
+   p2k-2   ptok  1657 ttft 2.29 dec 9.53 unheld 8 (1 lines, engine 2255 ms) wall 3.5 rc 0
+   p2k-3   ptok  1658 ttft 2.24 dec 10.30 unheld 16 (1 lines, engine 2204 ms) wall 3.5 rc 0
+   p2k-4   ptok  1658 ttft 2.19 dec 8.60 unheld 24 (1 lines, engine 2154 ms) wall 3.3 rc 0
+   p2k-5   ptok  1657 ttft 2.14 dec 10.90 unheld 32 (1 lines, engine 2104 ms) wall 3.5 rc 0
+   p2k-6   ptok  1657 ttft 2.14 dec 9.76 unheld 40 (1 lines, engine 2103 ms) wall 3.4 rc 0
+   p2k-7   ptok  1657 ttft 2.19 dec 8.98 unheld 48 (1 lines, engine 2154 ms) wall 3.3 rc 0
+   p2k-8   ptok  1658 ttft 2.19 dec 9.27 unheld 56 (1 lines, engine 2154 ms) wall 3.4 rc 0
+   p2k-9   ptok  1658 ttft 2.19 dec 9.18 unheld 64 (1 lines, engine 2154 ms) wall 3.3 rc 0
+   p2k-10  ptok  1658 ttft 2.19 dec 8.83 unheld 72 (1 lines, engine 2154 ms) wall 3.3 rc 0
+== CLEAK per arm (2K: prompts 1..N2; drift = mean TTFT of the last 10 vs prompts 1-10)
+ARM cla A (cache on): 2K n 50 | unheld slope 8.000 a prompt | TTFT 1-10 2.245 s, last 10 2.557 s, drift 13.86 % | decode 9.651 ms a token | 8K n 3 TTFT 6.115 s unheld [400, 408, 416]
+ARM clb B (--no-expert-cache): 2K n 50 | unheld slope 0.000 a prompt | TTFT 1-10 2.340 s, last 10 2.319 s, drift -0.89 % | decode 9.606 ms a token | 8K n 3 TTFT 6.721 s unheld [0, 0, 0]
+ARM cla2 A2 (cache on, drift control): 2K n 10 | unheld slope 8.000 a prompt | TTFT 1-10 2.210 s, last 10 - s, drift - % | decode 9.454 ms a token | 8K n 0 TTFT - s unheld []
+DRIFT CONTROL: A2 prompts 1-10 TTFT 2.210 s vs A's 2.245 s: -1.58 % (a fresh process; not in the verdict); A2 unheld slope 8.000 (a leak restarts with the process)
+DECODE: B 9.606 vs A 9.651 ms a token: -0.47 % (ABORT above +2 %)
+VERDICT CLEAK: LEAK CONFIRMED (A slope 8.000, B slope 0.000, A drift +13.86 %, B drift -0.89 %, decode B vs A -0.47 %)
+TRIPPED: 0 new lines since start

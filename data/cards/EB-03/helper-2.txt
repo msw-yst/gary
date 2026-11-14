@@ -1,0 +1,7 @@
+helper: device 1 holds 2964 experts (31.29 GiB, 10 MiB a slot) over 40 layers, filled in 4.1 s
+helper: device 1 holds 2964 experts (31.29 GiB, 10 MiB a slot) over 40 layers, filled in 4.1 s
+helper: device 1 holds 2964 experts (31.29 GiB, 10 MiB a slot) over 40 layers, filled in 4.1 s
+ds4: CUDA0 layers [0, 39] + head: weights 5.86 GB, experts 15.00 GB (1507 of 15360 in VRAM), caches 0.01 GB, 554 MiB free
+ds4: 13853 routed experts on the CPU lane (134.5 GB): 13853 copied into RAM (1 NUMA parts), the rest in place in the model's files; 16 threads
+prompt: 2048 tokens in 9493 ms (215.73 tok/s, windows of 8192)
+decode: 256 tokens in 9761 ms (26.12 tok/s); CPU lane: 17286 of 61200 experts; the cache moved 1038 (1249 in all)

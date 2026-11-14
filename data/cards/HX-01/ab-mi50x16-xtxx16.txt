@@ -1,0 +1,12 @@
+# perf matrix x16 2026-11-06T11:38:27+00:00; repeats 5; HIP_VISIBLE_DEVICES=0,1
+# MI50 #1 LnkSta: Speed 16GT/s, Width x16 | available PCIe bandwidth, limited by 16.0 GT/s PCIe x4 link at <root-port> (capable of 252.048 Gb/s with 16.0 GT/s PCIe x16 link)
+# XTX #3 LnkSta: Speed 16GT/s, Width x16 | 
+# XTX #1 LnkSta: Speed 16GT/s, Width x16 | 
+## cache auto
+PASS A/B: decode median a 56.11 / b 59.34 tok/s (+5.8%), prefill median a 661 / b 661 tok/s, helper 40.6 entries/token
+## cache 5000
+PASS A/B: decode median a 48.93 / b 57.98 tok/s (+18.5%), prefill median a 659 / b 659 tok/s, helper 98.5 entries/token
+## cache 2500
+PASS A/B: decode median a 42.55 / b 53.91 tok/s (+26.7%), prefill median a 657 / b 657 tok/s, helper 176.3 entries/token
+## cache 1000
+PASS A/B: decode median a 39.16 / b 69.63 tok/s (+77.8%), prefill median a 541 / b 540 tok/s, helper 279.0 entries/token

@@ -33,7 +33,20 @@ struct DeviceInfo {
 // for (STRATA_HIP_ARCHS, set by cmake/hip_backend.cmake) and it must run wave32.  "" when it can (or when there
 // is no such device: the caller's own device errors apply), else the reason in a sentence.  A binary carried to
 // another card would otherwise fail later with "invalid device function".  CUDA builds: always "".
-std::string gpu_arch_problem(int ordinal);
+//
+// gfx906 helper: `helper` = the card is to be a helper expert cache (--expert-cache-device1..3).  A helper is
+// accepted when the strict check above accepts it, or - in a build with STRATA_HIP_HELPER_ARCHS (the helper TUs'
+// extra architectures, e.g. "gfx906") - when its architecture is in that list and it runs wave64.  The primary, the
+// --layer-split stages and the --peer-device always take the strict check (helper = false).  Without
+// STRATA_HIP_HELPER_ARCHS the answer is the strict one; a refused wave64 helper only gets a hint appended.
+// Two overloads rather than a default argument: the SYCL tree (sycl/src/core/device.dp.cpp) includes this header and
+// defines only the one-argument form, which must keep linking.
+std::string gpu_arch_problem(int ordinal, bool helper);
+std::string gpu_arch_problem(int ordinal);   // = gpu_arch_problem(ordinal, false)
+
+// gfx906 helper: the base architecture ("gfx906") when GPU `ordinal` can run ONLY as a helper expert cache (it
+// fails the strict check, passes the helper one); "" otherwise, on CUDA, and in builds without STRATA_HIP_HELPER_ARCHS.
+std::string gpu_helper_arch(int ordinal);
 
 // The GPU architectures this binary was compiled for ("gfx1100,gfx1201"); "" on CUDA builds.
 const char* compiled_gpu_archs();

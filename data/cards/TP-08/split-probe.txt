@@ -1,0 +1,32 @@
+tps0run tps0-20261113T113544Z - NEW <path> (<hash>); env: DS4_BATCH_DECODE=1 DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1 DS4_EG_AHEAD=1 DS4_TOPK_MB=1 DS4_PF_HELPER=8192; base: --gpus 0,1,2,8 --tp 4 -
+== identity
+ID id-S3222 vs rows-S0-1: stdout IDENTICAL | placement (7148 of 15744 in VRAM) (7148 of 15744 in VRAM) (7148 of 15744 in VRAM) (7148 of 15744 in VRAM) | lines ok
+== placement: S0 7148, SP 7175, SD 7103 VRAM experts
+== decode rows (ms a step; mean of reps [values])
+T1  S0 14.95 [14.9, 15.0] | SP 14.95 [15.0, 14.9] | SD 15.10 [15.1, 15.1]
+T2  S0 17.70 [17.7, 17.7] | SP 17.70 [17.7, 17.7] | SD 17.85 [17.9, 17.8]
+T3  S0 20.10 [20.1, 20.1] | SP 20.00 [20.0, 20.0] | SD 20.35 [20.4, 20.3]
+T4  S0 22.85 [22.9, 22.8] | SP 22.75 [22.7, 22.8] | SD 23.35 [23.4, 23.3]
+solo drafted decode tok/s: S0 68.53 SP 68.60 SD 67.89
+== prompts (ms)
+pf2k  S0 1555 [1703.0, 1407.0] | SP 1453 [1453.0, 1453.0] | SD 1454 [1453.0, 1454.0]
+pf8k  S0 5658 [5658.0] | SP 6709 [6709.0] | SD 5660 [5660.0]
+== prof8k per device (stage 3 experts, 11 attn AR, 12 MoE AR, sum)
+S0 CUDA0: 3 526  11 647  12 826  13 1856  sum 5347
+S0 CUDA1: 3 504  11 600  12 1001  13 1751  sum 5314
+S0 CUDA2: 3 525  11 561  12 989  13 1754  sum 5329
+S0 CUDA8: 3 529  11 559  12 991  13 1731  sum 5297
+SD CUDA0: 3 514  11 617  12 996  13 1777  sum 5396
+SD CUDA1: 3 498  11 611  12 909  13 1919  sum 5411
+SD CUDA2: 3 509  11 530  12 1113  13 1709  sum 5367
+SD CUDA8: 3 524  11 590  12 926  13 1822  sum 5378
+== verdicts (prereg.md 3-4)
+NO DATA items: pf2k S0 spread 19.0 %
+P1 (reported only) W/E = 0.69 (predicted 0.33)
+P2 dose in the MoE barrier: dW/E = 0.07 (predicted 0.44, CONFIRM >= 0.22): not confirmed
+P3 dose in prompt wall: pf8k 0.04 % / pf2k -6.53 % (predicted 4.31 %, CONFIRM pf8k >= half): not confirmed
+P4 dose in decode: dstep(SD-S0) T1-4 0.15 / 0.15 / 0.25 / 0.50 ms (predicted +0.38 at T1 .. ~+1.3 at T4); placebo |SP-S0| 0.00 / 0.00 / 0.10 / 0.10: CONFIRM
+P5 placebo: HETEROGENEITY (pf2k -6.6 %)
+stage-1 predicted gain: pf2k -76 ms (-4.9 %), pf8k 2 ms (0.0 %) | T1 0.08 ms (0.5 %), T2 0.09 ms (0.5 %), T3 0.15 ms (0.8 %), T4 0.32 ms (1.4 %)
+VERDICT TPSPLIT0 NO DATA
+TRIPPED: 0 new lines since start

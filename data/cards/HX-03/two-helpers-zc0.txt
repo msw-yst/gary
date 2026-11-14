@@ -1,0 +1,3 @@
+# perf matrix 2helpers-zc0 2026-11-06T14:25:17+00:00; repeats 5; HIP_VISIBLE_DEVICES=0,1,2
+## cache 1000
+PASS A/B: decode median a 39.33 / b 81.72 tok/s (+107.8%), prefill median a 541 / b 540 tok/s, helper 410.3 entries/token

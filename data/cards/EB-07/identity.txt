@@ -1,0 +1,15 @@
+reg-base vs reg-fix: IDENTICAL
+dump-base vs dump-fix: IDENTICAL
+lgcmp: IDENTICAL (65 rows of 129280)
+== dump-base
+prompt: 64 tokens in 426 ms (150.20 tok/s, windows of 16)
+decode: 8 tokens in 266 ms (26.30 tok/s); CPU lane: 2 of 1680 experts; the cache moved 0 (0 in all)
+== dump-fix
+prompt: 64 tokens in 447 ms (143.27 tok/s, windows of 16)
+decode: 8 tokens in 198 ms (35.27 tok/s); CPU lane: 2 of 1680 experts; the cache moved 0 (0 in all)
+== reg-base
+prompt: 2048 tokens in 3854 ms (531.44 tok/s, windows of 8192)
+decode: 256 tokens in 5154 ms (49.47 tok/s); CPU lane: 39 of 61200 experts; the cache moved 0 (0 in all)
+== reg-fix
+prompt: 2048 tokens in 4255 ms (481.36 tok/s, windows of 8192)
+decode: 256 tokens in 5148 ms (49.53 tok/s); CPU lane: 39 of 61200 experts; the cache moved 0 (0 in all)

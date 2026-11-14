@@ -11,13 +11,19 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
+
+#if defined(__GLIBC__)
+#include <malloc.h>   // (mallopt: malloc_pin)
+#endif
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -539,6 +545,114 @@ inline void anon_free(void* p, size_t bytes) {
     VirtualFree(p, 0, MEM_RELEASE);
 #else
     ::munmap(p, bytes);
+#endif
+}
+/// every page of [p, p + bytes) made resident for writing now (anonymous memory: its first-touch faults taken here, not
+/// later).  Linux: MADV_POPULATE_WRITE (5.14+) on the page-aligned cover, else one write per 4 KB page (the bytes' values are kept
+/// either way: the touch reads and writes back the same byte).  Best effort.
+inline void prefault_write(void* p, size_t bytes) {
+    if (p == nullptr || bytes == 0) return;
+    const uintptr_t pg = 4096, a = (uintptr_t) p & ~(pg - 1), e = ((uintptr_t) p + bytes + pg - 1) & ~(pg - 1);
+#if !defined(_WIN32) && !defined(__APPLE__)
+#ifndef MADV_POPULATE_WRITE
+#define MADV_POPULATE_WRITE 23
+#endif
+    if (::madvise((void*) a, e - a, MADV_POPULATE_WRITE) == 0) return;
+#endif
+    for (uintptr_t x = (uintptr_t) p; x < (uintptr_t) p + bytes; x = (x & ~(pg - 1)) + pg) {
+        volatile uint8_t* b = (volatile uint8_t*) x;
+        *b = *b;
+    }
+    (void) a;
+    (void) e;
+}
+
+/// ROCm on a discrete GPU (Linux) backs every hipHostMalloc - the engine's pinned staging, rings and host-mapped buffers,
+/// and ROCr's own queues and signals - with a KFD *userptr* BO over ordinary anonymous pages.  Those pages stay movable: when
+/// compaction (kcompactd, or any process's direct compaction), khugepaged or reclaim moves one of them, the MMU notifier makes
+/// amdgpu quiesce EVERY queue of the process on every GPU until its restore worker has revalidated the BOs (a 12 s token in a
+/// multi-engine decode, kcompactd migrating 14.5 GB; docs/dsv41/cards/EB-05.md).  HSA_USERPTR_FOR_PAGED_MEM=0 makes the thunk
+/// allocate that memory as GTT BOs instead (kernel-owned pages, never migrated by compaction), CPU-mapped through the render
+/// node.  Called before the first HIP call (the thunk reads it once, at hsa_init).  An HSA_USERPTR_FOR_PAGED_MEM already in the
+/// environment wins; DS4_HOST_GTT=0 keeps the userptr default.  hipHostRegister'd ranges are userptr whatever this says.
+/// Returns what was decided ("" when the platform has no such thing).
+inline const char* host_alloc_gtt() {
+#if defined(__linux__)
+    if (const char* v = std::getenv("HSA_USERPTR_FOR_PAGED_MEM")) return std::strcmp(v, "0") == 0 ? "gtt (from the environment)" : "userptr (from the environment)";
+    if (const char* v = std::getenv("DS4_HOST_GTT"); v != nullptr && std::atoi(v) == 0) return "userptr (DS4_HOST_GTT=0)";
+    ::setenv("HSA_USERPTR_FOR_PAGED_MEM", "0", 0);
+    return "gtt";
+#else
+    return "";
+#endif
+}
+
+/// glibc malloc kept out of brk / mprotect / munmap once the decode runs (DS4_MALLOC_PIN=1, the default; =0: glibc's
+/// defaults).  A malloc that grows a heap - the main arena's by brk, a thread arena's by mprotect - or trims one takes the
+/// process's mmap write lock; in multi-engine decode such a call waited in D state for that lock for 0.5 - 2.1 s, 14 of the 15
+/// stalls of docs/dsv41/cards/EB-05.md.  The decode's own per-token allocations are gone (buffers
+/// sized at load); this is the belt and braces for what is left (the runtime's, the C library's, a path not seen):
+///  - M_TRIM_THRESHOLD 1 GiB: a free never gives a heap's top back (no brk shrink, no thread-heap shrink).
+///  - M_TOP_PAD (DS4_MALLOC_PIN_MB, default 64 MiB): a main-arena growth takes that much more at once.
+///  - M_MMAP_THRESHOLD 32 MiB, fixed (setting it stops glibc's sliding threshold): blocks below it come from the heaps,
+///    which no longer shrink, instead of an mmap + munmap each.
+///  - a heap reserve pre-touched now: DS4_MALLOC_PIN_MB of the calling thread's (the main) arena, allocated in pieces below
+///    the mmap threshold, every page written, freed again - it stays in the heap, resident.
+/// Thread arenas (glibc gives a thread its own, grown by mprotect, and M_TOP_PAD does not pad those growths) are pre-grown
+/// the same way by malloc_pin_thread(), which each decode-time engine thread calls on its loop (once after the pin; 8 MiB
+/// each).  M_ARENA_MAX is not used: it binds only threads created after it, and the engine's exist by the decode.
+/// Call once, on the main thread, after the load and before the first token.  Returns what was done ("" when nothing:
+/// not glibc, or DS4_MALLOC_PIN=0).  The same effect from outside (an A/B without a rebuild):
+/// GLIBC_TUNABLES=glibc.malloc.trim_threshold=1073741824:glibc.malloc.top_pad=67108864:glibc.malloc.mmap_threshold=33554432.
+inline std::atomic<int>& malloc_pin_epoch() {
+    static std::atomic<int> e{0};
+    return e;
+}
+inline void malloc_reserve_here(size_t bytes) {
+#if defined(__GLIBC__)
+    constexpr size_t kPiece = (size_t) 4 << 20;   // (below the mmap threshold: from the heap)
+    void* pieces[256];
+    int n = 0;
+    for (size_t got = 0; got < bytes && n < 256; got += kPiece) {
+        void* p = std::malloc(kPiece);
+        if (p == nullptr) break;
+        prefault_write(p, kPiece);
+        pieces[n++] = p;
+    }
+    for (int i = n - 1; i >= 0; --i) std::free(pieces[i]);   // (top first: they merge into the top chunk, which stays)
+#else
+    (void) bytes;
+#endif
+}
+inline std::string malloc_pin() {
+#if defined(__GLIBC__)
+    const char* v = std::getenv("DS4_MALLOC_PIN");
+    if (v != nullptr && std::atoi(v) == 0) return "";
+    long mb = 64;
+    if (const char* m = std::getenv("DS4_MALLOC_PIN_MB")) mb = std::max(0L, std::min(1024L, std::atol(m)));
+    const int ok_trim = mallopt(M_TRIM_THRESHOLD, 1 << 30);
+    const int ok_pad = mallopt(M_TOP_PAD, (int) (mb << 20));
+    const int ok_mmap = mallopt(M_MMAP_THRESHOLD, 32 << 20);
+    malloc_reserve_here((size_t) mb << 20);
+    malloc_pin_epoch().fetch_add(1, std::memory_order_release);   // (the threads' malloc_pin_thread() after the mallopts)
+    char b[240];
+    std::snprintf(b, sizeof b, "trim threshold 1 GiB%s, top pad %ld MiB%s, mmap threshold 32 MiB fixed%s; %ld MiB of the main heap "
+                               "pre-touched, thread arenas pre-grown 8 MiB each (DS4_MALLOC_PIN=0: off)",
+                  ok_trim ? "" : " (refused)", mb, ok_pad ? "" : " (refused)", ok_mmap ? "" : " (refused)", mb);
+    return b;
+#else
+    return "";
+#endif
+}
+/// The calling thread's arena pre-grown (8 MiB, pre-touched) once after malloc_pin() - an atomic load and a compare otherwise.
+/// For the engine's decode-time threads (the CPU lane's service thread, the pool server, the expert cache's movers).
+inline void malloc_pin_thread() {
+#if defined(__GLIBC__)
+    thread_local int seen = 0;
+    const int e = malloc_pin_epoch().load(std::memory_order_acquire);
+    if (e == seen) return;
+    seen = e;
+    malloc_reserve_here((size_t) 8 << 20);
 #endif
 }
 

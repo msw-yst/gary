@@ -1,0 +1,14 @@
+# Four upstream correctness fixes (router guard + server fixes) on a later build (UF) against build 15 (B15);
+# U = flags unset, P = as deployed; d decode, x drafter decode, bt batch test, 32k / 110k prompts; srvid one served user. F1 / F3 / EC / PT / TS / UF = builds made after build 15; F1, F3, EC and UF went into build 16, the build in this release; PT and TS are not in it.
+== identity (every line must say IDENTICAL and lines ok)
+ID idu-U-d-UF vs idu-U-d-B15 [d]: stdout IDENTICAL | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok |
+ID idu-U-x-UF vs idu-U-x-B15 [x]: stdout IDENTICAL | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok |
+ID idu-U-bt-UF vs idu-U-bt-B15 [bt]: stdout IDENTICAL | placement (7136 of 15744 in VRAM) (7136 of 15744 in VRAM) (7136 of 15744 in VRAM) (7136 of 15744 in VRAM) | lines ok |
+ID idu-P-d-UF vs idu-P-d-B15 [d]: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok | idu-P-d-B15:L8 engaged (2040); idu-P-d-B15:TK engaged (d); idu-P-d-UF:L8 engaged (2040); idu-P-d-UF:TK engaged (d);
+ID idu-P-x-UF vs idu-P-x-B15 [x]: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok | idu-P-x-B15:L8 engaged (1104); idu-P-x-B15:TK engaged (x); idu-P-x-UF:L8 engaged (1104); idu-P-x-UF:TK engaged (x);
+ID idu-P-bt-UF vs idu-P-bt-B15 [bt]: stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | lines ok | idu-P-bt-B15:L8 engaged (22440); idu-P-bt-B15:TK engaged (bt); idu-P-bt-UF:L8 engaged (22440); idu-P-bt-UF:TK engaged (bt);
+ID idu-P-32k-UF vs idu-P-32k-B15 [32k]: stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | lines ok | idu-P-32k-B15:L8 engaged (504); idu-P-32k-B15:TK engaged (32k); idu-P-32k-UF:L8 engaged (504); idu-P-32k-UF:TK engaged (32k);
+ID idu-P-110k-UF vs idu-P-110k-B15 [110k]: stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | lines ok | idu-P-110k-B15:L8 engaged (504); idu-P-110k-B15:TK engaged (110k); idu-P-110k-UF:L8 engaged (504); idu-P-110k-UF:TK engaged (110k);
+== srvid (PAR 1 serve loop)
+SRVID srvid-UFP vs srvid-B15P (ON; --serve PAR 1, greedy, T / DONE fields): IDENTICAL | T lines 1025 | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok
+VERDICT BUILD 15 IDENTITY: idu: PASS

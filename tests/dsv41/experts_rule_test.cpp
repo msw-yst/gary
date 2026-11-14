@@ -279,6 +279,10 @@ int main() {
         CHECK_EQ(fast_attn_default(-1, false, true, true), 0);                        // ... but never for 0.2.6's arithmetic
         CHECK_EQ(fast_attn_default(1, false, false, true), 1);
         CHECK_EQ(fast_attn_default(0, true, true, false), 0);                         // the old DS4_FAST_ATTN=0
+        CHECK_EQ(fast_attn_default(-1, false, false, false, true), 1);                // gfx1100 in a tp group
+        CHECK_EQ(fast_attn_default(-1, false, false, true, true), 0);                 // ... but never for 0.2.6's arithmetic
+        CHECK_EQ(fast_attn_default(0, false, false, false, true), 0);                 // DS4_FAST_ATTN=0: the scalar kernel
+        CHECK_EQ(fast_attn_default(-1, false, false, false, false), 0);               // gfx1100 alone: unchanged (off)
         // the drafter's cumulative cut: 0 again; STRATA_DS4_DSPARK_CUM wins
         CHECK_EQ((int) (dspark_cum_value(false, 0.0f, true, true) * 100), 0);
         CHECK_EQ((int) (dspark_cum_value(false, 0.0f, true, false) * 100), 50);

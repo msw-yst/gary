@@ -1,0 +1,10 @@
+long2 off vs on (DS4_PF_HELPER, w2048): 9215 positions: top-1 agreement 97.88 %, KL median 6.45e-05 mean 6.09e-03 p99 8.19e-02, ppl 1.7155 -> 1.7119 (x0.9979)  GATE (top-1 >= 95.5 %, median KL <= 2.5e-03, mean KL <= 2.0e-02, ppl x0.985..1.015): PASS
+long2 off vs flr (unset, w1024: the floor): 9215 positions: top-1 agreement 98.19 %, KL median 5.16e-05 mean 4.77e-03 p99 6.58e-02, ppl 1.7155 -> 1.7136 (x0.9989)
+long2 against the floor (top-1 >= floor - 1.0 pp, median KL <= 2x floor): top-1 97.88 vs 98.19 %, median KL 6.45e-05 vs 5.16e-05: PASS  (n 9215, binomial se of top-1 0.15 pp)
+paired bootstrap (secondary, reported: R = long2-flr, blocks of 25, 1000 resamples): WORSE beyond noise on a measure
+  top-1 agree vs R   off 98.188  on 98.253  on-off +0.06511 [-0.2168, +0.336] ok
+  median KL vs R     off 5.3798e-05  on 6.6512e-05  on-off +1.271e-05 [+7.036e-06, +2.036e-05] WORSE
+  ppl                off 1.7155  on 1.7119  on-off -0.00361 [-0.008484, +0.001036] ok
+seg long2-off: {"segments": [{"name": "P122880", "first_line": 0, "end_line": 9215, "n": 9215, "ppl": 1.715515, "top1": 0.860988}]}
+seg long2-on: {"segments": [{"name": "P122880", "first_line": 0, "end_line": 9215, "n": 9215, "ppl": 1.711904, "top1": 0.861205}]}
+seg long2-flr: {"segments": [{"name": "P122880", "first_line": 0, "end_line": 9215, "n": 9215, "ppl": 1.713609, "top1": 0.861964}]}

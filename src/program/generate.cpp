@@ -3756,12 +3756,33 @@ int main(int argc, char** argv) {
     {
         // every GPU this run uses must be an architecture the binary has code for (a gfx1100 build on a gfx1201
         // card would otherwise fail later with "invalid device function")
-        std::vector<int> used{primary_device};   // STRATA_PRIMARY_DEVICE: the primary is not always 0
-        if (multi_gpu) used.insert(used.end(), split_devs.begin(), split_devs.end());
+        // gfx906 helper: each by its role.  The primary and the layer-split stages are checked strictly (they run the
+        // prefill / dense kernels, which exist for STRATA_HIP_ARCHS only); the helper expert caches
+        // (--expert-cache-device1..3) as helpers, which in a build with STRATA_HIP_HELPER_ARCHS may be wave64 cards.
+        enum class Role { primary, stage, helper };
+        std::vector<std::pair<int, Role>> used{{primary_device, Role::primary}};   // STRATA_PRIMARY_DEVICE: not always 0
+        if (multi_gpu)
+            for (const int d : split_devs) used.emplace_back(d, Role::stage);
         for (int r = 0; r < 3; ++r)
-            if (o.expert_cache_remote[(size_t) r] > 0) used.push_back(remote_dev[r]);
-        for (const int d : used) {
-            if (const std::string why = strata::core::gpu_arch_problem(d); !why.empty()) {
+            if (o.expert_cache_remote[(size_t) r] > 0) used.emplace_back(remote_dev[r], Role::helper);
+        for (const auto& [d, role] : used) {
+            if (const std::string why = strata::core::gpu_arch_problem(d, role == Role::helper); !why.empty()) {
+#if defined(STRATA_HIP_HELPER_ARCHS)
+                if (const std::string h = strata::core::gpu_helper_arch(d); !h.empty() && role == Role::stage) {
+                    std::fprintf(stderr, "strata generate: --layer-split: CUDA%d is a wave64 %s card, which this engine runs "
+                                         "only as a helper expert cache: a layer-split stage runs prefill and dense-layer "
+                                         "kernels that need wave32.  Leave it out of the split (--split-device; "
+                                         "--layer-split auto takes every visible GPU) and give it --expert-cache-device1..3 "
+                                         "instead\n", d, h.c_str());
+                    return 1;
+                } else if (!h.empty() && role == Role::primary) {
+                    std::fprintf(stderr, "strata generate: the primary GPU (CUDA%d) is a wave64 %s card, which this engine "
+                                         "runs only as a helper expert cache: make a wave32 card the primary "
+                                         "(STRATA_PRIMARY_DEVICE, or its place in HIP_VISIBLE_DEVICES) and give this one "
+                                         "--expert-cache-device1..3\n", d, h.c_str());
+                    return 1;
+                }
+#endif
                 std::fprintf(stderr, "strata generate: %s\n", why.c_str());
                 return 1;
             }
@@ -3990,6 +4011,19 @@ int main(int argc, char** argv) {
                                             : "--expert-cache-device1..3 (the peer tier already caches experts there)");
         return 2;
     }
+#if defined(STRATA_USE_HIP) && defined(STRATA_HIP_HELPER_ARCHS)
+    // gfx906 helper: the peer tier runs prefill rows on its card (wave32 kernels only), so a card this build runs
+    // only as a helper expert cache cannot be it.  Without STRATA_HIP_HELPER_ARCHS the peer device is not checked here,
+    // as upstream.
+    if (o.peer_device >= 1) {
+        if (const std::string h = strata::core::gpu_helper_arch(o.peer_device); !h.empty()) {
+            std::fprintf(stderr, "strata generate: --peer-device %d is a wave64 %s card, which this engine runs only as a "
+                                 "helper expert cache: the peer tier runs prefill rows, which need wave32.  Give it a "
+                                 "helper expert cache instead (--expert-cache-device1..3, docs/SECOND_GPU.md)\n", o.peer_device, h.c_str());
+            return 2;
+        }
+    }
+#endif
 
     if (o.native_flash_attn_short && o.max_context > 256) {
         std::fprintf(stderr, "strata generate: --native-flash-attn-short requires --max-context <=256\n");

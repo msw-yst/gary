@@ -1,0 +1,27 @@
+mmrun mmap-20261112T091106Z - best12pf <hash>; deploy env; tp4h4: --gpus 0,1,2,7 --tp 4 --helper-device 3,4,5,6; REPS 2 CTXS 1k 32k 110k
+== identity
+ID id-b1-MM vs id-b1-CP: stdout IDENTICAL | placement (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) | ok
+ID id-32k-MM vs id-32k-CP: stdout IDENTICAL | placement (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) | ok
+== per run: prompt ms | load: pin s | streamed | max VmLck kB | max VmRSS kB
+pf-110k-CP-1 rc=0 | prompt 112640 70799 | pin 37.3 | no stream | lck 0 | rss 1568
+pf-110k-CP-2 rc=0 | prompt 112640 72299 | pin 37.3 | no stream | lck 0 | rss 1660
+pf-110k-MM-1 rc=0 | prompt 112640 70744 | pin none | no stream | lck 0 | rss 1568
+pf-110k-MM-2 rc=0 | prompt 112640 70551 | pin none | no stream | lck 0 | rss 1684
+pf-110k-PLA-1 rc=0 | prompt 112640 71014 | pin 37.3 | no stream | lck 0 | rss 1588
+pf-110k-PLA-2 rc=0 | prompt 112640 70812 | pin 37.3 | no stream | lck 0 | rss 1588
+pf-1k-CP-1 rc=0 | prompt 1024 1202 | pin 37.3 | no stream | lck 0 | rss 1648
+pf-1k-CP-2 rc=0 | prompt 1024 1203 | pin 37.2 | no stream | lck 0 | rss 1520
+pf-1k-MM-1 rc=0 | prompt 1024 1303 | pin none | no stream | lck 0 | rss 1576
+pf-1k-MM-2 rc=0 | prompt 1024 1253 | pin none | no stream | lck 0 | rss 1536
+pf-1k-PLA-1 rc=0 | prompt 1024 1353 | pin 37.3 | no stream | lck 0 | rss 1600
+pf-1k-PLA-2 rc=0 | prompt 1024 1203 | pin 37.3 | no stream | lck 0 | rss 1680
+pf-32k-CP-1 rc=0 | prompt 32768 18786 | pin 37.3 | no stream | lck 0 | rss 1596
+pf-32k-CP-2 rc=0 | prompt 32768 18824 | pin 37.3 | no stream | lck 0 | rss 1600
+pf-32k-MM-1 rc=0 | prompt 32768 19793 | pin none | no stream | lck 0 | rss 1540
+pf-32k-MM-2 rc=0 | prompt 32768 18826 | pin none | no stream | lck 0 | rss 1536
+pf-32k-PLA-1 rc=0 | prompt 32768 18823 | pin 37.2 | no stream | lck 0 | rss 1568
+pf-32k-PLA-2 rc=0 | prompt 32768 19474 | pin 37.2 | no stream | lck 0 | rss 1596
+== means (prompt ms) and verdict per ctx (rule in prereg.md)
+1k: CP 1202 MM 1278 PLA 1278 | MM-CP +6.3% noise 6.3% -> PASS (MM not slower beyond noise)
+32k: CP 18805 MM 19310 PLA 19148 | MM-CP +2.7% noise 3.0% -> PASS (MM not slower beyond noise)
+110k: CP 71549 MM 70648 PLA 70913 | MM-CP -1.3% noise 3.0% -> PASS (MM not slower beyond noise)

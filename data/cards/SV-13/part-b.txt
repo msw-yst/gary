@@ -1,0 +1,15 @@
+# LIKE4LIKE B per-run lines: 1 XTX, experts in host RAM (CPU lane), no MI50, no drafter; 2,048-token prompt, 256 new tokens
+# U = upstream v0.2.9; H = the helper-port build the first run used; D = build 14 with its served flags; D0 = build 14, no flags
+# read from each run's engine log (the summary script printed NO DATA: a run-directory permission fault); all runs rc 0
+b-U-1: prompt: 2048 tokens in 9506 ms (215.44 tok/s, windows of 8192) decode: 256 tokens in 9759 ms (26.13 tok/s); CPU lane: 22742 of 61200 experts; the cache moved 476 (699 in all)
+b-H-1: prompt: 2048 tokens in 9476 ms (216.13 tok/s, windows of 8192) decode: 256 tokens in 15244 ms (16.73 tok/s); CPU lane: 24695 of 61200 experts; the cache moved 529 (722 in all)
+b-D-1: prompt: 2048 tokens in 9709 ms (210.94 tok/s, windows of 8192) decode: 256 tokens in 9429 ms (27.04 tok/s); CPU lane: 24563 of 61200 experts; the cache moved 479 (703 in all)
+b-D0-1: prompt: 2048 tokens in 9896 ms (206.96 tok/s, windows of 8192) decode: 256 tokens in 10229 ms (24.93 tok/s); CPU lane: 25254 of 61200 experts; the cache moved 475 (691 in all)
+b-U-2: prompt: 2048 tokens in 9830 ms (208.34 tok/s, windows of 8192) decode: 256 tokens in 18362 ms (13.89 tok/s); CPU lane: 24704 of 61200 experts; the cache moved 795 (802 in all)
+b-H-2: prompt: 2048 tokens in 9853 ms (207.85 tok/s, windows of 8192) decode: 256 tokens in 10876 ms (23.45 tok/s); CPU lane: 25534 of 61200 experts; the cache moved 477 (692 in all)
+b-D-2: prompt: 2048 tokens in 9712 ms (210.88 tok/s, windows of 8192) decode: 256 tokens in 9513 ms (26.81 tok/s); CPU lane: 25078 of 61200 experts; the cache moved 470 (693 in all)
+b-D0-2: prompt: 2048 tokens in 9801 ms (208.95 tok/s, windows of 8192) decode: 256 tokens in 10354 ms (24.63 tok/s); CPU lane: 25584 of 61200 experts; the cache moved 502 (702 in all)
+b-U-3: prompt: 2048 tokens in 9817 ms (208.62 tok/s, windows of 8192) decode: 256 tokens in 9739 ms (26.18 tok/s); CPU lane: 23028 of 61200 experts; the cache moved 471 (688 in all)
+b-H-3: prompt: 2048 tokens in 9926 ms (206.33 tok/s, windows of 8192) decode: 256 tokens in 10143 ms (25.14 tok/s); CPU lane: 24992 of 61200 experts; the cache moved 558 (738 in all)
+b-D-3: prompt: 2048 tokens in 9734 ms (210.40 tok/s, windows of 8192) decode: 256 tokens in 9634 ms (26.47 tok/s); CPU lane: 25358 of 61200 experts; the cache moved 516 (721 in all)
+b-D0-3: prompt: 2048 tokens in 9809 ms (208.79 tok/s, windows of 8192) decode: 256 tokens in 10224 ms (24.94 tok/s); CPU lane: 25254 of 61200 experts; the cache moved 475 (691 in all)

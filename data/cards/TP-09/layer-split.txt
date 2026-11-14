@@ -1,0 +1,44 @@
+# Prompt reads (and 32 decode tokens) with a layer split on build 15: T4 = deployed tp4 (helper on), S2 = --tp 2 (two
+# stages), S1 = --tp 1 (four stages), T4OFF = tp4 helper off; one cold process a prompt, drafter loaded off.
+args: T4 --gpus 0,1,2,8 --tp 4 --helper-device 4,5,6,7 | S2 --gpus 0,1,2,8 --tp 2 --helper-device 4,5,6,7 | S1 --gpus 0,1,2,8 --tp 1 --helper-device 4,5,6,7 | --max-context 131072 --mmap-experts on --dspark off --n 32; 4 production MI50 helpers
+== PFSPLIT prompt reads: T4 (tp4, helper ON, deployed) vs layer splits S2 (--tp 2) / S1 (--tp 1); T4OFF = tp4 helper OFF. MEASURED: engine prompt / decode lines; one cold process a prompt; decode 32 tokens greedy, drafter loaded OFF
+noise N = 7.0 % (largest rep spread of any 2-rep cell, at least 2 %)
+len  cfg   | prompt s r1 / r2 / mean | tok/s | /T4 | class | decode ms | groups | VRAM exp | CPU lane GB | pf helper | skip | AR | DD / place | stream GB, GB/s a card, aggregate GB/s (r1)
+2k   T4    | 1.83 / 1.83 / 1.83 | 1118 | - | control | 14.61 | [0,42] | 7053 | 84.6 | ON | no skip | P2P x1 | DD on / stripe | -, -, -
+2k   S2    | 4.69 / 4.92 / 4.81 | 426 | 2.62 | SLOWER | 20.40 | [0,42] [19,39] | 7374 | 81.4 | REFUSED: not with more than one layer group (the helpers' buffers are one chunk | no skip | host-mapped x2 | DD on / stripe | 81.2, 4.35, 17.42
+2k   S1    | 9.45 / - / 9.45 | 217 | 5.16 | SLOWER | 24.35 | [0,42] [9,19] [20,29] [30,39] | 8326 | 72.0 | REFUSED: not with more than one layer group (the helpers' buffers are one chunk | no skip | host-mapped x4 | DD on / stripe | 78.7, 0.00, 8.34
+2k   T4OFF | 4.47 / - / 4.47 | 458 | 2.44 | SLOWER | 14.52 | [0,42] | 7053 | 84.6 | off | no skip | P2P x1 | DD on / stripe | 84.4, 4.75, 19.01
+8k   T4    | 5.39 / 5.74 / 5.56 | 1473 | - | control | 14.80 | [0,42] | 7053 | 84.6 | ON | skip | P2P x1 | DD on / stripe | -, -, -
+8k   S2    | 9.89 / 9.46 / 9.67 | 847 | 1.74 | SLOWER | 20.61 | [0,42] [19,39] | 7374 | 81.4 | REFUSED: not with more than one layer group (the helpers' buffers are one chunk | no skip | host-mapped x2 | DD on / stripe | 81.2, 2.06, 8.24
+8k   S1    | 19.96 / - / 19.96 | 411 | 3.59 | SLOWER | 24.35 | [0,42] [9,19] [20,29] [30,39] | 8326 | 72.0 | REFUSED: not with more than one layer group (the helpers' buffers are one chunk | no skip | host-mapped x4 | DD on / stripe | 312.2, 0.00, 15.66
+32k  T4    | 17.16 / 18.40 / 17.78 | 1843 | - | control | 15.16 | [0,42] | 7053 | 84.6 | ON | skip | P2P x1 | DD on / stripe | -, -, -
+32k  S2    | 26.50 / 27.54 / 27.02 | 1213 | 1.52 | SLOWER | 20.68 | [0,42] [19,39] | 7374 | 81.4 | REFUSED: not with more than one layer group (the helpers' buffers are one chunk | no skip | host-mapped x2 | DD on / stripe | 324.7, 3.07, 12.27
+32k  S1    | 61.22 / - / 61.22 | 535 | 3.44 | SLOWER | 24.38 | [0,42] [9,19] [20,29] [30,39] | 8326 | 72.0 | REFUSED: not with more than one layer group (the helpers' buffers are one chunk | no skip | host-mapped x4 | DD on / stripe | 1257.9, 0.00, 20.56
+cards s1-2k-1: CUDA0 [0,42] 1860 exp 20.94 GB 522 free ; CUDA1 [9,19] 2182 exp 21.39 GB 500 free ; CUDA2 [20,29] 2119 exp 21.67 GB 508 free ; CUDA8 [30,39] 2165 exp 21.11 GB 512 free
+cards s2-2k-1: CUDA0 [0,42] 3519 exp 18.83 GB 508 free ; CUDA1 [0,42] 3519 exp 18.39 GB 1036 free ; CUDA2 [19,39] 3855 exp 19.04 GB 604 free ; CUDA8 [19,39] 3855 exp 19.24 GB 520 free
+== decode (ms a token, 32 tokens after the prompt; mean over lengths of valid arms)
+T4    14.85 ms (67.3 tok/s) | vs T4 - ms | pred 14.4 [13.8, 15.5] IN
+S2    20.56 ms (48.6 tok/s) | vs T4 +5.71 ms | pred 20.0 [17.0, 23.0] IN
+S1    24.36 ms (41.0 tok/s) | vs T4 +9.51 ms | pred 27.0 [21.0, 34.0] IN
+T4OFF 14.52 ms (68.9 tok/s) | vs T4 -0.33 ms | pred 14.4 [13.8, 15.5] IN
+== like for like (VRAM experts vs T4)
+S2: 7374 vs T4 7053 (105 %) ok
+S1: 8326 vs T4 7053 (118 %) ok
+== stream-limit classifier (pre-registration 4): R = S2 2k / T4OFF 2k prompt s; <= 1.40 AGGREGATE-LIMITED (host side), >= 1.60 PER-CARD-LIMITED, else MIXED
+R = 1.08 -> AGGREGATE-LIMITED | pred 1.70 [1.20, 2.20] BELOW | S1 2k / T4OFF 2k = 2.11 (per-card-limited ~4, aggregate ~1.2-2)
+== prediction check (pre-registration 4; pre-registered, written before any run)
+2k   T4    prompt s 1.83 pred 1.98 [1.85, 2.30] BELOW
+2k   S2    prompt s 4.81 pred 7.50 [4.80, 9.80] IN | /T4 2.62 pred 3.80 [2.10, 5.30] IN
+2k   S1    prompt s 9.45 pred 12.00 [7.00, 19.00] IN | /T4 5.16 pred 6.10 [3.00, 10.30] IN
+2k   T4OFF prompt s 4.47 pred 4.48 [4.15, 5.00] IN
+8k   T4    prompt s 5.56 pred 5.23 [4.90, 5.80] IN
+8k   S2    prompt s 9.67 pred 13.00 [9.50, 17.00] IN | /T4 1.74 pred 2.50 [1.65, 3.50] IN
+8k   S1    prompt s 19.96 pred 23.00 [16.00, 32.00] IN | /T4 3.59 pred 4.40 [2.75, 6.50] IN
+32k  T4    prompt s 17.78 pred 18.30 [16.00, 20.50] IN
+32k  S2    prompt s 27.02 pred 40.00 [32.00, 50.00] BELOW | /T4 1.52 pred 2.20 [1.55, 3.10] BELOW
+32k  S1    prompt s 61.22 pred 48.00 [38.00, 62.00] IN | /T4 3.44 pred 2.60 [1.85, 3.90] IN
+PREDICTED pattern: S2 and S1 SLOWER than T4 at every length (the prompt helper and the long-prompt skip are off in a layer split; a one-chunk prompt crosses the stages in series)
+CONFIG S2: LOSES (slower at every measured length)
+CONFIG S1: LOSES (slower at every measured length)
+VERDICT PFSPLIT: MEASURED (all 16 arms valid)
+IDEA: CLOSED as built - the layer split loses at every measured length (pre-registration 5)

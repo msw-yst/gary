@@ -15,6 +15,14 @@
 //   ./build-hip/tune_rocblas --tuning-out tools/hip/<arch>-rocblas-<version>.txt
 //
 // Defaults: the engine's 14 FP16 dense shapes at T = 256 ... 8192 (--tokens); --case T,N,K,ldy adds one shape.
+//
+// (FG-04): FP32 rows (type f32: FP32 in, out and compute, the same W^T . X convention, ldc = ldy floats).
+// --dsv41-mix tunes the DeepSeek-V4.1 engine's mHC mix GEMM instead of the default shapes: N = n_mix = (2 + hc) hc = 24,
+// K = hc * dim = 20480 (--mix-k), ldy = 32 (the mixes' row stride), at the chunked prompt's row counts (--tokens; its
+// default MIX_TOKENS below: the chunk sizes 2K / 8K / 16K, the long-prompt skip's 2668 rows, the FFN half's overlap
+// pieces T / 2 ... T / 4).  rocBLAS's own pick there on gfx1100 is MT128x128 with no split-K: one workgroup row of 128
+// for 24 outputs, T / 128 workgroups (16 at T = 2048 on a 96-CU card), ~1.9 ms where the h read alone is ~0.2 ms.
+// --f32-case T,N,K,ldy adds one FP32 shape.
 #define ROCBLAS_BETA_FEATURES_API
 #include <hip/hip_runtime.h>
 #include <hip/hip_fp16.h>
@@ -47,22 +55,46 @@ struct Buffer {
     Buffer& operator=(const Buffer&) = delete;
 };
 
-struct Shape { int t, n, k, ldy; };
+struct Shape { int t, n, k, ldy; bool f32 = false; };
+// the dsv41 mHC mix's row counts (--dsv41-mix): see the header
+const std::vector<int> MIX_TOKENS{96, 128, 256, 512, 768, 1024, 1334, 1536, 2048, 2668, 3072, 4096, 5462, 6144, 8192, 12288,
+                                  16384};
 struct Options {
     std::vector<Shape> shapes;
     std::vector<int> tokens{256, 512, 768, 1024, 1536, 2048, 4096, 8192};
     std::string tuning_out;
     double min_gain = 1.05;
     bool explicit_shapes = false;
+    bool tokens_given = false;
+    bool dsv41_mix = false;
+    int mix_k = 20480;   // hc * dim of DeepSeek-V4.1-Flash (layers.N.hc_attn_fn: 24 x 20480)
 };
 struct Err { double rel_l2 = 0, max_abs = 0; bool finite = true, ok = true; size_t padding_writes = 0; };
 struct Row { Shape s; bool tuned; int solution; float default_ms, best_ms; };
 
 constexpr int WARMUPS = 2, REPS = 3, TOP = 8;
 constexpr uint16_t CANARY = 0x7BFF;   // the largest finite FP16 (65504): never a product of (-1, 1) inputs
+constexpr float CANARY32 = 3.0e38f;   // never an FP32 product of (-1, 1) inputs either
 
 uint16_t f16_bits(float x) { const __half h = __float2half_rn(x); uint16_t b; std::memcpy(&b, &h, 2); return b; }
 float f16_value(uint16_t b) { __half h; std::memcpy(&h, &b, 2); return __half2float(h); }
+
+// the element types a row can have: FP16 (f16o) and FP32 (f32)
+template <typename E> struct Elem;
+template <> struct Elem<uint16_t> {
+    static constexpr rocblas_datatype type = rocblas_datatype_f16_r;
+    static constexpr int ldc_per_ldy = 2;   // Gemm::f16_inplace: the FP16 rows sit in an FP32 ldy-row buffer
+    static uint16_t from(float x) { return f16_bits(x); }
+    static float value(uint16_t b) { return f16_value(b); }
+    static uint16_t canary() { return CANARY; }
+};
+template <> struct Elem<float> {
+    static constexpr rocblas_datatype type = rocblas_datatype_f32_r;
+    static constexpr int ldc_per_ldy = 1;
+    static float from(float x) { return x; }
+    static float value(float x) { return x; }
+    static float canary() { return CANARY32; }
+};
 
 std::vector<std::string> csv(const std::string& s) {
     std::vector<std::string> out; size_t b = 0;
@@ -81,8 +113,17 @@ int positive(const std::string& s, const char* label) {
     return (int) v;
 }
 void usage(const char* p) {
-    std::printf("Usage: %s [--case T,N,K,ldy]... [--tokens T1,T2,...] [--min-gain 1.05] [--tuning-out PATH]\n", p);
+    std::printf("Usage: %s [--case T,N,K,ldy]... [--f32-case T,N,K,ldy]... [--dsv41-mix [--mix-k K]] [--tokens T1,T2,...]\n"
+                "          [--min-gain 1.05] [--tuning-out PATH]\n", p);
     std::printf("Defaults: the engine's 14 FP16 dense shapes (ldy = N) at T = 256,512,768,1024,1536,2048,4096,8192.\n");
+    std::printf("--dsv41-mix: the DeepSeek-V4.1 mHC mix GEMM instead (FP32, N=24 K=20480 ldy=32) at its prompt row counts.\n");
+}
+Shape parse_case(const std::string& v, bool f32, const char* flag) {
+    const auto f = csv(v);
+    if (f.size() != 4) { std::fprintf(stderr, "%s expects T,N,K,ldy\n", flag); std::exit(2); }
+    Shape s{positive(f[0], "T"), positive(f[1], "N"), positive(f[2], "K"), positive(f[3], "ldy"), f32};
+    if (s.ldy < s.n) { std::fprintf(stderr, "ldy must be >= N\n"); std::exit(2); }
+    return s;
 }
 Options options(int argc, char** argv) {
     Options o;
@@ -93,20 +134,21 @@ Options options(int argc, char** argv) {
             return argv[++i];
         };
         if (a == "-h" || a == "--help") { usage(argv[0]); std::exit(0); }
-        else if (a == "--case") {
-            const auto f = csv(next());
-            if (f.size() != 4) { std::fprintf(stderr, "--case expects T,N,K,ldy\n"); std::exit(2); }
-            const Shape s{positive(f[0], "T"), positive(f[1], "N"), positive(f[2], "K"), positive(f[3], "ldy")};
-            if (s.ldy < s.n) { std::fprintf(stderr, "ldy must be >= N\n"); std::exit(2); }
-            o.shapes.push_back(s); o.explicit_shapes = true;
-        } else if (a == "--tokens") {
-            o.tokens.clear();
+        else if (a == "--case") { o.shapes.push_back(parse_case(next(), false, "--case")); o.explicit_shapes = true; }
+        else if (a == "--f32-case") { o.shapes.push_back(parse_case(next(), true, "--f32-case")); o.explicit_shapes = true; }
+        else if (a == "--dsv41-mix") o.dsv41_mix = true;
+        else if (a == "--mix-k") o.mix_k = positive(next(), "mix K");
+        else if (a == "--tokens") {
+            o.tokens.clear(); o.tokens_given = true;
             for (const auto& x : csv(next())) o.tokens.push_back(positive(x, "token bucket"));
         } else if (a == "--min-gain") { o.min_gain = std::atof(next().c_str()); if (o.min_gain < 1.0) o.min_gain = 1.0; }
         else if (a == "--tuning-out") o.tuning_out = next();
         else { std::fprintf(stderr, "unknown option: %s\n", a.c_str()); usage(argv[0]); std::exit(2); }
     }
-    if (!o.explicit_shapes) {
+    if (o.dsv41_mix) {
+        // DeepSeek-V4.1's mHC mix (hc_mix_chunk): cublasSgemm(T, N, n_mix, T, hc * dim, fn, hc * dim, h, hc * dim, mixes, 32)
+        for (int t : o.tokens_given ? o.tokens : MIX_TOKENS) o.shapes.push_back({t, 24, o.mix_k, 32, true});
+    } else if (!o.explicit_shapes) {
         // Qwen3.8-Flash-Next's dense FP16 products, prompt_f16() on (the hc read, GDN and QSA projections, the router
         // and the shared expert), ldy = N for every one of them.  N K as the engine calls Gemm (ROCBLAS_LAYER=2).
         const int nk[][2] = {{10240, 2560}, {12288, 2560}, {6144, 2560}, {2560, 6144}, {2560, 640}, {2560, 2560},
@@ -128,26 +170,125 @@ float time_ms(hipStream_t stream, hipEvent_t a, hipEvent_t b, const std::functio
     return ms / reps;
 }
 
-// The candidate's FP16 output against the default kernel's, over the N x T results; the rest of each 2*ldy-half column
-// (what the engine's widen_rows_f16 does not cover) must still hold the canary.
-Err compare(const std::vector<uint16_t>& ref, const std::vector<uint16_t>& got, const Shape& s) {
+// The candidate's output against the default kernel's, over the N x T results; the rest of each ldc column (FP16: what
+// the engine's widen_rows_f16 does not cover; FP32: the mixes' padding rows N..ldy) must still hold the canary.
+template <typename E>
+Err compare(const std::vector<E>& ref, const std::vector<E>& got, const Shape& s) {
     Err e; long double d2 = 0, r2 = 0; float max_ref = 0;
-    const size_t ldc = (size_t) s.ldy * 2;
+    const size_t ldc = (size_t) s.ldy * Elem<E>::ldc_per_ldy;
     for (int col = 0; col < s.t; ++col) {
         for (int row = 0; row < s.n; ++row) {
-            const float r = f16_value(ref[col * ldc + row]), g = f16_value(got[col * ldc + row]);
+            const float r = Elem<E>::value(ref[col * ldc + row]), g = Elem<E>::value(got[col * ldc + row]);
             if (!std::isfinite(r) || !std::isfinite(g)) { e.finite = false; continue; }
             const double d = (double) g - r;
             d2 += (long double) d * d; r2 += (long double) r * r;
             e.max_abs = std::max(e.max_abs, std::abs(d)); max_ref = std::max(max_ref, std::abs(r));
         }
-        for (size_t row = s.n; row < ldc; ++row) if (got[col * ldc + row] != CANARY) ++e.padding_writes;
+        for (size_t row = s.n; row < ldc; ++row) if (got[col * ldc + row] != Elem<E>::canary()) ++e.padding_writes;
     }
     e.rel_l2 = std::sqrt((double) (d2 / std::max(r2, 1e-300L)));
-    // the two kernels sum K products in different orders, then both round to FP16: a few last-bit differences
-    const float ulp = std::ldexp(1.0f, (int) std::floor(std::log2(std::max(max_ref, 1e-30f))) - 10);
-    e.ok = e.finite && e.padding_writes == 0 && e.rel_l2 <= 2e-3 && e.max_abs <= 4.0 * ulp;
+    if (s.f32) {
+        // FP32 sums of K products in two orders: rounding of the accumulator only (K = 20480: ~1e-7 relative)
+        e.ok = e.finite && e.padding_writes == 0 && e.rel_l2 <= 1e-5 && e.max_abs <= 1e-4 * std::max(max_ref, 1e-30f);
+    } else {
+        // the two kernels sum K products in different orders, then both round to FP16: a few last-bit differences
+        const float ulp = std::ldexp(1.0f, (int) std::floor(std::log2(std::max(max_ref, 1e-30f))) - 10);
+        e.ok = e.finite && e.padding_writes == 0 && e.rel_l2 <= 2e-3 && e.max_abs <= 4.0 * ulp;
+    }
     return e;
+}
+
+// one shape: the default kernel, every solution once, the TOP fastest measured and checked; false: no solutions listed
+template <typename E>
+bool tune_shape(rocblas_handle h, hipStream_t stream, hipEvent_t ea, hipEvent_t eb, const Shape& s, size_t ci,
+                double min_gain, std::vector<Row>& rows) {
+    constexpr rocblas_datatype dt = Elem<E>::type;
+    const size_t na = (size_t) s.n * s.k, nb = (size_t) s.t * s.k, ldc = (size_t) s.ldy * Elem<E>::ldc_per_ldy, nc = ldc * s.t;
+    std::vector<E> ha(na), hb(nb), canary(nc, Elem<E>::canary());
+    std::mt19937 rng(0x5A17C3u + (uint32_t) ci * 0x10001u);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    for (auto& x : ha) x = Elem<E>::from(dist(rng));
+    for (auto& x : hb) x = Elem<E>::from(dist(rng));
+    Buffer da(na * sizeof(E)), db(nb * sizeof(E)), dc(nc * sizeof(E));
+    HIP_CHECK(hipMemcpy(da.p, ha.data(), na * sizeof(E), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(db.p, hb.data(), nb * sizeof(E), hipMemcpyHostToDevice));
+    const float alpha = 1.0f, beta = 0.0f;
+    // the engine's call (Gemm::f16_inplace; dsv41 hc_mix_chunk for f32): C[N x T] = W^T . X
+    auto gemm_t = [&](int t, rocblas_gemm_algo algo, int32_t sol) {
+        return rocblas_gemm_ex(h, rocblas_operation_transpose, rocblas_operation_none, s.n, t, s.k, &alpha, da.p, dt, s.k,
+                               db.p, dt, s.k, &beta, dc.p, dt, (int) ldc, dc.p, dt, (int) ldc, rocblas_datatype_f32_r, algo,
+                               sol, 0);
+    };
+    auto gemm = [&](rocblas_gemm_algo algo, int32_t sol) { return gemm_t(s.t, algo, sol); };
+    bool ok = true;
+    HIP_CHECK(hipMemcpy(dc.p, canary.data(), nc * sizeof(E), hipMemcpyHostToDevice));
+    for (int i = 0; i < WARMUPS; ++i) RB_CHECK(gemm(rocblas_gemm_algo_standard, 0));
+    const float default_ms = time_ms(stream, ea, eb, [&] { return gemm(rocblas_gemm_algo_standard, 0); }, REPS, ok);
+    HIP_CHECK(hipDeviceSynchronize());
+    std::vector<E> ref(nc);
+    HIP_CHECK(hipMemcpy(ref.data(), dc.p, nc * sizeof(E), hipMemcpyDeviceToHost));
+    const Err self = compare(ref, ref, s);
+    std::printf("case %s T=%d N=%d K=%d ldy=%d default_ms=%.4f default_padding_writes=%zu\n", s.f32 ? "f32" : "f16o", s.t,
+                s.n, s.k, s.ldy, default_ms, self.padding_writes);
+
+    rocblas_int count = 0;
+    auto solutions = [&](rocblas_int* list, rocblas_int* n) {
+        return rocblas_gemm_ex_get_solutions(h, rocblas_operation_transpose, rocblas_operation_none, s.n, s.t, s.k, &alpha,
+                                             da.p, dt, s.k, db.p, dt, s.k, &beta, dc.p, dt, (int) ldc, dc.p, dt, (int) ldc,
+                                             rocblas_datatype_f32_r, rocblas_gemm_algo_solution_index, 0, list, n);
+    };
+    if (solutions(nullptr, &count) != rocblas_status_success || count <= 0) {
+        std::printf("no_solutions T=%d N=%d K=%d ldy=%d\n", s.t, s.n, s.k, s.ldy);
+        return false;
+    }
+    std::vector<rocblas_int> ids(count);
+    RB_CHECK(solutions(ids.data(), &count));
+    // pass 1: one timed call each; pass 2: the TOP fastest get the full measurement and the output check
+    std::vector<std::pair<float, rocblas_int>> quick;
+    for (rocblas_int id : ids) {
+        if (gemm(rocblas_gemm_algo_solution_index, id) != rocblas_status_success) continue;
+        const float ms = time_ms(stream, ea, eb, [&] { return gemm(rocblas_gemm_algo_solution_index, id); }, 1, ok);
+        if (ok) quick.push_back({ms, id});
+    }
+    std::sort(quick.begin(), quick.end());
+    rocblas_int best = 0; float best_ms = std::numeric_limits<float>::infinity();
+    for (size_t i = 0; i < quick.size() && i < (size_t) TOP; ++i) {
+        const rocblas_int id = quick[i].second;
+        HIP_CHECK(hipMemcpy(dc.p, canary.data(), nc * sizeof(E), hipMemcpyHostToDevice));
+        for (int w = 0; w < WARMUPS; ++w) if (gemm(rocblas_gemm_algo_solution_index, id) != rocblas_status_success) { ok = false; break; }
+        if (!ok) continue;
+        const float ms = time_ms(stream, ea, eb, [&] { return gemm(rocblas_gemm_algo_solution_index, id); }, REPS, ok);
+        if (!ok) continue;
+        HIP_CHECK(hipDeviceSynchronize());
+        std::vector<E> got(nc);
+        HIP_CHECK(hipMemcpy(got.data(), dc.p, nc * sizeof(E), hipMemcpyDeviceToHost));
+        Err e = compare(ref, got, s);
+        // the engine applies a row to every T nearest its bucket, and a kernel can refuse a T it was not
+        // measured at (a tile or grid predicate): the solution must also run at odd, smaller token counts
+        bool accepts_neighbors = true;
+        for (int tn : {s.t - 1, s.t - 37, s.t - 63, s.t / 2 + 1}) {
+            if (tn < 1) continue;
+            if (gemm_t(tn, rocblas_gemm_algo_solution_index, id) != rocblas_status_success) { accepts_neighbors = false; break; }
+        }
+        HIP_CHECK(hipDeviceSynchronize());
+        e.ok = e.ok && accepts_neighbors;
+        std::printf("  solution=%d ms=%.4f gain=%.2f relative_l2=%.3g max_abs=%.3g padding_writes=%zu %s%s\n", (int) id,
+                    ms, default_ms / ms, e.rel_l2, e.max_abs, e.padding_writes, e.ok ? "ok" : "REJECT",
+                    accepts_neighbors ? "" : " (refuses a smaller T)");
+        if (e.ok && ms < best_ms) { best = id; best_ms = ms; }
+    }
+    if (std::isfinite(best_ms) && default_ms / best_ms >= min_gain) {
+        std::printf("best T=%d N=%d K=%d ldy=%d solution=%d ms=%.4f default_ms=%.4f gain=%.2f\n", s.t, s.n, s.k, s.ldy,
+                    (int) best, best_ms, default_ms, default_ms / best_ms);
+        rows.push_back({s, true, (int) best, default_ms, best_ms});
+    } else {
+        // written too: the engine applies a row to the token counts nearest its bucket, and a `default` row keeps
+        // a neighbouring bucket's solution from reaching token counts where the default kernel measured best
+        std::printf("keep_default T=%d N=%d K=%d ldy=%d (%zu solutions; best %.4f ms vs default %.4f)\n", s.t, s.n, s.k,
+                    s.ldy, quick.size(), best_ms, default_ms);
+        rows.push_back({s, false, 0, default_ms, best_ms});
+    }
+    return true;
 }
 }  // namespace
 
@@ -160,116 +301,29 @@ int main(int argc, char** argv) {
     int device = 0; hipDeviceProp_t prop{};
     HIP_CHECK(hipGetDevice(&device)); HIP_CHECK(hipGetDeviceProperties(&prop, device));
     std::string arch(prop.gcnArchName); if (const auto c = arch.find(':'); c != std::string::npos) arch.resize(c);
-    std::printf("meta device_arch=%s rocblas_version=%s shapes=%zu min_gain=%.3f\n", arch.c_str(), ver, o.shapes.size(), o.min_gain);
+    std::printf("meta device_arch=%s rocblas_version=%s device_name=%s cus=%d shapes=%zu min_gain=%.3f\n", arch.c_str(), ver,
+                prop.name, prop.multiProcessorCount, o.shapes.size(), o.min_gain);
     hipEvent_t ea, eb; HIP_CHECK(hipEventCreate(&ea)); HIP_CHECK(hipEventCreate(&eb));
 
     std::vector<Row> rows;
     for (size_t ci = 0; ci < o.shapes.size(); ++ci) {
         const Shape& s = o.shapes[ci];
-        const size_t na = (size_t) s.n * s.k, nb = (size_t) s.t * s.k, ldc = (size_t) s.ldy * 2, nc = ldc * s.t;
-        std::vector<uint16_t> ha(na), hb(nb), canary(nc, CANARY);
-        std::mt19937 rng(0x5A17C3u + (uint32_t) ci * 0x10001u);
-        std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-        for (auto& x : ha) x = f16_bits(dist(rng));
-        for (auto& x : hb) x = f16_bits(dist(rng));
-        Buffer da(na * 2), db(nb * 2), dc(nc * 2);
-        HIP_CHECK(hipMemcpy(da.p, ha.data(), na * 2, hipMemcpyHostToDevice));
-        HIP_CHECK(hipMemcpy(db.p, hb.data(), nb * 2, hipMemcpyHostToDevice));
-        const float alpha = 1.0f, beta = 0.0f;
-        // the engine's call (Gemm::f16_inplace): C[N x T] = W^T . X, FP16 out, ldc = 2 * ldy halves
-        auto gemm = [&](rocblas_gemm_algo algo, int32_t sol) {
-            return rocblas_gemm_ex(h, rocblas_operation_transpose, rocblas_operation_none, s.n, s.t, s.k, &alpha,
-                                   da.p, rocblas_datatype_f16_r, s.k, db.p, rocblas_datatype_f16_r, s.k, &beta, dc.p,
-                                   rocblas_datatype_f16_r, (int) ldc, dc.p, rocblas_datatype_f16_r, (int) ldc,
-                                   rocblas_datatype_f32_r, algo, sol, 0);
-        };
-        bool ok = true;
-        HIP_CHECK(hipMemcpy(dc.p, canary.data(), nc * 2, hipMemcpyHostToDevice));
-        for (int i = 0; i < WARMUPS; ++i) RB_CHECK(gemm(rocblas_gemm_algo_standard, 0));
-        const float default_ms = time_ms(stream, ea, eb, [&] { return gemm(rocblas_gemm_algo_standard, 0); }, REPS, ok);
-        HIP_CHECK(hipDeviceSynchronize());
-        std::vector<uint16_t> ref(nc);
-        HIP_CHECK(hipMemcpy(ref.data(), dc.p, nc * 2, hipMemcpyDeviceToHost));
-        const Err self = compare(ref, ref, s);
-        std::printf("case T=%d N=%d K=%d ldy=%d default_ms=%.4f default_padding_writes=%zu\n", s.t, s.n, s.k, s.ldy,
-                    default_ms, self.padding_writes);
-
-        rocblas_int count = 0;
-        auto solutions = [&](rocblas_int* list, rocblas_int* n) {
-            return rocblas_gemm_ex_get_solutions(h, rocblas_operation_transpose, rocblas_operation_none, s.n, s.t, s.k,
-                                                 &alpha, da.p, rocblas_datatype_f16_r, s.k, db.p, rocblas_datatype_f16_r,
-                                                 s.k, &beta, dc.p, rocblas_datatype_f16_r, (int) ldc, dc.p,
-                                                 rocblas_datatype_f16_r, (int) ldc, rocblas_datatype_f32_r,
-                                                 rocblas_gemm_algo_solution_index, 0, list, n);
-        };
-        if (solutions(nullptr, &count) != rocblas_status_success || count <= 0) {
-            std::printf("no_solutions T=%d N=%d K=%d ldy=%d\n", s.t, s.n, s.k, s.ldy);
-            continue;
-        }
-        std::vector<rocblas_int> ids(count);
-        RB_CHECK(solutions(ids.data(), &count));
-        // pass 1: one timed call each; pass 2: the TOP fastest get the full measurement and the output check
-        std::vector<std::pair<float, rocblas_int>> quick;
-        for (rocblas_int id : ids) {
-            if (gemm(rocblas_gemm_algo_solution_index, id) != rocblas_status_success) continue;
-            const float ms = time_ms(stream, ea, eb, [&] { return gemm(rocblas_gemm_algo_solution_index, id); }, 1, ok);
-            if (ok) quick.push_back({ms, id});
-        }
-        std::sort(quick.begin(), quick.end());
-        rocblas_int best = 0; float best_ms = std::numeric_limits<float>::infinity();
-        for (size_t i = 0; i < quick.size() && i < (size_t) TOP; ++i) {
-            const rocblas_int id = quick[i].second;
-            HIP_CHECK(hipMemcpy(dc.p, canary.data(), nc * 2, hipMemcpyHostToDevice));
-            for (int w = 0; w < WARMUPS; ++w) if (gemm(rocblas_gemm_algo_solution_index, id) != rocblas_status_success) { ok = false; break; }
-            if (!ok) continue;
-            const float ms = time_ms(stream, ea, eb, [&] { return gemm(rocblas_gemm_algo_solution_index, id); }, REPS, ok);
-            if (!ok) continue;
-            HIP_CHECK(hipDeviceSynchronize());
-            std::vector<uint16_t> got(nc);
-            HIP_CHECK(hipMemcpy(got.data(), dc.p, nc * 2, hipMemcpyDeviceToHost));
-            Err e = compare(ref, got, s);
-            // the engine applies a row to every T nearest its bucket, and a kernel can refuse a T it was not
-            // measured at (a tile or grid predicate): the solution must also run at odd, smaller token counts
-            bool accepts_neighbors = true;
-            for (int tn : {s.t - 1, s.t - 37, s.t - 63, s.t / 2 + 1}) {
-                if (tn < 1) continue;
-                const rocblas_status st = rocblas_gemm_ex(
-                    h, rocblas_operation_transpose, rocblas_operation_none, s.n, tn, s.k, &alpha, da.p,
-                    rocblas_datatype_f16_r, s.k, db.p, rocblas_datatype_f16_r, s.k, &beta, dc.p, rocblas_datatype_f16_r,
-                    (int) ldc, dc.p, rocblas_datatype_f16_r, (int) ldc, rocblas_datatype_f32_r,
-                    rocblas_gemm_algo_solution_index, id, 0);
-                if (st != rocblas_status_success) { accepts_neighbors = false; break; }
-            }
-            HIP_CHECK(hipDeviceSynchronize());
-            e.ok = e.ok && accepts_neighbors;
-            std::printf("  solution=%d ms=%.4f gain=%.2f relative_l2=%.3g max_abs=%.3g padding_writes=%zu %s%s\n", (int) id,
-                        ms, default_ms / ms, e.rel_l2, e.max_abs, e.padding_writes, e.ok ? "ok" : "REJECT",
-                        accepts_neighbors ? "" : " (refuses a smaller T)");
-            if (e.ok && ms < best_ms) { best = id; best_ms = ms; }
-        }
-        if (std::isfinite(best_ms) && default_ms / best_ms >= o.min_gain) {
-            std::printf("best T=%d N=%d K=%d ldy=%d solution=%d ms=%.4f default_ms=%.4f gain=%.2f\n", s.t, s.n, s.k, s.ldy,
-                        (int) best, best_ms, default_ms, default_ms / best_ms);
-            rows.push_back({s, true, (int) best, default_ms, best_ms});
-        } else {
-            // written too: the engine applies a row to the token counts nearest its bucket, and a `default` row keeps
-            // a neighbouring bucket's solution from reaching token counts where the default kernel measured best
-            std::printf("keep_default T=%d N=%d K=%d ldy=%d (%zu solutions; best %.4f ms vs default %.4f)\n", s.t, s.n, s.k,
-                        s.ldy, quick.size(), best_ms, default_ms);
-            rows.push_back({s, false, 0, default_ms, best_ms});
-        }
+        if (s.f32) tune_shape<float>(h, stream, ea, eb, s, ci, o.min_gain, rows);
+        else tune_shape<uint16_t>(h, stream, ea, eb, s, ci, o.min_gain, rows);
     }
 
     if (!o.tuning_out.empty()) {
         std::ofstream f(o.tuning_out);
         if (!f) { std::fprintf(stderr, "cannot write tuning output: %s\n", o.tuning_out.c_str()); return 2; }
-        f << "# rocBLAS solution indices for the prompt path's FP16-out GEMMs; valid for this architecture and rocBLAS build only\n";
-        f << "# rows: type N K ldy T solution   (type f16o: FP16 in, FP16 out, FP32 compute; Gemm::f16_inplace)\n";
+        f << "# rocBLAS solution indices for the prompt path's GEMMs; valid for this architecture and rocBLAS build only\n";
+        f << "# rows: type N K ldy T solution   (type f16o: FP16 in, FP16 out, FP32 compute; Gemm::f16_inplace;\n";
+        f << "#   type f32: FP32 in, out and compute; the DeepSeek-V4.1 mHC mix, src/dsv41/ds4_model.cu hc_mix_chunk)\n";
         f << "# solution: rocBLAS's solution index, or `default` where its own choice measured best at that bucket\n";
+        f << "# measured on " << prop.name << " (" << prop.multiProcessorCount << " CUs)\n";
         f << "STRATA_ROCBLAS_TUNING_V1 " << arch << " " << ver << "\n";
         size_t tuned = 0;
         for (const auto& r : rows) {
-            f << "f16o " << r.s.n << " " << r.s.k << " " << r.s.ldy << " " << r.s.t << " ";
+            f << (r.s.f32 ? "f32 " : "f16o ") << r.s.n << " " << r.s.k << " " << r.s.ldy << " " << r.s.t << " ";
             if (r.tuned) { f << r.solution << "   # " << r.default_ms << " ms -> " << r.best_ms << " ms\n"; ++tuned; }
             else f << "default   # " << r.default_ms << " ms\n";
         }

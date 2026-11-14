@@ -1,0 +1,5 @@
+== gen3 (15:58:17): before: <root-port> 2.5 GT/s PCIe x4, <pci> 2.5 GT/s PCIe x4
+2026-11-10T15:58:20Z root port <root-port> (MI50 #2) target link speed 3, retrained: <root-port> 2.5 GT/s PCIe x4, <pci> 2.5 GT/s PCIe x4, MI50 #2 16.0 GT/s PCIe x16
+2026-11-10T15:58:23Z root port <root-port> (MI50 #2) target link speed 4, retrained: <root-port> 2.5 GT/s PCIe x4, <pci> 2.5 GT/s PCIe x4, MI50 #2 16.0 GT/s PCIe x16
+2026-11-10T15:58:26Z root port <root-port> (MI50 #2) target link speed 4, retrained: <root-port> 2.5 GT/s PCIe x4, <pci> 2.5 GT/s PCIe x4, MI50 #2 16.0 GT/s PCIe x16
+2026-11-10T15:59:34Z root port <root-port> extra retrain (revert): 2.5 GT/s PCIe

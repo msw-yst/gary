@@ -29,6 +29,28 @@ inline __device__ __forceinline__ f8v set_wmma(h16v a, h16v b, f8v c) {
     return c;
 #endif
 }
+// (docs/dsv41/cards/PF-02.md, DS4_FAST_ATTN_MODE=bf16): the same 16x16x16 product on BF16 operands (raw BF16 bits as
+// shorts), F32 accumulate.  The fragment layout is set_wmma's.
+using s16v = short __attribute__((ext_vector_type(16)));
+inline __device__ __forceinline__ f8v set_wmma_bf16(s16v a, s16v b, f8v c) {
+#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) || \
+    defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1152__)
+    return __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(a, b, c);
+#elif defined(__gfx1200__) || defined(__gfx1201__)
+    using s8 = short __attribute__((ext_vector_type(8)));
+    const int k0 = (threadIdx.x & 31) / 16 * 8;
+    s8 aa, bb;
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        aa[i] = a[k0 + i];
+        bb[i] = b[k0 + i];
+    }
+    return __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12(aa, bb, c);
+#else
+    __builtin_trap();
+    return c;
+#endif
+}
 inline __device__ __forceinline__ int set_wmma_row(int i, int hi) {
 #if defined(__gfx1200__) || defined(__gfx1201__)
     return 8 * hi + i;

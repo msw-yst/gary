@@ -1,0 +1,3 @@
+ddsmoke:  | DD vs off stdout: IDENTICAL | decode: 32 tokens in 474 ms (65.39 tok/s); CPU lan -> decode: 32 tokens in 464 ms (66.84 tok/s); CPU lan
+ddid tp4h4 DD vs off: decode IDENTICAL | bt DIFFER | score IDENTICAL | helper device-direct (DS4_HELPER_DD): 9945 requests joined on the device (9945 armed sets), 0 helper picks answered on the CPU instead, 0 host answers
+ddid: NOT bit-identical - STOP

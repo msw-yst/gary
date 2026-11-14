@@ -1,0 +1,25 @@
+# Prompt read 2K-128K on build 15, MI50 prompt helper ON (deployed) vs OFF; one process a prompt, cold
+== PSWEEP helper ON (deployed: DS4_PF_HELPER=8192 + DS4_PF_TILE=1) vs OFF (DS4_PF_HELPER=0; PF_TILE inert) - MEASURED: engine prompt / decode lines; one process a prompt, cold, expert cache on, mmap on, max-context 131072; decode 128 tokens greedy, drafter loaded OFF
+len    tokens | ON prompt s r1 / r2 / mean | OFF prompt s r1 / r2 / mean | ON tok/s | OFF tok/s | ON/OFF | class (noise 22.1 %) | decode ms ON / OFF / OFF-ON | PF_TILE eng ON r1/r2 | VRAM ON/OFF | cache moved ON/OFF
+2k       2048 | 1.98 / 1.59 / 1.79 | 4.48 / 4.77 / 4.63 | 1147 | 443 | 0.386 | ON FASTER | 14.33 / 14.34 / +0.01 | 4/4 | 7053/7053 | 0/0
+8k       8192 | 5.23 / 5.74 / 5.49 | 7.24 / 7.33 / 7.28 | 1493 | 1125 | 0.753 | ON FASTER | 14.61 / 14.65 / +0.04 | 4/4 | 7053/7053 | 0/0
+16k     16384 | 9.14 / - / 9.14 | 10.24 / - / 10.24 | 1793 | 1601 | 0.893 | NOT SEPARABLE | 14.40 / 14.40 / +0.00 | 4 | 7053/7053 | 0/0
+32k     32768 | 17.00 / 18.21 / 17.61 | 17.87 / 18.70 / 18.28 | 1861 | 1792 | 0.963 | NOT SEPARABLE | 15.05 / 15.07 / +0.02 | 4/4 | 7053/7053 | 0/0
+64k     65536 | 33.58 / - / 33.58 | 34.19 / - / 34.19 | 1952 | 1917 | 0.982 | NOT SEPARABLE | 14.67 / 14.60 / -0.06 | 4 | 7053/7053 | 0/0
+128k   130816 | 72.59 / - / 72.59 | 72.94 / - / 72.94 | 1802 | 1794 | 0.995 | NOT SEPARABLE | 14.80 / 14.83 / +0.04 | 4 | 7053/7053 | 0/0
+(means over VALID arms only; 1-rep lengths: 16k 64k 128k; an invalid arm's numbers are shown, not averaged - see INVALID lines)
+per-rep ON/OFF 2k: rep 1 0.443, rep 2 0.333
+per-rep ON/OFF 8k: rep 1 0.723, rep 2 0.783
+per-rep ON/OFF 32k: rep 1 0.951, rep 2 0.974
+CROSSOVER: none - OFF is not faster at every length from some point on (classes: 2k ON FASTER, 8k ON FASTER, 16k NOT SEPARABLE, 32k NOT SEPARABLE, 64k NOT SEPARABLE, 128k NOT SEPARABLE)
+ON's advantage: ON faster below 16k; NOT SEPARABLE at 16k
+== prediction check (pre-registration 3; pre-registered, written before any run)
+2k    ON s 1.79 [1.25, 1.75] ABOVE | OFF s 4.63 [2.90, 4.00] ABOVE | ON/OFF 0.386 pred 0.41 [0.32, 0.55] IN | dec ON 14.33 [13.90, 15.10] IN | dec OFF-ON +0.01 [-0.3, +0.3] IN
+8k    ON s 5.49 [4.00, 5.80] IN | OFF s 7.28 [5.00, 7.20] ABOVE | ON/OFF 0.753 pred 0.78 [0.62, 0.95] IN | dec ON 14.61 [14.00, 15.20] IN | dec OFF-ON +0.04 [-0.3, +0.3] IN | H-served (ON slower, ratio ~1.17): NOT consistent | ON tok/s vs operator band 1300-1450: ABOVE
+16k   ON s 9.14 [8.00, 11.00] IN | OFF s 10.24 [8.20, 11.20] IN | ON/OFF 0.893 pred 0.96 [0.80, 1.08] IN | dec ON 14.40 [14.10, 15.30] IN | dec OFF-ON +0.00 [-0.3, +0.3] IN | ON tok/s vs operator band 1300-1450: ABOVE
+32k   ON s 17.61 [15.80, 20.00] IN | OFF s 18.28 [16.00, 21.00] IN | ON/OFF 0.963 pred 0.98 [0.85, 1.08] IN | dec ON 15.05 [14.30, 15.50] IN | dec OFF-ON +0.02 [-0.3, +0.3] IN | H-served (ON slower, ratio ~1.37): NOT consistent | ON tok/s vs operator band 1300-1450: ABOVE
+64k   ON s 33.58 [31.00, 39.20] IN | OFF s 34.19 [32.00, 40.50] IN | ON/OFF 0.982 pred 0.98 [0.86, 1.08] IN | dec ON 14.67 [14.15, 15.35] IN | dec OFF-ON -0.06 [-0.3, +0.3] IN
+128k  ON s 72.59 [66.00, 83.00] IN | OFF s 72.94 [68.00, 85.00] IN | ON/OFF 0.995 pred 0.98 [0.86, 1.08] IN | dec ON 14.80 [14.25, 15.45] IN | dec OFF-ON +0.04 [-0.3, +0.3] IN
+PREDICTED pattern (mine): ON FASTER at 2k and 8k, ON faster or NOT SEPARABLE at 16k, NOT SEPARABLE from 32k (no crossover). H-served (maintainer): ON faster at 2k, OFF FASTER from 8k.
+VERDICT PSWEEP: MEASURED (all 18 ON / OFF arms valid, 6 lengths)
+TRIPPED: 0 new lines since start

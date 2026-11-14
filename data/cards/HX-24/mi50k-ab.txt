@@ -1,0 +1,39 @@
+abrun mi50kab-20261112T121116Z - NEW <path> (<hash>); ON: DS4_G906_SGNLDS=1; served env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1; tp4h4: --gpus 0,1,2,7 --tp 4 --helper-device 3,4,5,6; N 256; REPS 6 
+== identity
+ID id-d-U vs id-d-REF: stdout IDENTICAL | placement (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) | lines ok
+ID id-d-ON vs id-d-OFF: stdout IDENTICAL | placement (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) | lines ok | engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+ID id-x-ON vs id-x-OFF: stdout IDENTICAL | placement (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) | lines ok | engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+ID id-bt-ON vs id-bt-OFF: stdout IDENTICAL | placement (7137 of 15744 in VRAM) (7137 of 15744 in VRAM) (7137 of 15744 in VRAM) (7137 of 15744 in VRAM) | lines ok | engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+== engagement (every ON process; NOT ENGAGED makes that rep NO DATA)
+b1-ON-1: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+b1-ON-2: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+b1-ON-3: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+b1-ON-4: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+b1-ON-5: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+b1-ON-6: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+prod-ON-1: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+prod-ON-2: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+prod-ON-3: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+prod-ON-4: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+prod-ON-5: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+prod-ON-6: engaged (pergroup 0, sgnlds 388, dpp 0 launches)
+== identity: ok (4 ID lines)
+== ON: DS4_G906_SGNLDS=1; predicted b1 (-0.13, -0.09, -0.05), prod (-0.1, -0.06, -0.02) (lo, central, hi; prereg.md 2.2)
+== b1 (B1 plain decode, ms a token; valid reps only)
+  b1 OFF: 13.270 [13.219-13.298] n6  reps 13.298 13.219 13.291 13.270 13.280 13.264
+  b1 ON: 13.157 [13.125-13.194] n6  reps 13.173 13.194 13.132 13.125 13.177 13.142
+  b1 PLA: 13.258 [13.217-13.296] n6  reps 13.219 13.217 13.296 13.294 13.249 13.273
+  b1: delta ON-OFF -0.113 ms (-0.85 %) | placebo PLA-OFF -0.012 (bound 0.05) | noise 0.079 | predicted -0.13 .. -0.05 (central -0.09): inside
+VERDICT B1: PASS
+== prod PRIMARY: matched mix, 8 of 8 request positions (every arm-rep served, drafts, 16 <= gen < 1024)
+  prod OFF: 10.467 [10.449-10.485] n6  reps 10.460 10.485 10.474 10.449 10.473 10.464
+  prod ON: 10.472 [10.445-10.536] n6  reps 10.453 10.470 10.462 10.465 10.536 10.445
+  prod PLA: 10.475 [10.460-10.486] n6  reps 10.468 10.460 10.485 10.480 10.486 10.473
+  prod: delta ON-OFF +0.005 ms (+0.04 %) | placebo PLA-OFF +0.008 (bound 0.20) | noise 0.091 | predicted -0.10 .. -0.02 (central -0.06): above (smaller gain / loss)
+VERDICT PROD: NOT SEPARABLE
+== prod secondary (all usable requests, the mix NOT matched; info only)
+  prod-all OFF: 10.467  reps 10.460 10.485 10.474 10.449 10.473 10.464
+  prod-all ON: 10.472  reps 10.453 10.470 10.462 10.465 10.536 10.445
+  prod-all PLA: 10.475  reps 10.468 10.460 10.485 10.480 10.486 10.473
+VERDICT MI50K: PASS
+TRIPPED: 0 new lines since start

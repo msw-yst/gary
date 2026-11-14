@@ -189,9 +189,13 @@ inline bool copy_hugetlb_default(int env, double pool_free_bytes, double copy_by
 // DS4_FAST_ATTN (the chunked prompt's attention on the matrix cores): env -1 unset, else 0 / 1; 0.2.6: opt-in; 0.2.7: on for
 // gfx1200 / gfx1201, and (this change) on for gfx1151 on Windows, where it measured +43.6% on a 32K prompt (101.6 -> 70.8 s,
 // sparse attention 38.3 -> 7.0 s), the same greedy first token and a first-token KL far under the 0.0228 bar.
-inline bool fast_attn_default(int env, bool gfx12, bool gfx1151win = false, bool v026 = false) {
+// (docs/dsv41/cards/PF-02.md): and on for gfx1100 in a tensor-parallel group (gfx1100_tp), where its default mode is f32 (Q and P
+// as FP16 hi + lo pairs: within 7e-6 of the scalar kernel on real activations); the test machine tp3 (3x RX 7900 XTX + 3 MI50 helpers,
+// build 2): 16K prompt 14.8 -> 11.06 s with HIPK, 18.75 -> 16.07 s without; the chunked-path teacher-forced score paired
+// against the scalar kernel within noise (top-1 -0.32 [-0.84, 0.18], median KL -1.1e-5 [-2.5e-4, 1.8e-4]).
+inline bool fast_attn_default(int env, bool gfx12, bool gfx1151win = false, bool v026 = false, bool gfx1100_tp = false) {
     if (env >= 0) return env != 0;
-    return !v026 && (gfx12 || gfx1151win);
+    return !v026 && (gfx12 || gfx1151win || gfx1100_tp);
 }
 
 // The drafter's cumulative confidence cut (STRATA_DS4_DSPARK_CUM, a request's dspark_cum): the variable when set; 0.2.6: 0; 0.2.7: 0.5 on gfx1200 / gfx1201.

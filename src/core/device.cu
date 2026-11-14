@@ -38,8 +38,9 @@ std::string base_arch(const char* gcn_arch_name) {
     return arch;
 }
 
-bool compiled_for(const std::string& arch) {
-    const std::string list = STRATA_HIP_ARCHS;
+// whether `arch` is one of the comma-separated architectures in `list_c` ("gfx1100,gfx1201")
+bool in_arch_list(const char* list_c, const std::string& arch) {
+    const std::string list = list_c;
     size_t a = 0;
     while (a <= list.size()) {
         size_t b = list.find(',', a);
@@ -50,18 +51,65 @@ bool compiled_for(const std::string& arch) {
     return false;
 }
 
-std::string arch_problem(const cudaDeviceProp& p, int ordinal) {
+bool compiled_for(const std::string& arch) { return in_arch_list(STRATA_HIP_ARCHS, arch); }
+
+// gfx906 helper: a card that may serve ONLY as a helper expert cache (--expert-cache-device1..3) - a wave64 card of
+// an architecture the helper translation units were additionally compiled for (STRATA_HIP_HELPER_ARCHS, set by
+// cmake/hip_backend.cmake when the helper feature is built; same comma-separated format as STRATA_HIP_ARCHS).  Always
+// absent from a build without helper architectures.
+#if defined(STRATA_HIP_HELPER_ARCHS)
+bool helper_capable(const cudaDeviceProp& p, const std::string& arch) {
+    return p.warpSize == 64 && in_arch_list(STRATA_HIP_HELPER_ARCHS, arch);
+}
+#endif
+
+// `helper`: the card is to be a helper expert cache (--expert-cache-device1..3), which besides every card the strict
+// check accepts may be a helper_capable() one.  The primary, the --layer-split stages and the --peer-device stay strict:
+// they run prefill / dense / QSA kernels that exist for STRATA_HIP_ARCHS (wave32) only.
+std::string arch_problem(const cudaDeviceProp& p, int ordinal, bool helper = false) {
     const std::string arch = base_arch(p.gcnArchName);
     const std::string card = "GPU " + std::to_string(ordinal) + " (" + p.name + ", " + arch + ")";
+    std::string why;
     if (!compiled_for(arch)) {
-        return card + " is not an architecture this Strata engine was compiled for (" + STRATA_HIP_ARCHS +
-               "); compile it for this card (./setup.sh --backend hip, or -DCMAKE_HIP_ARCHITECTURES=" + arch +
-               ", docs/AMD_HIP.md) or choose another GPU with HIP_VISIBLE_DEVICES";
+        why = card + " is not an architecture this Strata engine was compiled for (" + STRATA_HIP_ARCHS +
+              "); compile it for this card (./setup.sh --backend hip, or -DCMAKE_HIP_ARCHITECTURES=" + arch +
+              ", docs/AMD_HIP.md) or choose another GPU with HIP_VISIBLE_DEVICES";
+    } else if (p.warpSize != 32) {
+        why = card + " runs wave" + std::to_string(p.warpSize) + "; Strata's HIP kernels need wave32";
     }
-    if (p.warpSize != 32) {
-        return card + " runs wave" + std::to_string(p.warpSize) + "; Strata's HIP kernels need wave32";
+    if (why.empty()) return "";
+#if defined(STRATA_HIP_HELPER_ARCHS)
+    if (helper_capable(p, arch)) {
+        if (helper) return "";
+        return card + " runs wave64: this engine can use it only as a helper expert cache (--expert-cache-device1..3, "
+                      "docs/SECOND_GPU.md), not as the primary GPU, a --layer-split stage or the --peer-device";
     }
-    return "";
+    if (helper && p.warpSize == 64) {
+        why += std::string("; a wave64 card can be a helper expert cache only when it is one of the helper "
+                           "architectures this engine was compiled for (") + STRATA_HIP_HELPER_ARCHS + ")";
+    }
+#else
+    // A helper role only adds a hint; whether the card is refused is the strict check's answer, as before.
+    if (helper && p.warpSize == 64) {
+        why += "; a wave64 card (gfx906) can only be a helper expert cache (--expert-cache-device1..3), and only in an "
+               "engine built with -DSTRATA_HIP_HELPER_ARCHS=gfx906";
+    }
+#endif
+    return why;
+}
+
+// cudaGetDeviceProperties of a visible `ordinal`; false (and the error cleared) when there is no such device
+bool visible_props(int ordinal, cudaDeviceProp& p) {
+    int count = 0;
+    if (cudaGetDeviceCount(&count) != cudaSuccess || ordinal < 0 || ordinal >= count) {
+        cudaGetLastError();
+        return false;
+    }
+    if (cudaGetDeviceProperties(&p, ordinal) != cudaSuccess) {
+        cudaGetLastError();
+        return false;
+    }
+    return true;
 }
 #endif
 
@@ -221,19 +269,26 @@ hipError_t mem_get_info(size_t* free_bytes, size_t* total_bytes) {
 
 namespace strata::core {
 
-std::string gpu_arch_problem(int ordinal) {
+std::string gpu_arch_problem(int ordinal, bool helper) {
 #if defined(STRATA_USE_HIP)
-    int count = 0;
-    if (cudaGetDeviceCount(&count) != cudaSuccess || ordinal < 0 || ordinal >= count) {
-        cudaGetLastError();
-        return "";
-    }
     cudaDeviceProp p{};
-    if (cudaGetDeviceProperties(&p, ordinal) != cudaSuccess) {
-        cudaGetLastError();
-        return "";
-    }
-    return arch_problem(p, ordinal);
+    if (!visible_props(ordinal, p)) return "";
+    return arch_problem(p, ordinal, helper);
+#else
+    (void) ordinal;
+    (void) helper;
+    return "";
+#endif
+}
+
+std::string gpu_arch_problem(int ordinal) { return gpu_arch_problem(ordinal, false); }
+
+std::string gpu_helper_arch(int ordinal) {
+#if defined(STRATA_USE_HIP) && defined(STRATA_HIP_HELPER_ARCHS)
+    cudaDeviceProp p{};
+    if (!visible_props(ordinal, p)) return "";
+    const std::string arch = base_arch(p.gcnArchName);
+    return !arch_problem(p, ordinal).empty() && helper_capable(p, arch) ? arch : "";
 #else
     (void) ordinal;
     return "";

@@ -1,0 +1,35 @@
+# Fusion item 1 (DS4_XK_QA=1, ON) and the indexer dispatch (DS4_IXS_DISPATCH=16384, IXS) on a later build (F1),
+# against flags off (OFF) and a placebo (PLA); B1, 64-token prompt, drafter off, 4 rotated rounds, 4 helpers. F1 / F3 / EC / PT / TS / UF = builds made after build 15; F1, F3, EC and UF went into build 16, the build in this release; PT and TS are not in it.
+== identity
+FUSID id-OFF vs id-B15: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID id-ON vs id-B15: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID id-IXS vs id-B15: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID idbt-ON vs idbt-B15: stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+id: identity PASSED (F1 OFF / ON / IXS == build 15 at B1, token for token, same placement; batch-test ON == build 15, batched == solo)
+FUSID ab-ON-1 vs ab-OFF-1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-PLA-1 vs ab-OFF-1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-IXS-1 vs ab-OFF-1: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+ab: rep 1: OFF decode: 256 tokens in 3306 ms (77.14 tok/s); CPU lane: 0 of  | ON decode: 256 tokens in 3253 ms (78.39 tok/s); CPU lane: 0 of  | PLA decode: 256 tokens in 3297 ms (77.33 tok/s); CPU lane: 0 of  | IXS decode: 256 tokens in 3271 ms (77.95 tok/s); CPU lane: 0 of  |
+FUSID ab-ON-2 vs ab-OFF-2: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-PLA-2 vs ab-OFF-2: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-IXS-2 vs ab-OFF-2: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+ab: rep 2: OFF decode: 256 tokens in 3297 ms (77.34 tok/s); CPU lane: 0 of  | ON decode: 256 tokens in 3258 ms (78.28 tok/s); CPU lane: 0 of  | PLA decode: 256 tokens in 3305 ms (77.15 tok/s); CPU lane: 0 of  | IXS decode: 256 tokens in 3266 ms (78.08 tok/s); CPU lane: 0 of  |
+FUSID ab-ON-3 vs ab-OFF-3: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-PLA-3 vs ab-OFF-3: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-IXS-3 vs ab-OFF-3: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+ab: rep 3: OFF decode: 256 tokens in 3305 ms (77.15 tok/s); CPU lane: 0 of  | ON decode: 256 tokens in 3256 ms (78.31 tok/s); CPU lane: 0 of  | PLA decode: 256 tokens in 3318 ms (76.85 tok/s); CPU lane: 0 of  | IXS decode: 256 tokens in 3262 ms (78.17 tok/s); CPU lane: 0 of  |
+FUSID ab-ON-4 vs ab-OFF-4: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-PLA-4 vs ab-OFF-4: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+FUSID ab-IXS-4 vs ab-OFF-4: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok
+ab: rep 4: OFF decode: 256 tokens in 3327 ms (76.65 tok/s); CPU lane: 0 of  | ON decode: 256 tokens in 3256 ms (78.31 tok/s); CPU lane: 0 of  | PLA decode: 256 tokens in 3306 ms (77.13 tok/s); CPU lane: 0 of  | IXS decode: 256 tokens in 3267 ms (78.05 tok/s); CPU lane: 0 of  |
+ab: identity PASSED every rep (ON / PLA / IXS == OFF)
+== speed (the run script)
+== ab: B1 decode, 64-id prompt, --dspark off, greedy, one session, N 256; ms a token, valid reps
+OFF: mean 12.9754 spread 0.1164 n 4 | 12.9634 12.9299 12.9618 13.0463
+ON: mean 12.7677 spread 0.0179 n 4 | 12.7567 12.7747 12.7698 12.7698
+PLA: mean 12.9677 spread 0.0808 n 4 | 12.9316 12.9618 13.0124 12.9651
+IXS: mean 12.8103 spread 0.0361 n 4 | 12.8287 12.8074 12.7926 12.8123
+prediction (pre-registration, pre-registered): ON - OFF -0.20 ms a token, range [-0.10, -0.28]; IXS - OFF -0.13 [-0.07, -0.17]
+VERDICT FUSION1: PASS - ON - OFF -0.2076 ms (spread 0.1164), PLA - OFF -0.0076 (spread 0.1164); inside the predicted range [-0.28, -0.10]
+IXS4H: CONFIRMED - IXS - OFF -0.1651 ms (spread 0.1164), PLA - OFF -0.0076; 5-helper ixd-20261113T230525Z was -0.1350
+TRIPPED: 0 new lines since start

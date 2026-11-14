@@ -1,0 +1,78 @@
+# Prompt reuse across turns on build 15. ident: 2 agents x 3 turns (~6.3-6.6K), greedy, expert cache off, reference = reuse
+# off (ref), pin and on; warm: served (4 slots), 4 sessions ~32K, ~1K new tokens a turn. Both verdicts printed NO DATA (see card).
+== ident (the run script, greedy spec=0, --no-expert-cache, DS4_SETTLE_IDLE=0; reference STRATA_DS4_REUSE=0): rc 124
+IDT ref      A1: prompt   6300 first token   7.67 s reused      0
+IDT ref      A2: prompt   6474 first token   7.83 s reused      0
+IDT ref      A3: prompt   6648 first token   8.07 s reused      0
+IDT ref      B1: prompt   6300 first token   6.74 s reused      0
+IDT ref      B2: prompt   6474 first token   7.82 s reused      0
+IDT ref      B3: prompt   6648 first token   8.08 s reused      0
+IDT pin      A1: prompt   6300 first token   6.87 s reused      0
+IDT pin      A2: prompt   6474 first token   2.89 s reused   6000
+IDT pin      A3: prompt   6648 first token   3.17 s reused   6000
+IDT pin      B1: prompt   6300 first token   1.82 s reused   6000
+IDT pin      B2: prompt   6474 first token   2.88 s reused   6000
+IDT pin      B3: prompt   6648 first token   3.18 s reused   6000
+IDT on       A1: prompt   6300 first token   6.90 s reused      0
+IDT on       A2: prompt   6474 first token   1.14 s reused   6300
+IDT on       A3: prompt   6648 first token   1.13 s reused   6474
+IDT on       B1: prompt   6300 first token   1.83 s reused   6000
+IDT on       B2: prompt   6474 first token   1.14 s reused   6300
+IDT on       B3: prompt   6648 first token   1.01 s reused   6497
+IDC ok     ref: nothing is reused
+IDC ok     pin: the sub-agent's first turn reads only its own task (reused 6000 of 6000)
+IDC FAIL pin: every turn prints the reference's tokens (6 x 24)
+IDC ok     on: the sub-agent's first turn reads only its own task (reused 6000 of 6000)
+IDC FAIL on: every turn prints the reference's tokens (6 x 24)
+IDC FAIL on: every later turn reuses its whole earlier conversation
+IDC FAIL restart: the folder holds both agents' conversations (5 .bin)
+IDD pin: turns differing from ref: A1 (first 8 equal), A2 (first 8 equal), B1 (differs in the first 8), B2 (first 8 equal)
+IDD on: turns differing from ref: A1 (differs in the first 8), A2 (first 8 equal), B1 (differs in the first 8)
+== warm (served build 15 PAR 4, the run script mid: 4 sessions ~32K, rounds 4,4,4,1, ~1K new tokens a turn): rc 0
+WSL slot lines 13; took back 3; last: ds4 slots: wrote 4 conversation(s) to <path> 5 there in all
+WRD engine: prompt 35944 = 0 reused + 35944 read in 21258 ms
+WRD engine: prompt 32089 = 0 reused + 32089 read in 16792 ms
+WRD engine: prompt 37589 = 0 reused + 37589 read in 17852 ms
+WRD engine: prompt 32012 = 0 reused + 32012 read in 17352 ms
+WRD engine: prompt 33577 = 32107 reused + 1470 read in 1893 ms
+WRD engine: prompt 33578 = 33577 reused + 1 read in 58 ms
+WRD engine: prompt 33593 = 32184 reused + 1409 read in 1911 ms
+WRD engine: prompt 37288 = 36039 reused + 1249 read in 1702 ms
+WRD engine: prompt 39058 = 37684 reused + 1374 read in 1858 ms
+WRD engine: prompt 35255 = 33848 reused + 1407 read in 1887 ms
+WRD engine: prompt 35256 = 35255 reused + 1 read in 53 ms
+WRD engine: prompt 34902 = 33832 reused + 1070 read in 1446 ms
+WRD engine: prompt 40780 = 39313 reused + 1467 read in 1935 ms
+WRD engine: prompt 38852 = 37543 reused + 1309 read in 1696 ms
+WRD engine: prompt 36640 = 35157 reused + 1483 read in 1944 ms
+WRD engine: prompt 36641 = 36640 reused + 1 read in 61 ms
+WRD engine: prompt 42363 = 41035 reused + 1328 read in 1894 ms
+WRD engine: prompt 40462 = 39107 reused + 1355 read in 1938 ms
+WRD engine: prompt 37040 = 35510 reused + 1530 read in 2044 ms
+WRD engine: prompt 42125 = 40717 reused + 1408 read in 2042 ms
+WPR session 0: ptok 35944 ttft 21.39 s (predicted 22.0-30.0 s)
+WPR session 1: ptok 32089 ttft 16.89 s (predicted 22.0-30.0 s)
+WPR session 2: ptok 37589 ttft 17.93 s (predicted 22.0-30.0 s)
+WPR session 3: ptok 32012 ttft 17.42 s (predicted 22.0-30.0 s)
+WTN round 1 conc 4 session 0: ptok 37288 cached 36039 (96.65 % of ptok, 100.26 % of the previous prompt 35944) new read 1249 ttft 6.5809560239940765 s
+WTN round 1 conc 4 session 1: ptok 33593 cached 32184 (95.81 % of ptok, 100.30 % of the previous prompt 32089) new read 1409 ttft 4.838808273001632 s
+WTN round 1 conc 4 session 2: ptok 39058 cached 37684 (96.48 % of ptok, 100.25 % of the previous prompt 37589) new read 1374 ttft 8.495152155999676 s
+WTN round 1 conc 4 session 3: ptok 33577 cached 32107 (95.62 % of ptok, 100.30 % of the previous prompt 32012) new read 1470 ttft 2.806602259995998 s
+WRT round 1 conc 4: first-served (min) ttft 2.81 s, max 8.50 s (max: reported only; conc-4 reads are serialised)
+WTN round 2 conc 4 session 0: ptok 38852 cached 37543 (96.63 % of ptok, 100.68 % of the previous prompt 37288) new read 1309 ttft 7.527904743998079 s
+WTN round 2 conc 4 session 1: ptok 35255 cached 33848 (96.01 % of ptok, 100.76 % of the previous prompt 33593) new read 1407 ttft 2.242161002002831 s
+WTN round 2 conc 4 session 2: ptok 40780 cached 39313 (96.40 % of ptok, 100.65 % of the previous prompt 39058) new read 1467 ttft 5.7810436349973315 s
+WTN round 2 conc 4 session 3: ptok 34902 cached 33832 (96.93 % of ptok, 100.76 % of the previous prompt 33577) new read 1070 ttft 3.8047825250032474 s
+WRT round 2 conc 4: first-served (min) ttft 2.24 s, max 7.53 s (max: reported only; conc-4 reads are serialised)
+WTN round 3 conc 4 session 0: ptok 40462 cached 39107 (96.65 % of ptok, 100.66 % of the previous prompt 38852) new read 1355 ttft 6.31583062899881 s
+WTN round 3 conc 4 session 1: ptok 37040 cached 35510 (95.87 % of ptok, 100.72 % of the previous prompt 35255) new read 1530 ttft 8.409232862002682 s
+WTN round 3 conc 4 session 2: ptok 42363 cached 41035 (96.87 % of ptok, 100.63 % of the previous prompt 40780) new read 1328 ttft 4.335831860000326 s
+WTN round 3 conc 4 session 3: ptok 36640 cached 35157 (95.95 % of ptok, 100.73 % of the previous prompt 34902) new read 1483 ttft 2.312671275998582 s
+WRT round 3 conc 4: first-served (min) ttft 2.31 s, max 8.41 s (max: reported only; conc-4 reads are serialised)
+WTN round 4 conc 1 session 0: ptok 42125 cached 40717 (96.66 % of ptok, 100.63 % of the previous prompt 40462) new read 1408 ttft 2.0963756349956384 s
+WRT round 4 conc 1: conc-1 ttft 2.10 s, max 2.10 s (max: reported only; conc-4 reads are serialised)
+VERDICT SLOTID IDENT: NO DATA (rc 124: 2 = prompts / engine missing, 124 = the 1500 s timeout)
+VERDICT SLOTID WARM: NO DATA (r1s1 read 1409 new tokens (not 900-1400); r1s3 read 1470 new tokens (not 900-1400); r2s1 read 1407 new tokens (not 900-1400); r2s2 read 1467 new tokens (not 900-1400); r3s1 read 1530 new tokens (not 900-1400); r3s3 read 1483 new tokens (not 900-1400); r4s0 read 1408 new tokens (not 900-1400))
+IDCFG ident (engine-0 = ref): lines ok, MISSING 'helper: DS4_PF_HELPER: prompt chunks of up to' | QO lines 1 | PF_TILE engaged 0 | processes 4 | (7162 of 15744 in VRAM) (7162 of 15744 in VRAM) (7162 of 15744 in VRAM) (7162 of 15744 in VRAM)
+IDCFG ident (engine-0 = ref): lines ok, MISSING 'helper: DS4_PF_HELPER: prompt chunks of up to' | QO lines 1 | PF_TILE engaged 0 | processes 4 | (7162 of 15744 in VRAM) (7162 of 15744 in VRAM) (7162 of 15744 in VRAM) (7162 of 15744 in VRAM)
+SRV warm: lines ok | QO lines 1 | PF_TILE engaged 4 | TOPK_MB_BATCH lines 2 | VRAM experts 6826

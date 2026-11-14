@@ -1,0 +1,35 @@
+d14ab d14ab-20261112T220757Z - NEW <path> (<hash>) REF <path> (<hash>); served env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=
+== identity
+ID id-d-U vs id-d-REF: stdout IDENTICAL | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok
+ID id-d-ON vs id-d-OFF: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok
+ID id-x-ON vs id-x-OFF: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok
+ID id-bt-ON vs id-bt-OFF: stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | lines ok
+IDP prod ON-1 vs OFF-1: IDENTICAL (8 requests: token ids + DONE kept / drafted) | PLA-1 vs OFF-1: IDENTICAL (8 requests: token ids + DONE kept / drafted) (prereg.md 3: part of the identity verdict)
+IDP prod ON-2 vs OFF-2: IDENTICAL (8 requests: token ids + DONE kept / drafted) | PLA-2 vs OFF-2: IDENTICAL (8 requests: token ids + DONE kept / drafted) (prereg.md 3: part of the identity verdict)
+IDP prod ON-3 vs OFF-3: IDENTICAL (8 requests: token ids + DONE kept / drafted) | PLA-3 vs OFF-3: IDENTICAL (8 requests: token ids + DONE kept / drafted) (prereg.md 3: part of the identity verdict)
+IDP prod ON-4 vs OFF-4: IDENTICAL (8 requests: token ids + DONE kept / drafted) | PLA-4 vs OFF-4: IDENTICAL (8 requests: token ids + DONE kept / drafted) (prereg.md 3: part of the identity verdict)
+IDP prod ON-5 vs OFF-5: IDENTICAL (8 requests: token ids + DONE kept / drafted) | PLA-5 vs OFF-5: IDENTICAL (8 requests: token ids + DONE kept / drafted) (prereg.md 3: part of the identity verdict)
+IDP prod ON-6 vs OFF-6: IDENTICAL (8 requests: token ids + DONE kept / drafted) | PLA-6 vs OFF-6: IDENTICAL (8 requests: token ids + DONE kept / drafted) (prereg.md 3: part of the identity verdict)
+== load lines (every ON process has QO's; no OFF / PLA process has it)
+== identity: ok (4 ID lines)
+== prod token identity (IDP, ON and PLA vs OFF, every rep): ok (6 reps IDENTICAL)
+== b1 (B1 plain decode, ms a token; valid reps only)
+  b1 OFF: 13.106 [13.074-13.144] n6  reps 13.129 13.074 13.120 13.144 13.098 13.074
+  b1 ON: 12.952 [12.917-13.001] n6  reps 13.001 12.962 12.917 12.935 12.918 12.980
+  b1 PLA: 13.107 [13.091-13.127] n6  reps 13.104 13.098 13.127 13.091 13.120 13.103
+  b1: delta ON-OFF -0.154 ms (-1.18 %) | placebo PLA-OFF +0.001 (bound 0.05) | noise 0.084 | predicted -0.280 .. -0.120 (central -0.200): inside
+  b1 (info, not the rule): median ON-OFF -0.160, median PLA-OFF -0.005
+VERDICT B1: PASS
+== prod PRIMARY: matched mix, 7 of 8 request positions (every arm-rep served, drafts, 16 <= gen < 1024)
+  prod OFF: 9.901 [9.873-9.933] n6  reps 9.933 9.925 9.911 9.880 9.881 9.873
+  prod ON: 9.911 [9.880-10.007] n6  reps 10.007 9.902 9.884 9.901 9.892 9.880
+  prod PLA: 9.888 [9.864-9.905] n6  reps 9.864 9.884 9.889 9.905 9.898 9.886
+  prod: delta ON-OFF +0.010 ms (+0.10 %) | placebo PLA-OFF -0.013 (bound 0.20) | noise 0.127 | predicted -0.020 .. +0.010 (central -0.006): above (smaller gain / loss)
+  prod (info, not the rule): median ON-OFF +0.000, median PLA-OFF -0.008
+VERDICT PROD: NOT SEPARABLE
+== prod secondary (all usable requests, the mix NOT matched; info only)
+  prod-all OFF: 11.184  reps 11.205 11.198 11.193 11.167 11.167 11.171
+  prod-all ON: 11.200  reps 11.319 11.189 11.176 11.182 11.178 11.160
+  prod-all PLA: 11.179  reps 11.155 11.167 11.185 11.200 11.186 11.182
+VERDICT DEPLOY14 QO: PASS
+TRIPPED: 0 new lines since start

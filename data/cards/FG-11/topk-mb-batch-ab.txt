@@ -1,0 +1,17 @@
+tbrun topkbatch-20261113T164459Z - NEW <path> (<hash>); REF <path>; env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1 DS4_EG_AHEAD=1 DS4_TOPK_MB=1 DS4_PF_HELPER=8192; tp
+== identity
+ID id-d-U vs id-d-REF: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok
+ID id-bt-short-ON vs id-bt-short-OFF: stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | lines ok
+ID id-bts32k-ON vs id-bts32k-OFF: stdout IDENTICAL | placement (7033 of 15744 in VRAM) (7033 of 15744 in VRAM) (7033 of 15744 in VRAM) (7033 of 15744 in VRAM) | lines ok
+== identity: ok (3 ID lines)
+solo guard 64k: OFF 14.772 [14.753-14.804] n3 | ON 14.756 [14.737-14.772] n3 | PLA 14.710 [14.686-14.747] n3 | ON - OFF -0.016 (N 0.120) -> ok
+solo guard 110k: OFF 14.748 [14.722-14.773] n2 | ON 14.825 [14.812-14.838] n2 | PLA 14.761 [14.725-14.796] n2 | ON - OFF +0.077 (N 0.120) -> ok
+== ms a batch step = a stream's ms a token in plain steps (MEASURED: batch-test, greedy, --dspark off)
+  64k B2: OFF 18.819 [18.803-18.827] n3 | ON 18.352 [18.331-18.386] n3 | PLA 18.822 [18.811-18.835] n3
+  64k B2: delta ON - OFF -0.467 ms a step (-2.48 %) | N 0.150 | predicted -0.48 [-0.60, -0.30] -> PASS
+  64k B4: OFF 25.622 [25.559-25.654] n3 | ON 24.735 [24.567-24.992] n3 | PLA 26.003 [25.685-26.189] n3
+  64k B4: delta ON - OFF -0.887 ms a step (-3.46 %) | N 0.504 | predicted -0.95 [-1.20, -0.60] PRIMARY -> PASS
+  110k B2: OFF 19.287 [19.283-19.291] n2 | ON 18.528 [18.520-18.535] n2 | PLA 19.327 [19.315-19.339] n2
+  110k B2: delta ON - OFF -0.760 ms a step (-3.94 %) | N 0.150 | predicted -0.79 [-1.00, -0.50] -> PASS
+VERDICT TOPKBATCH (PRIMARY 64K B4): PASS
+TRIPPED: 0 new lines since start

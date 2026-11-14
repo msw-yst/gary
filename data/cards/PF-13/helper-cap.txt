@@ -1,0 +1,40 @@
+# The helper prompt-length cap (DS4_PF_HELPER_MAXP=8192) on a later build (F3), served (4 slots), one user,
+# cold distinct prompts 2K-64K, 2 reps a length, against the deployed helper (ON). Identity part B included. F1 / F3 / EC / PT / TS / UF = builds made after build 15; F1, F3, EC and UF went into build 16, the build in this release; PT and TS are not in it.
+FUSID mx-M4 vs mx-ON4: stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok | ref lines ok
+FUSID mx-M24 vs mx-OFF24: stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | rc rc=0/rc=0 | lines ok | ref lines ok
+mxid: identity B PASSED (4K MAXP == helper ON, 24K MAXP == helper OFF, token for token, same placement)
+== B: served (the run script)
+CAPSRV sON: lines ok | VRAM experts (6826 of 15744 in VRAM) (6826 of 15744 in VRAM) (6826 of 15744 in VRAM) (6826 of 15744 in VRAM) | prompt-helper lines 20 | bypass lines 0
+CAPSRV sMX: lines ok | VRAM experts (6826 of 15744 in VRAM) (6826 of 15744 in VRAM) (6826 of 15744 in VRAM) (6826 of 15744 in VRAM) | prompt-helper lines 14 | bypass lines 6
+== served MAXP per request (client TTFT s | engine prompt read s | decode ms | helper / bypass / stream lines)
+-- sON ON (helper 8192, deployed): rc rc=0 | VRAM experts CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744
+   2k-r1   ptok   1951 ttft 2.91 engine 2.90 s (1951 tok, reused 0, 2 probe lines) dec 7.04 rc 0 | helper lines 1 2853 ms waits [CUDA0 782, CUDA1 771, CUDA2 726, CUDA8 979] | bypass 0  | stream 4 lines 0.0 GB
+   2k-r2   ptok   1951 ttft 2.84 engine 2.83 s (1951 tok, reused 0, 2 probe lines) dec 7.21 rc 0 | helper lines 1 2805 ms waits [CUDA0 649, CUDA1 571, CUDA2 561, CUDA8 843] | bypass 0  | stream 4 lines 1.2 GB
+   8k-r1   ptok   8093 ttft 7.86 engine 7.85 s (8093 tok, reused 0, 2 probe lines) dec 7.37 rc 0 | helper lines 1 7819 ms waits [CUDA0 1803, CUDA1 1937, CUDA2 1874, CUDA8 2686] | bypass 0  | stream 4 lines 0.4 GB
+   8k-r2   ptok   8093 ttft 7.00 engine 6.99 s (8093 tok, reused 0, 2 probe lines) dec 6.75 rc 0 | helper lines 1 6958 ms waits [CUDA0 1657, CUDA1 1755, CUDA2 1421, CUDA8 2259] | bypass 0  | stream 4 lines 1.2 GB
+   16k-r1  ptok  16284 ttft 12.64 engine 12.61 s (16284 tok, reused 0, 2 probe lines) dec 7.40 rc 0 | helper lines 1 12564 ms waits [CUDA0 3071, CUDA1 3612, CUDA2 3015, CUDA8 4559] | bypass 0  | stream 4 lines 0.8 GB
+   16k-r2  ptok  16284 ttft 11.99 engine 11.96 s (16284 tok, reused 0, 2 probe lines) dec 7.32 rc 0 | helper lines 1 11930 ms waits [CUDA0 2806, CUDA1 3214, CUDA2 2384, CUDA8 3962] | bypass 0  | stream 4 lines 2.0 GB
+   32k-r1  ptok  31898 ttft 22.61 engine 22.55 s (31898 tok, reused 0, 2 probe lines) dec 7.11 rc 0 | helper lines 1 22501 ms waits [CUDA0 5014, CUDA1 6466, CUDA2 5104, CUDA8 7722] | bypass 0  | stream 4 lines 2.0 GB
+   32k-r2  ptok  31898 ttft 21.72 engine 21.66 s (31898 tok, reused 0, 2 probe lines) dec 7.13 rc 0 | helper lines 1 21637 ms waits [CUDA0 4854, CUDA1 5950, CUDA2 4377, CUDA8 7134] | bypass 0  | stream 4 lines 3.6 GB
+   64k-r1  ptok  65428 ttft 43.79 engine 43.67 s (65428 tok, reused 0, 2 probe lines) dec 7.56 rc 0 | helper lines 1 43622 ms waits [CUDA0 9542, CUDA1 12170, CUDA2 8911, CUDA8 14949] | bypass 0  | stream 4 lines 5.2 GB
+   64k-r2  ptok  65428 ttft 43.63 engine 43.51 s (65428 tok, reused 0, 2 probe lines) dec 7.25 rc 0 | helper lines 1 43473 ms waits [CUDA0 9561, CUDA1 12193, CUDA2 8686, CUDA8 14377] | bypass 0  | stream 4 lines 6.4 GB
+-- sMX MAXP (helper 8192 + DS4_PF_HELPER_MAXP): rc rc=0 | VRAM experts CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744
+   2k-r1   ptok   1951 ttft 2.91 engine 2.90 s (1951 tok, reused 0, 2 probe lines) dec 7.16 rc 0 | helper lines 1 2854 ms waits [CUDA0 789, CUDA1 772, CUDA2 727, CUDA8 981] | bypass 0  | stream 4 lines 0.0 GB
+   2k-r2   ptok   1951 ttft 2.84 engine 2.83 s (1951 tok, reused 0, 2 probe lines) dec 7.21 rc 0 | helper lines 1 2805 ms waits [CUDA0 647, CUDA1 571, CUDA2 561, CUDA8 841] | bypass 0  | stream 4 lines 1.2 GB
+   8k-r1   ptok   8093 ttft 7.77 engine 7.75 s (8093 tok, reused 0, 2 probe lines) dec 7.26 rc 0 | helper lines 1 7723 ms waits [CUDA0 1824, CUDA1 1940, CUDA2 1875, CUDA8 2691] | bypass 0  | stream 4 lines 0.4 GB
+   8k-r2   ptok   8093 ttft 7.00 engine 6.99 s (8093 tok, reused 0, 2 probe lines) dec 7.34 rc 0 | helper lines 1 6959 ms waits [CUDA0 1581, CUDA1 1732, CUDA2 1394, CUDA8 2224] | bypass 0  | stream 4 lines 1.2 GB
+   16k-r1  ptok  16284 ttft 10.54 engine 10.51 s (16284 tok, reused 0, 2 probe lines) dec 7.34 rc 0 | helper lines 0 | bypass 1 [16284] | stream 4 lines 128.9 GB
+   16k-r2  ptok  16284 ttft 10.57 engine 10.54 s (16284 tok, reused 0, 2 probe lines) dec 7.43 rc 0 | helper lines 0 | bypass 1 [16284] | stream 4 lines 128.9 GB
+   32k-r1  ptok  31898 ttft 18.40 engine 18.34 s (31898 tok, reused 0, 2 probe lines) dec 7.22 rc 0 | helper lines 0 | bypass 1 [31898] | stream 4 lines 213.6 GB
+   32k-r2  ptok  31898 ttft 18.45 engine 18.40 s (31898 tok, reused 0, 2 probe lines) dec 7.44 rc 0 | helper lines 0 | bypass 1 [31898] | stream 4 lines 213.6 GB
+   64k-r1  ptok  65428 ttft 35.06 engine 34.94 s (65428 tok, reused 0, 2 probe lines) dec 7.65 rc 0 | helper lines 0 | bypass 1 [65428] | stream 4 lines 382.8 GB
+   64k-r2  ptok  65428 ttft 35.01 engine 34.90 s (65428 tok, reused 0, 2 probe lines) dec 7.39 rc 0 | helper lines 0 | bypass 1 [65428] | stream 4 lines 382.8 GB
+== noise N 11.60 % (largest: sON 8k rep spread 11.60 %; floor 2 %)
+== per length (mean of 2 reps; ratio = MAXP / ON; < 1 means the cap is FASTER)
+LEN 2k   ptok 1951: TTFT ON 2.871 MAXP 2.873 s ratio 1.001 -> NOT SEPARABLE | engine ON 2.865 MAXP 2.866 s ratio 1.000 (NOT SEPARABLE) | decode ON 7.13 MAXP 7.19 ms | pre-registration ON 2.86 [2.2, 3.7] in, MAXP 2.86 [2.2, 3.7] in, ratio 1.0 [0.88, 1.12] in | SRVHELP ON 2.859 OFF 4.59
+LEN 8k   ptok 8093: TTFT ON 7.433 MAXP 7.385 s ratio 0.993 -> NOT SEPARABLE | engine ON 7.417 MAXP 7.368 s ratio 0.993 (NOT SEPARABLE) | decode ON 7.06 MAXP 7.30 ms | pre-registration ON 7.4 [6.0, 8.6] in, MAXP 7.4 [6.0, 8.6] in, ratio 1.0 [0.88, 1.12] in | SRVHELP ON 7.419 OFF 6.617
+LEN 16k  ptok 16284: TTFT ON 12.316 MAXP 10.554 s ratio 0.857 -> FASTER | engine ON 12.287 MAXP 10.522 s ratio 0.856 (FASTER) | decode ON 7.36 MAXP 7.38 ms | pre-registration ON 12.4 [10.5, 14.0] in, MAXP 10.45 [9.3, 12.0] in, ratio 0.84 [0.74, 0.95] in | SRVHELP ON 12.406 OFF 10.453
+LEN 32k  ptok 31898: TTFT ON 22.165 MAXP 18.428 s ratio 0.831 -> FASTER | engine ON 22.108 MAXP 18.369 s ratio 0.831 (FASTER) | decode ON 7.12 MAXP 7.33 ms | pre-registration ON 22.2 [20.0, 25.0] in, MAXP 18.4 [16.5, 20.5] in, ratio 0.83 [0.74, 0.92] in | SRVHELP ON 22.215 OFF 18.396
+LEN 64k  ptok 65428: TTFT ON 43.708 MAXP 35.035 s ratio 0.802 -> FASTER | engine ON 43.594 MAXP 34.921 s ratio 0.801 (FASTER) | decode ON 7.41 MAXP 7.52 ms | pre-registration ON 43.8 [39.5, 48.5] in, MAXP 35.0 [31.5, 39.0] in, ratio 0.8 [0.72, 0.89] in | SRVHELP ON 43.814 OFF 34.999
+PLACEMENT: ON CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744 | MAXP CUDA0 6826 of 15744 | CUDA1 6826 of 15744 | CUDA2 6826 of 15744 | CUDA8 6826 of 15744 -> SAME
+VERDICT MAXPSRV: PASS (2k NOT SEPARABLE, 8k NOT SEPARABLE, 16k FASTER, 32k FASTER, 64k FASTER; N 11.60 %)

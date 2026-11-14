@@ -1,0 +1,23 @@
+# Counting run on a later build (TS, DS4_TREE_STATS=1, measurement only) against build 15; s = sampled served mix,
+# g = greedy; h2 = share of first-draft rejections where the trunk's token was the drafter's second choice. F1 / F3 / EC / PT / TS / UF = builds made after build 15; F1, F3, EC and UF went into build 16, the build in this release; PT and TS are not in it.
+== DS4_TREE_STATS per arm (the last stats line; MEASURED)
+  s-OFF: NO stats line | not counted 0 | serve position-1 rejections 1168 of 3611 reached | rc=0
+  s-ON: rounds 3611 rej1 1168 h2hit 394 h2 0.3373 | not counted 0 (0.0 % of rounds) | serve position-1 rejections 1168 of 3611 reached | rc=0
+  g-ON: rounds 3246 rej1 501 h2hit 210 h2 0.4192 | not counted 0 (0.0 % of rounds) | serve position-1 rejections 501 of 3246 reached | rc=0
+  g-OFF: NO stats line | not counted 0 | serve position-1 rejections 501 of 3246 reached | rc=0
+  g-B15: NO stats line | not counted 0 | serve position-1 rejections 501 of 3246 reached | rc=0
+== timing: ms a generated token (DONE decode ms / produced, requests with produced >= 16; MEASURED)
+  s-OFF: 10.929 over 7445 tokens
+  s-ON: 11.008 over 7445 tokens
+  g-ON: 9.545 over 7426 tokens
+  g-OFF: 9.496 over 7426 tokens
+  g-B15: 9.492 over 7426 tokens
+  greedy g-ON vs g-OFF (identical tokens if the identity holds; the pre-registered overhead check, limit +2.0 %): +0.51 %
+  sampled s-ON vs s-OFF (info; same seeds, served env): +0.73 %
+  g-OFF vs g-B15 (info: the TS build flag unset vs build 15): +0.04 %
+== identity (greedy, --serve PAR 1, T lines + DONE fields after the sacrificial DONE)
+  ID g-ON vs g-OFF: IDENTICAL | lines ok
+  ID g-OFF vs g-B15: IDENTICAL | lines ok
+  sampled s-ON vs s-OFF (info, not an abort criterion: the served env is not pinned for run-to-run identity): IDENTICAL | lines ok
+== greedy h2 (info / cross-check; q11b content): h2 0.4192 on rej1 501 -> PARK
+VERDICT TREE STATS: CLOSE - sampled h2 0.3373 (394 of 1168 first-draft rejections were the drafter's second choice)

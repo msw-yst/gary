@@ -1,0 +1,5 @@
+== HELPERCHAIN stage 1 (MEASURED, flags off, B1 decode N 256, 64-id prompt)
+-- tp4h4 rc=0: decode: 256 tokens in 4370 ms (58.35 tok/s); CPU lane: 0 of 61200 experts; the cache moved | helper per token: 44.2 experts, the lane's issue + wait 4.85 ms
+helper timeline T 1: 6942 requests, us each: XTX gap (last answer -> request) 309.7 | request -> issued 22.2 | issued -> CPU lane done 0.1 | -> joined 156.6 | -> published 0.0 | request -> answer 178.9
+-- tp3h3 rc=0: decode: 256 tokens in 4730 ms (53.91 tok/s); CPU lane: 55 of 61200 experts; the cache move | helper per token: 71.6 experts, the lane's issue + wait 5.51 ms
+helper timeline T 1: 8767 requests, us each: XTX gap (last answer -> request) 324.7 | request -> issued 27.4 | issued -> CPU lane done 1.9 | -> joined 133.5 | -> published 0.0 | request -> answer 162.9

@@ -1,0 +1,15 @@
+# LIKE4LIKE A, interim: O = the 9 Nov four-plus-four build, no flags; N = build 14 with its served flags; drafter loaded, off; one session
+b1-O-1: prompt: 64 tokens in 395 ms (162.08 tok/s decode: 256 tokens in 4377 ms (58.26 tok/s 
+b1-O-2: prompt: 64 tokens in 447 ms (143.12 tok/s decode: 256 tokens in 4381 ms (58.21 tok/s 
+b1-O-3: prompt: 64 tokens in 482 ms (132.89 tok/s decode: 256 tokens in 4378 ms (58.25 tok/s 
+b1-O-4: prompt: 64 tokens in 345 ms (185.45 tok/s decode: 256 tokens in 4378 ms (58.25 tok/s 
+b1-N-1: prompt: 64 tokens in 204 ms (313.40 tok/s decode: 256 tokens in 3321 ms (76.78 tok/s 
+b1-N-2: prompt: 64 tokens in 208 ms (307.45 tok/s decode: 256 tokens in 3298 ms (77.33 tok/s 
+b1-N-3: prompt: 64 tokens in 208 ms (308.22 tok/s decode: 256 tokens in 3301 ms (77.25 tok/s 
+b1-N-4: prompt: 64 tokens in 204 ms (313.03 tok/s decode: 256 tokens in 3302 ms (77.23 tok/s 
+b2k-O-1: prompt: 2048 tokens in 4085 ms (501.36 tok/s decode: 256 tokens in 4610 ms (55.32 tok/s 
+b2k-O-2: prompt: 2048 tokens in 4079 ms (502.11 tok/s decode: 256 tokens in 4607 ms (55.35 tok/s 
+b2k-O-3: prompt: 2048 tokens in 4087 ms (501.10 tok/s decode: 256 tokens in 4609 ms (55.32 tok/s 
+b2k-N-1: prompt: 2048 tokens in 3374 ms (607.02 tok/s decode: 256 tokens in 3599 ms (70.86 tok/s 
+b2k-N-2: prompt: 2048 tokens in 3376 ms (606.56 tok/s decode: 256 tokens in 3586 ms (71.11 tok/s 
+b2k-N-3: prompt: 2048 tokens in 3377 ms (606.37 tok/s decode: 256 tokens in 3589 ms (71.06 tok/s 

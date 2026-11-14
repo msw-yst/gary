@@ -1,0 +1,9 @@
+# 4th RX 7900 XTX health probe, 2026-11-09 (MEASURED). WMMA F16 register-loop stress, 1 s samples, soft abort at 85 C junction.
+utc	junction_C	edge_C	mem_C	sclk_MHz	power_W	busy_pct	aer_errors
+09:49:39	31	27	36	0	5	0	0
+09:49:40	72	41	36	2784	236	100	0
+09:49:41	92	46	36	2800	257	99	0
+# SOFTSTOP 09:49:41: junction 92 C >= 85
+09:49:42	35	30	36	0	6	0	0
+# after a repaste and reseat, same card, 10:00:43: junction 93 C within 2 s -> soft stop
+# replacement board in the same slot, 900 s run: junction peak 82 C, steady 80.0 C, junction-edge steady 26.8 C, power mean 261 W (cap 261), AER 0

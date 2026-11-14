@@ -1,0 +1,27 @@
+pfhrun pfh3-20261111T100920Z
+--- identity
+id score best11 vs flag unset: IDENTICAL
+id decode flag unset vs DS4_PF_HELPER=8192 (no chunk): IDENTICAL
+id dec-on: engaged, load check passed: load check: 8 cases on 4 helpers, worst relative L2 error 0.021 (tolerance 0.03)
+--- sweep: s for the new tokens of a request after the cached ~16K prefix (median of the reps; the engine's own lines)
+     N        read      OFF       ON      ONT     ON64   ON predicted [range]      OFF fit
+    64       68-77     0.34     0.34     0.36     0.34    0.33 [0.23-0.54]   (windows)
+   128     124-146     0.59     0.47     0.47     0.38    0.36 [0.26-0.58]   (windows)
+   256     265-281     1.15     0.51     0.51     0.51    0.43 [0.31-0.65]   (windows)
+   512     415-478     1.83     0.69     0.69     0.69    0.56 [0.42-0.81]    3.48
+  1024   1010-1013     3.45     1.31     1.31     1.31    0.81 [0.64-1.11]    3.70
+  2048   1887-1954     3.79     2.12     2.12     2.10    1.32 [1.08-1.73]    4.14
+  4096   4003-4349     4.85     3.77     3.75     3.75    2.35 [1.96-2.96]    5.01
+  8192   8169-8608     6.84     5.54     5.54     5.52    4.40 [3.72-5.42]    6.76
+ 16384 15991-16106    10.04     9.79     9.70     9.70    8.64 [7.40-10.48]   10.26
+fit OFF (512 <= N <= 8192, 7 requests): T = 3.075 s + 0.396 ms x N
+fit ON (512 <= N <= 8192, 7 requests): T = 1.056 s + 0.537 ms x N   pre-registered F 0.2-0.5 s, s 0.43-0.6; disproved if s outside 0.35-0.75 or F > 0.8: DISPROVED
+fit ONT (512 <= N <= 8192, 7 requests): T = 1.052 s + 0.537 ms x N   pre-registered F 0.2-0.5 s, s 0.43-0.6; disproved if s outside 0.35-0.75 or F > 0.8: DISPROVED
+fit ON64 (512 <= N <= 8192, 7 requests): T = 1.043 s + 0.538 ms x N   pre-registered F 0.2-0.5 s, s 0.43-0.6; disproved if s outside 0.35-0.75 or F > 0.8: DISPROVED
+ON 2048-token suffix 2.12 s: the longctx line (disproved if not under 2.0 s): DISPROVED
+ON last helper line: ds4 prompt helpers (DS4_PF_HELPER=8192), 281 tokens in 451 ms: 40 layers on the helpers (8 of them also streamed 120 unheld experts), 0 streamed; members' host waits for their helpers (ms): CUDA0 76, CUDA1 73, CUDA2 77, CUDA7 85; the lead's x read-back waits 0 ms; helpers so far: device 3: 722 layers, 525907 tokens, 610362 rows (845.4 a layer), 6496 rounds, 6496 sets, host 86 ms issuing; device 4:
+ONT last helper line: ds4 prompt helpers (DS4_PF_HELPER=8192), 281 tokens in 451 ms: 40 layers on the helpers (8 of them also streamed 120 unheld experts), 0 streamed; members' host waits for their helpers (ms): CUDA0 75, CUDA1 73, CUDA2 76, CUDA7 86; the lead's x read-back waits 0 ms; helpers so far: device 3: 722 layers, 525907 tokens, 610362 rows (845.4 a layer), 6496 rounds, 6496 sets, host 90 ms issuing, stream ms
+ON64 last helper line: ds4 prompt helpers (DS4_PF_HELPER=8192), 124 tokens in 301 ms: 40 layers on the helpers (8 of them also streamed 128 unheld experts), 0 streamed; members' host waits for their helpers (ms): CUDA0 36, CUDA1 41, CUDA2 37, CUDA7 46; the lead's x read-back waits 0 ms; helpers so far: device 3: 762 layers, 526967 tokens, 611545 rows (802.6 a layer), 6539 rounds, 6539 sets, host 86 ms issuing; device 4:
+--- cold ~240K-token prompt (ctx 262144, a fresh server)
+COLD-OFF: no engine line; client: (empty)
+COLD-ON: no engine line; client: (empty)

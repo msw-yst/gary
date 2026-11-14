@@ -1,0 +1,23 @@
+== identity (pass line: every one IDENTICAL; rc 0 = each batch sequence == its solo reference)
+id-tp3h3-off vs id-tp3h3-A (engine.stdout): IDENTICAL
+id-tp3h3-off vs id-tp3h3-AB (engine.stdout): IDENTICAL
+id-tp4h4-off vs id-tp4h4-A (engine.stdout): IDENTICAL
+id-tp4h4-off vs id-tp4h4-AB (engine.stdout): IDENTICAL
+bt-tp3h3-off-1 vs bt-tp3h3-A-1 (engine.stdout): IDENTICAL
+bt-tp3h3-off-2 vs bt-tp3h3-A-2 (engine.stdout): IDENTICAL
+bt-tp3h3-off-3 vs bt-tp3h3-A-3 (engine.stdout): IDENTICAL
+bt-tp3h3-off-1 vs bt-tp3h3-AB-1 (engine.stdout): IDENTICAL
+bt-tp3h3-off-2 vs bt-tp3h3-AB-2 (engine.stdout): IDENTICAL
+bt-tp3h3-off-3 vs bt-tp3h3-AB-3 (engine.stdout): IDENTICAL
+bt-tp3h3-C-1 vs bt-tp3h3-ABC-1 (engine.stdout): IDENTICAL
+bt-tp3h3-C-2 vs bt-tp3h3-ABC-2 (engine.stdout): IDENTICAL
+bt-tp3h3-C-3 vs bt-tp3h3-ABC-3 (engine.stdout): IDENTICAL
+bt-tp4h4-off-1 vs bt-tp4h4-A-1 (engine.stdout): IDENTICAL
+bt-tp4h4-off-2 vs bt-tp4h4-A-2 (engine.stdout): IDENTICAL
+bt-tp4h4-off-3 vs bt-tp4h4-A-3 (engine.stdout): IDENTICAL
+bt-tp4h4-off-1 vs bt-tp4h4-AB-1 (engine.stdout): IDENTICAL
+bt-tp4h4-off-2 vs bt-tp4h4-AB-2 (engine.stdout): IDENTICAL
+bt-tp4h4-off-3 vs bt-tp4h4-AB-3 (engine.stdout): IDENTICAL
+bt-tp4h4-C-1 vs bt-tp4h4-ABC-1 (engine.stdout): IDENTICAL
+bt-tp4h4-C-2 vs bt-tp4h4-ABC-2 (engine.stdout): IDENTICAL
+bt-tp4h4-C-3 vs bt-tp4h4-ABC-3 (engine.stdout): IDENTICAL

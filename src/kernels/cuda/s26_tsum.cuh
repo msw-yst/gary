@@ -11,7 +11,9 @@
 
 namespace strata::kernels::s26ts {
 
-#if defined(__HIP_PLATFORM_AMD__) && !defined(STRATA_HIP_GFX906)   // (permlanex16 / DPP row_xmask: gfx10+ only)
+// (permlanex16 / DPP row_xmask: gfx10+ only.  __gfx906__: the device pass of the helper arch inside the RDNA build,
+// STRATA_HIP_HELPER_ARCHS; its __shfl_xor_sync is width 32, so the fallback stays within each logical 32-lane warp)
+#if defined(__HIP_PLATFORM_AMD__) && !defined(STRATA_HIP_GFX906) && !defined(__gfx906__)
 __device__ __forceinline__ float xmov16(float v) {
     return __int_as_float(__builtin_amdgcn_permlanex16(__float_as_int(v), __float_as_int(v), 0x76543210u, 0xfedcba98u,
                                                        false, false));

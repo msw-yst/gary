@@ -473,9 +473,14 @@ bool attn_v3_on() {
 template <bool DPP, int M> __device__ __forceinline__ float shfl_x(float v) {
 #if defined(__HIPCC__)
     if constexpr (DPP) {
+#if defined(__gfx906__)
+        // allarch: permlanex16 and DPP row_xmask are gfx10+; this attention kernel never runs on a gfx906 helper
+        __builtin_trap();
+#else
         const int x = __float_as_int(v);
         if constexpr (M == 16) return __int_as_float(__builtin_amdgcn_permlanex16(x, x, 0x76543210, 0xfedcba98, false, false));
         else return __int_as_float(__builtin_amdgcn_mov_dpp(x, 0x160 | M, 0xF, 0xF, false));   // row_xmask:M
+#endif
     }
 #endif
     return __shfl_xor_sync(0xffffffffu, v, M);

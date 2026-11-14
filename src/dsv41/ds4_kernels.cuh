@@ -54,6 +54,11 @@ struct Finish {
     long long dst_stride = 0;
     uint8_t* pdst = nullptr;
     long long pdst_stride = 0;
+    // (DS4_DECODE_TRIM bit 2, after Project Maya #512) non-null: the values written to x also rounded to int8 as gguf mv
+    // rounds a Q8_0 / low-bit job's input (q8_quant's ops on the stored value) - q8 [n_vec][len], q8d [n_vec][len / 32];
+    // len % 32 == 0, stride len, no dst / pdst (finish refuses otherwise: nothing launched, a line printed)
+    int8_t* q8 = nullptr;
+    float* q8d = nullptr;
 };
 void finish(float* x, int n_vec, int len, long long stride, const Finish& f, cudaStream_t s);
 
@@ -75,6 +80,59 @@ void hc_mix_split(const float* h, const float* fn, int hcdim, int n_mix, int T, 
 /// x[t][e] = sum_s mix[t][s] h[t][s][e], then x = rmsnorm(x) * w (w null: no norm).
 void hc_pre_norm(const float* h, const float* mix, const float* w, int dim, int hc, int T, float eps, float* x,
                  cudaStream_t s);
+/// (DS4_HC_FUSE, after Project Maya #511's hc_split_pre_norm) hc_mix_split and hc_pre_norm in one launch - they share
+/// nothing: the norm reads the lagged mix (`mix`, the split before this one's), the split writes this one's pre.  Grid
+/// (n_mix + 1, T) of 1024 threads: blocks 0 .. n_mix - 1 are hc_mix_split_kernel's, their first 256 threads running its
+/// code (the other threads add +0 into its block sums, as its own block_sum pads its 8 warps to 32: the same bits), the
+/// last of them running the split; block n_mix is hc_pre_norm_kernel's (its 1024 threads, its code).  Extra, where
+/// set: pre_copy - the 8 pre slots copied there too as the layer's end copy did them (the k < hc just written, the rest
+/// pre's own bits); q / qd - x's int8 rounding, gguf mv's for a Q8_0 or low-bit job's input (q [T][dim], qd [T][dim/32]).
+/// The old kernels stay as they are: hc_fuse_check (ds4_model.cu) compares the two paths byte for byte at load.
+struct HcFuse {
+    const float* h = nullptr;     // [T][hc][dim]
+    const float* fn = nullptr;    // hc_mix_split's weights, n_mix rows of hc * dim
+    int n_mix = 0;
+    float eps = 0.0f;             // hc_mix's and hc_pre_norm's (the model's rms eps)
+    float* mixes = nullptr;       // [T][32]
+    unsigned* cnt = nullptr;      // T zeroed counters (left zero)
+    const float *scale = nullptr, *base = nullptr;
+    int hc = 4, iters = 1;
+    float hc_eps = 0.0f;
+    float *pre = nullptr, *post = nullptr, *comb = nullptr, *pre_copy = nullptr;
+    const float* mix = nullptr;   // the norm's lagged mix, [T][8]; not pre, not pre_copy
+    const float* w = nullptr;     // the norm's weights (null: none)
+    int dim = 0;
+    float* x = nullptr;           // [T][dim]
+    int8_t* q = nullptr;
+    float* qd = nullptr;
+};
+/// false, nothing launched: n_mix not 1 .. 32, hc not 1 .. 8, dim not a multiple of 32 up to 8192, T not 1 .. kWin, a
+/// buffer missing, q without qd.
+bool hc_mix_split_norm(const HcFuse& a, int T, cudaStream_t s);
+/// xtxkern (docs/dsv41/cards/FG-08.md; FG-16 takes DS4_XK_QA alone of its kernel flags; default off, bit-identical by
+/// construction, gfx1100 layer devices only): the process's bits, set once at load before any launch.  kXkQa - wo_a's GEMV
+/// rounds its outputs for wo_b (xk_mv_q5k_q8).  The kernel is instantiated only in the gfx1100 device pass: the other code
+/// objects are unchanged.
+constexpr int kXkQa = 128;
+void xk_set(int bits);
+int xk_bits();
+/// xtxkern DS4_XK_QA: Q5_K GEMV jobs (one activation: xq int8 [k], xd [k / 32] - q8_quant's) as ds4_iq's mv computes them
+/// (the same per-row code, grid and stores: y[r] = alpha (w_r . x) + bias[r]), each output also rounded to int8 into q [n] /
+/// qd [n / 32] with q8_quant's ops on the stored values.  false, nothing launched: kXkQa unset, not a gfx1100 HIP build,
+/// n not 1 .. 4, a job's k not a multiple of 256 or rows not a multiple of 32, a buffer missing.
+struct XkQaJob {
+    const uint8_t* w = nullptr;   // row 0 of the Q5_K blocks, ld bytes a row
+    size_t ld = 0;
+    const int8_t* xq = nullptr;
+    const float* xd = nullptr;
+    int k = 0, n = 0;
+    float* y = nullptr;
+    const float* bias = nullptr;
+    float alpha = 1.0f;
+    int8_t* q = nullptr;
+    float* qd = nullptr;
+};
+bool xk_mv_q5k_q8(const XkQaJob* jobs, int n, cudaStream_t s);
 /// out[t][k][e] = post[t][k] y[t][e] + sum_j comb[t][j][k] res[t][j][e]  (out must not alias res).
 void hc_post(const float* y, const float* res, const float* post, const float* comb, int dim, int hc, int T,
              float* out, cudaStream_t s);
@@ -95,6 +153,27 @@ void gemv_f16_rows(const uint16_t* W, const float* x, size_t ldx, int n, int k, 
 /// inference computes them (linear(x.float(), weight.float())) - a warp a row, the same summing order for any T, so
 /// the token, window and chunk paths get the same bits.
 void gemv_f32(const float* W, const float* x, int n, int k, int T, float* y, int ldy, cudaStream_t s);
+/// (DS4_ROUTE_FUSE, after Project Maya #511's gemv_f32_pair) gemv_f32 of two matrices on the same x in one launch:
+/// y0 = x W0 (n0 rows), y1 = x W1 (n1 rows), for T rows of x (k apart) into rows ldy apart - each row gemv_f32's code (a
+/// warp a row, a lane's float4s c = lane + 32 j in order, fmaf, the warp's sum), so its bits.  false, nothing launched:
+/// n0 or n1 not 1 .. 1024, k not a positive multiple of 4, T not 1 .. kWin, ldy < max(n0, n1); false: the launch did not
+/// go in.
+bool gemv_f32_pair(const float* W0, int n0, float* y0, const float* W1, int n1, float* y1, const float* x, int k, int T,
+                   int ldy, cudaStream_t s);
+/// (DS4_ROUTER_BF16, after Project Maya #745) the router's weights on the device: F32 (f), or the pack's BF16 rows as
+/// they are (h: half the bytes to read; each value widened to F32 exactly in the kernel, the same products summed in the
+/// same order - the bits of an F32 copy of them).  One is set (none: no router).
+struct GateW {
+    const float* f = nullptr;
+    const uint16_t* h = nullptr;
+    bool operator==(std::nullptr_t) const { return f == nullptr && h == nullptr; }
+    bool operator!=(std::nullptr_t) const { return !(*this == nullptr); }
+};
+/// gemv_f32 / gemv_f32_pair on such weights: F32 ones as above (the same kernels), BF16 ones by the same code on the
+/// widened values.  A pair of one F32 and one BF16 router: each its own launch.
+void gemv_f32(GateW W, const float* x, int n, int k, int T, float* y, int ldy, cudaStream_t s);
+bool gemv_f32_pair(GateW W0, int n0, float* y0, GateW W1, int n1, float* y1, const float* x, int k, int T, int ldy,
+                   cudaStream_t s);
 
 /// The router, row t: scores = sqrt(softplus(logits[t])) (n experts, rows 1024 apart), the top `k` of scores + bias;
 /// weights from the unbiased scores, normalized to sum 1 (+1e-20) and times route_scale -> idx[t][i], w[t][i] (rows
@@ -108,6 +187,19 @@ void route(const float* logits, const float* bias, int n, int k, int T, float ro
 
 /// h = silu(min(g, lim)) * clamp(u, -lim, lim)  (lim <= 0: no clamp); n values.
 void swiglu(const float* g, const float* u, int n, float lim, float* h, cudaStream_t s);
+/// (DS4_DECODE_TRIM bit 1, after Project Maya #512) swiglu, its stored values also rounded to int8 as gguf mv rounds a
+/// Q8_0 / low-bit job's input: q [n], qd [n / 32] - 32-blocks of the flat array (rows of k values, k % 32 == 0, are rows
+/// of q k apart).  false, nothing launched: n % 32 != 0, q or qd null.
+bool swiglu_q8(const float* g, const float* u, int n, float lim, float* h, int8_t* q, float* qd, cudaStream_t s);
+/// (DS4_DECODE_TRIM bit 4, after Project Maya #512) up to 4 copies of 4-byte multiples between 4-aligned device ranges
+/// in one kernel (false, nothing launched: a range not so, or n not 1 .. 4).
+struct CopyRegions {
+    void* dst[4] = {nullptr, nullptr, nullptr, nullptr};
+    const void* src[4] = {nullptr, nullptr, nullptr, nullptr};
+    size_t bytes[4] = {0, 0, 0, 0};
+    int n = 0;
+};
+bool copy_regions(const CopyRegions& r, cudaStream_t s);
 
 /// The ratio-r compressor over a window: token t (position p0 + t) takes slot (p0 + t) % r of the state; each token that
 /// completes a group writes the group's pooled latent (softmax over the slots, per value, then rmsnorm(w)) to the next
@@ -137,12 +229,23 @@ void index_score(const float* q, const float* w, const void* k, int heads, int h
                  int kfmt = kKvFp4p);
 /// The top r.k[t] of vals[t][0, r.n[t]) (row t at vals + t * stride): their positions (unordered; with candidates
 /// cand[t][i / blk] * blk + i % blk) into out[t][0, k).  r.k[t] >= r.n[t] takes them all.
+/// (DS4_TOPK_MB) mb != nullptr, r.gen == 0, T <= mb_rows and the widest row's n >= mb_min: topk_mb instead (the
+/// same out bits); mb nullptr (the default): the one-workgroup kernel, as before.
 void topk(const float* vals, long long stride, int T, const Rows& r, const int* cand, int cand_stride, int blk,
-          int* out, int out_stride, cudaStream_t s);
+          int* out, int out_stride, cudaStream_t s, unsigned* mb = nullptr, int mb_rows = 0, int mb_min = 0);
+/// (DS4_TOPK_MB) the multi-block top-k, r.gen == 0 rows only: up to kTopkMbMaxG workgroups a row, the k-th largest
+/// key by three histogram levels (key bits 31..20, 19..8, 7..0), then every key above it and the lowest-position keys
+/// equal to it, written in index order - the one-workgroup kernel's out[t][0, k) bit for bit (its rule: the same k-th
+/// key, the ties kept are the lowest positions, the keys above it first in index order, then the ties in index order).
+/// mb: T rows of kTopkMbRow unsigned (zero on entry; left zero on exit), on the stream's device, used by one stream.
+constexpr int kTopkMbRow = 8704, kTopkMbMaxG = 64;
+void topk_mb(const float* vals, long long stride, int T, const Rows& r, const int* cand, int cand_stride, int blk,
+             int* out, int out_stride, unsigned* mb, cudaStream_t s);
 /// Level one of the candidate pre-filter, row t: block b's score = the max over its blk positions of the r.n[t] the
 /// query sees; the block of its newest position is pinned; the top r.k[t] blocks -> out[t] (bm: scratch rows bm_stride).
+/// (mb, mb_rows, mb_min: passed to its topk)
 void cand_blocks(const float* score, long long stride, int T, const Rows& r, int blk, float* bm, long long bm_stride,
-                 int* out, int out_stride, cudaStream_t s);
+                 int* out, int out_stride, cudaStream_t s, unsigned* mb = nullptr, int mb_rows = 0, int mb_min = 0);
 
 /// Sparse attention, query t: heads x d values of q[t] against win rows win0[t] .. win0[t] + nwin[t] - 1 of the window
 /// buffer (d BF16 each) and the nsel[t] compressed rows ckv[sel[t][i]] (format ckv_fmt: the cache's kKvFp4, or kKvBf16);
@@ -164,12 +267,27 @@ struct AttnRows {
 };
 void sparse_attn(const float* q, const uint16_t* win, const void* ckv, const int* sel, int sel_stride,
                  const AttnRows& a, const float* sink, int heads, int d, int T, float scale, float* out, cudaStream_t s,
-                 int ckv_fmt = kKvFp4, int heads_per_block = 0, const AttnScratch* scr = nullptr);
+                 int ckv_fmt = kKvFp4, int heads_per_block = 0, const AttnScratch* scr = nullptr, int layer = -1,
+                 bool sel_done = false);   // (DS4_ATTN_MERGE=3: true - finish_multi_sel already ran this call's unpack)
+/// (docs/dsv41/cards/PF-02.md; HIP builds): the test hook of tests/dsv41/fattn_test.cu - the chunked prompt's packed-KV
+/// attention (a.gen != 0, kKvFp4 rows, d 512) with the kernel forced: mode -1 the scalar sparse_attn_packed_kernel, 0 .. the
+/// sparse_attn_wmma_kernel variants of DS4_FAST_ATTN_MODE (fast_attn_mode_name(mode): its name, null past the last).
+/// False: the shape does not take the fast kernel (T < 16, heads not a multiple of 16).
+bool sparse_attn_forced(int mode, const float* q, const uint16_t* win, const void* ckv, const int* sel, int sel_stride,
+                        const AttnRows& a, const float* sink, int heads, int T, float scale, float* out, cudaStream_t s);
+const char* fast_attn_mode_name(int mode);
+/// the engine runs tensor-parallel groups (a group of more than one member) - DS4_FAST_ATTN's default is on for gfx1100
+/// there (mode f32; docs/dsv41/cards/PF-02.md).  Set once at setup, before the first prompt; DS4_FAST_ATTN=0 / 1 still wins.
+void set_fast_attn_tp(bool tp_groups);
 /// The window buffer: ext[r] = ring[(p0 - n + r) % n] for the n rows before p0 (zeros before position 0); afterwards
 /// ring[(p0 + t) % n] = ext[n + t] for t < T.  The ring's rows kKvFp8 (each group of 32 at the smallest power-of-two
 /// scale its BF16 values fit under: exact for values on the FP8 grid, the window's), the window buffer's BF16 (p0 = n:
 /// the ring's rows as they lie).
 void ring_to_ext(const uint8_t* ring, uint16_t* ext, int64_t p0, int n, int d, cudaStream_t s);
+/// rows strided copy by a kernel, `rows` rows of `width` bytes from src (pitch sp: device memory, or pinned host
+/// memory's mapped address - the TP prompt stream's down parts, DS4_TP_DIRECT) to dst (pitch dp).  One launch; the widest
+/// word all of the addresses, pitches and the width allow.
+void tp_strided_rows(uint8_t* dst, size_t dp, const uint8_t* src, size_t sp, size_t width, int rows, cudaStream_t s);
 void ext_to_ring(const uint16_t* ext, uint8_t* ring, int64_t p0, int n, int T, int d, cudaStream_t s,
                  uint8_t* backup = nullptr);
 /// A speculative window's rollback: ring[(p0 + t) % n] = backup[t] for keep <= t < T (the rows ext_to_ring replaced).
@@ -182,6 +300,46 @@ struct RingBatch {
     int n = 0;
 };
 void ring_restore_batch(const RingBatch& b, int64_t p0, int n, int keep, int T, int d, cudaStream_t s);
+
+/// DS4_MULTI_ATTN (docs/dsv41/cards/FG-05.md; ported from Project Maya #639, MIT - third_party/project-maya/NOTICE.md): a
+/// batch step's attention for the rows of several sequences in one launch each, where attn_batch launches it once a
+/// sequence.  A run is one sequence's contiguous rows; each run's window buffer is its own block of one shared buffer
+/// (ds4_multi_attn.hpp).  Every kernel below is the single-run kernel's code with only its row / run indexing changed,
+/// so each row's bits are the single-run launch's.  HIP / CUDA only (Metal: not built, the caller keeps the per-run path).
+///
+/// The few-queries path of sparse_attn (kKvFp4, a.gen 0) for T rows of several sequences: row t's compressed rows from
+/// its own cache ckv[t] (null with nsel 0), its window rows a.win0 / a.nwin of `win`, its selection sel[t], its scratch
+/// rows scr's t-th - unpack_sel_kernel then sparse_attn_kernel<true, 0> (non-HIP `one`: <true, 8>, the T = 1 kernel).
+struct AttnCkv {
+    const void* ckv[kWin] = {};
+};
+/// whether sparse_attn takes its few-queries path for every run of a step - runs of at most kAttnScratchT rows,
+/// DS4_ATTN_SPLIT off - and sparse_attn_rows can take all T rows in one launch (T <= scr->max_t, sel_stride <=
+/// scr->cap).  mixed: the runs are neither all of one row nor all of several (non-HIP builds pick the T = 1 kernel by
+/// run, so they keep the per-run path then)
+bool sparse_attn_rows_ok(int T, int max_run, int sel_stride, const AttnScratch* scr, bool mixed);
+void sparse_attn_rows(const float* q, const uint16_t* win, const AttnCkv& c, const int* sel, int sel_stride,
+                      const AttnRows& a, const float* sink, int heads, int d, int T, float scale, float* out,
+                      cudaStream_t s, bool one, const AttnScratch* scr);
+/// ring_to_ext / ext_to_ring for every run at once: run k has T[k] rows from position p0[k], its ring ring[k], its
+/// window buffer rows e0[k] .. e0[k] + n + T[k] - 1 of `ext`, its backups bak[k] (or null)
+struct RingRuns {
+    uint8_t* ring[kWin] = {};
+    uint8_t* bak[kWin] = {};
+    long long p0[kWin] = {};
+    int e0[kWin] = {}, T[kWin] = {};
+    int runs = 0;
+};
+void ring_to_ext_runs(const RingRuns& r, uint16_t* ext, int n, int d, cudaStream_t s);
+void ext_to_ring_runs(const RingRuns& r, const uint16_t* ext, int n, int d, cudaStream_t s);
+/// finish over the rows of several sequences: vector v is row v / f.vpp's, which takes the rope position pos[row]
+/// (f.pos and f.pos_step not read) and, with f.dst, writes to f.dst + (dst[row] f.vpp + v % f.vpp) f.dst_stride.  No
+/// pdst (false, nothing launched; also more than kWin rows)
+struct FinishRows {
+    int pos[kWin] = {};
+    int dst[kWin] = {};
+};
+bool finish_rows(float* x, int n_vec, int len, long long stride, const Finish& f, const FinishRows& r, cudaStream_t s);
 
 /// Engram.  rows: n rows of hd values -> out F32 [n * hd].  fmt, the pack's row layout: 0 FP8 E4M3 values with E8M0
 /// scales (scales: n x (hd / 32)); 1 ggml Q6_K superblocks (hd / 256 of 210 bytes at the start of each row's hd bytes;
@@ -239,9 +397,46 @@ void route_publish(const float* logits, const float* bias, int n, int k, int T, 
                    const unsigned long long* vram, const float* x, int dim, int* idx, float* w,
                    unsigned long long* plan_ptr, Req* req, unsigned seq, cudaStream_t s, const float* bias_vl = nullptr,
                    unsigned vl = 0, int na0 = 0, int na1 = 0);
+/// DS4_LP_ROUTE / DS4_LP_PUBFUSE (docs/dsv41/cards/HX-21.md): route_publish with (fast) the k best found per warp and
+/// merged by one warp - the old rounds' picks in their order whenever the k best scores are above -FLT_MAX and none is NaN,
+/// else the old rounds in the same launch - and (pub, a request of one row) the publish's stores at the end of the routing's
+/// launch instead of publish_kernel's own.  The same bytes everywhere; both false (or n / k out of range): route_publish.
+void route_publish_lp(bool fast, bool pub, const float* logits, const float* bias, int n, int k, int T, float route_scale,
+                      const unsigned long long* vram, const float* x, int dim, int* idx, float* w,
+                      unsigned long long* plan_ptr, Req* req, unsigned seq, cudaStream_t s, const float* bias_vl = nullptr,
+                      unsigned vl = 0, int na0 = 0, int na1 = 0, unsigned* pub_cnt = nullptr);
+/// (helperwin DS4_HW_PUBT: pub_cnt, a device word that is 0 between launches - given, PUB publishes a window of T > 1
+/// rows too, from the routing launch's last block to finish; null: T > 1 keeps publish_kernel's launch)
 /// Lookahead: the m picks a later layer will likely make (its gate's logits on this layer's FFN input, the routing's
 /// score + bias, the m best of n) into req->ahead[t][off ..) for the T tokens - before route_publish, which publishes them.
 void route_ahead(const float* logits, const float* bias, int n, int m, int T, Req* req, int off, cudaStream_t s);
+/// (DS4_ROUTE_FUSE, after Project Maya #511's route_pair) route_publish's routing and route_ahead's guesses for the
+/// next layer in one launch of two blocks a row (block 0 route_publish_kernel's code: idx / w / plan_ptr and the
+/// request's ids / w / x; block 1 route_ahead_kernel's: req->ahead[t][off ..) - disjoint writes, the same reads), then
+/// publish_kernel as route_publish launches it (na0 / na1, T, seq).  The caller passes bias_vl only with vl != 0, as
+/// route_publish does.  false, nothing launched: no request, n or a_n not 1 .. 1024, k not 1 .. kPicks, m < 1 or off + m
+/// past kAhead, dim not 1 .. kMaxDim, T not 1 .. kWin; false, nothing published: the routing's launch did not go in;
+/// false: the publish's launch did not go in.
+struct RoutePair {
+    const float *logits = nullptr, *bias = nullptr;   // route_publish's
+    int n = 0, k = 0;
+    float route_scale = 1.0f;
+    const unsigned long long* vram = nullptr;
+    const float* x = nullptr;
+    int dim = 0;
+    int* idx = nullptr;
+    float* w = nullptr;
+    unsigned long long* plan_ptr = nullptr;
+    Req* req = nullptr;
+    const float* bias_vl = nullptr;
+    unsigned vl = 0;
+    unsigned seq = 0;
+    int na0 = 0, na1 = 0;
+    const float *a_logits = nullptr, *a_bias = nullptr;   // route_ahead's
+    int a_n = 0, m = 0, off = 0;
+    int T = 1;
+};
+bool route_pair(const RoutePair& a, cudaStream_t s);
 /// The RAM store's picks for the device (a decode token's k plan pointers): those the VRAM table left at 0 whose expert zc_tab has (the
 /// slot's device address) are copied into stage slot i (stride apart, `bytes` each) and the plan then points there.
 void zc_stage(unsigned long long* plan, const int* idx, const unsigned long long* zc_tab, int k, uint8_t* stage, size_t stride, size_t bytes,
@@ -310,8 +505,107 @@ struct ArGroup {
     // member order, then reads the others' sums) - [slots][stride] sums, [2][nm][slots][kArBlocks][8] flags
     float* sums = nullptr;
     unsigned* bflags = nullptr;
+    // DS4_AR_P2PK=1 (a prompt chunk's group, three members or more, peer access between every pair): the all-reduce
+    // as a reduce-scatter + all-gather of kernel stores straight into the peers' VRAM (ar_p2pk_kernel), no host memory.
+    // On member m, all hipDeviceMallocUncached: pk_buf[m] [2 parities][nm - 1 senders][pk_cap] 16-byte units (a sender's
+    // slot: its partial of m's chunk, then its own chunk's sum), pk_flags[m] [2][3 kinds][nm senders][pk_maxt tiles][8],
+    // pk_err[m] the error words of a bounded wait.  pk_w: the chunk weights (member order; DS4_AR_P2PK_SPLIT), pk_tu the
+    // tile in units.  p2pk 0: the host-mapped path; 1: on.  The decode windows' group (ArGroup ar) never has it
+    static constexpr int kPkMax = 8;
+    int p2pk = 0;
+    void* pk_buf[kPkMax] = {};
+    unsigned* pk_flags[kPkMax] = {};
+    unsigned* pk_err[kPkMax] = {};
+    long long pk_cap = 0;
+    int pk_maxt = 0, pk_tu = 0;
+    int pk_w[kPkMax] = {};
 };
-constexpr int kArBlocks = 64;
+constexpr int kArBlocks = 512;   // (the flags' room; the blocks a launch takes: ar_blocks(), DS4_AR_BLOCKS)
 void allreduce(float* x, int n, const ArGroup& a, int mi, unsigned seq, unsigned* cnt, cudaStream_t s);
+/// DS4_AR_P2PK: the tile in 16-byte units (DS4_AR_P2PK_TILE KiB, default 64) and the blocks a launch takes at most
+/// (DS4_AR_P2PK_BLOCKS, default 192) - process-wide, so the same on every member
+int p2pk_tile_units();
+int p2pk_blocks();
+int p2pk_order();
+/// DS4_AR_P2PK: the units (16 bytes: 4 floats F32, 8 halves F16) a call of n floats takes, 0 if p2pk cannot take it
+long long p2pk_units(int n, bool f16);
+/// DS4_AR_P2PK load-time self-test: one ar_p2pk_kernel all-reduce in the given precision whose waits give up (the
+/// error word set) instead of spinning on; false if the call does not fit the group's buffers (nothing launched)
+bool allreduce_p2pk_test(float* x, int n, const ArGroup& a, int mi, unsigned seq, bool f16, cudaStream_t s);
+/// the host-mapped reduce-scatter (ar_rs_kernel / ar_rs16_kernel) in a forced precision - the self-test's reference
+void allreduce_rs_ref(float* x, int n, const ArGroup& a, int mi, unsigned seq, bool f16, cudaStream_t s);
+/// x[i] = y[i] = a random float of member m (seed; full mantissas, exponents past FP16's range at both ends)
+void p2pk_fill(float* x, float* y, size_t n, unsigned seed, int m, cudaStream_t s);
+/// out[0] += the i with a's bits != b's, out[1] = min(out[1], the first such i)  (out set to {0, ~0} beforehand)
+void p2pk_cmp(const float* a, const float* b, size_t n, unsigned* out, cudaStream_t s);
+
+// ---- DS4_AR_POST (docs/dsv41/cards/FG-07.md; default off).  A decode / verify window's all-reduce on the one-phase
+// host path (DS4_AR_FUSE's xfer_put + ar_sum) with the launches after it folded in:
+//   bit 1: hc_post (out = post * y + sum_j comb[j][k] h[j], hc_post_kernel's per-element code, on the summed value the
+//          thread holds: the same bits) runs in the sum kernel - one launch fewer an all-reduce;
+//   bit 2: the put too (each block puts its range of this member's partial and raises its own flag, as ar_rs_kernel's
+//          first round does, then sums its range over the members in member order - ar_sum_kernel's chain, the same
+//          bits) - one launch fewer again.  Three members or more (the per-block flags of the reduce-scatter's rows).
+// false: the call is not one it takes (another path, a shape it does not cover) - nothing launched, the caller runs
+// allreduce() (and hc_post) as before.
+struct HcPost {
+    const float* res = nullptr;    // h  [T][hc][dim]
+    const float* post = nullptr;   // [T][8]
+    const float* comb = nullptr;   // [T][64]
+    float* out = nullptr;          // h2 [T][hc][dim]
+    int dim = 0, hc = 0;
+};
+bool allreduce_post(float* x, int n, const ArGroup& a, int mi, unsigned seq, unsigned* cnt, const HcPost* hp, int mode,
+                    cudaStream_t s);
+/// The load-time check's run of allreduce_post's kernels on one device alone (nm 1, rows / flags scratch of the caller's,
+/// device memory): x is its own sum, so it compares the folded hc_post (and the put's copy into rows) with hc_post's
+/// launch.  false: not launched.
+bool allreduce_post_selftest(float* x, int n, float* rows, unsigned* flags, const HcPost& hp, int mode, cudaStream_t s);
+
+// ---- DS4_ATTN_MERGE (docs/dsv41/cards/FG-07.md; default off).  Independent launches of a decode window's attention
+// as one launch, each block running its op's kernel body for its row (finish_kernel<false, kQ8>, ring_to_ext_kernel,
+// ext_to_ring_kernel - the same per-element code): the same bits, fewer launches.  The ops of one call must not read
+// what another writes.  false: an op finish() / ring_to_ext() / ext_to_ring() would refuse - nothing launched.
+struct FinOp {
+    int kind = 0;   // 0 finish (q8: f.q8 set), 1 ring_to_ext, 2 ext_to_ring
+    // finish
+    float* x = nullptr;
+    int n_vec = 0, len = 0;
+    long long stride = 0;
+    Finish f;
+    // ring_to_ext (ring -> ext) / ext_to_ring (ext -> ring, backup)
+    const uint8_t* ring_r = nullptr;
+    uint8_t* ring_w = nullptr;
+    uint16_t* ext_w = nullptr;
+    const uint16_t* ext_r = nullptr;
+    uint8_t* backup = nullptr;
+    long long p0 = 0;
+    int n = 0, T = 0, d = 0;
+};
+constexpr int kFinOps = 3;
+bool finish_multi(const FinOp* ops, int nops, cudaStream_t s);
+// ---- DS4_ATTN_MERGE=3 (FG-16 item 3; default off: =2 and below never call these).  sparse_attn's few-queries
+// unpack - unpack_sel_kernel: each query's selected compressed rows decoded to BF16 rows of the scratch - as one more kind of
+// block in the second merged launch (q's RoPE + the KV row into the ring): its blocks run unpack_sel_kernel's body for their
+// (x, y) block, the same code, so the same bits (the values are exact products anyway).  It reads ckv and sel and writes only
+// the scratch rows, so it is independent of that launch's ops; the caller folds it only where nothing between that launch
+// and sparse_attn writes ckv's selected rows, sel or the scratch.  HIP, gfx1100 code objects only (no gfx906 code).
+struct SelOp {
+    const uint8_t* ckv = nullptr;
+    const int* sel = nullptr;
+    int sel_stride = 0, cap = 0, T = 0;
+    uint16_t* out = nullptr;
+    AttnRows a;
+};
+/// whether sparse_attn(q, win, ckv, sel, sel_stride, a, sink, heads, d, T, scale, out, s, ckv_fmt, heads_per_block, scr)
+/// launches unpack_sel_kernel (its few-queries path: kKvFp4 rows, d 512, DS4_ATTN_SPLIT off, a scratch that fits) on this
+/// device (gfx1100); true: u holds that launch's arguments
+bool sparse_attn_sel_op(const void* ckv, const int* sel, int sel_stride, const AttnRows& a, int d, int T, int ckv_fmt,
+                        int heads_per_block, const AttnScratch* scr, SelOp& u);
+/// finish_multi(ops, nops, s)'s launch with u's unpack blocks after the ops' blocks (each checked as finish_multi checks it);
+/// false: nothing launched
+bool finish_multi_sel(const FinOp* ops, int nops, const SelOp& u, cudaStream_t s);
+/// DS4_ATTN_MERGE=3's load check reference: unpack_sel_kernel launched exactly as sparse_attn launches it (false: not launched)
+bool unpack_sel_ref(const SelOp& u, cudaStream_t s);
 
 }  // namespace strata::ds4

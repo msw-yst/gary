@@ -1,0 +1,16 @@
+l3run l3-20261112T212653Z - NEW <path> (<hash>); D13S <path>; env: DS4_BATCH_DECODE=1 DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1 DS4_EG_AHEAD=1 DS4_TOPK_MB=1 DS4_PF_HELPER=8192; tp4h4: --gpus 0,1,2,8 --tp 4 --helper-device 4,5,6,7; lead HIP 0; rows: --max-context 16384 
+== identity
+ID id-U vs id-D13: stdout IDENTICAL | placement (7148 of 15744 in VRAM) (7148 of 15744 in VRAM) (7148 of 15744 in VRAM) (7148 of 15744 in VRAM) | lines ok
+ID id-P2 vs id-U: stdout IDENTICAL | placement (7148 of 15744 in VRAM) (7148 of 15744 in VRAM) (7148 of 15744 in VRAM) (7148 of 15744 in VRAM) | lines ok
+== L3: V(T) ms a step, B 1, teacher-forced, s1 8K (MEASURED; mean over reps)
+L3 P0: n3 V(1-4) 14.983 / 17.706 / 20.114 / 23.099 | c (T2-4) +2.697 spread +0.355 | helper entries a step T1/T2 62.1 / 123.7
+L3 P1: n3 V(1-4) 17.288 / 19.857 / 22.106 / 24.854 | c (T2-4) +2.499 spread +0.156 | helper entries a step T1/T2 62.1 / 123.7
+L3 P2: n3 V(1-4) 19.788 / 22.281 / 24.561 / 27.167 | c (T2-4) +2.443 spread +0.023 | helper entries a step T1/T2 62.1 / 123.7
+VERDICT L3 c: 2.697 ms a row (T2-4), pre-registered 2.3..2.9: WITHIN
+# per-token growth with context, and the host tail (l14-20261113T060228Z)
+GAP F2K - F64: +1.119 ms (book best11 0.97, B12 1.03) | ROUTE F2B - F2K: +0.218 ms (predicted |ROUTE| <= 0.40) | N 0.100
+VERDICT L14: CONTEXT-DOMINATED (GAP +1.119, CTX +1.135, TRAJ -0.116, INT -0.148, N 0.100); predicted CONTEXT-DOMINATED
+per-layer sparse attention, raw median us (ts-64 / ts-2k / delta): 0:20/20/-0 1:20/20/+0 2:32/56/+23 3:31/54/+23 4:31/54/+23 5:31/54/+23 6:31/54/+23 7:31/54/+23 8:32/55/+23 9:31/54/+23 10:31/54/+23 11:31/54/+23 12:31/54/+23 13:31/54/+23 14:33/56/+23 15:31/54/+23 16:31/54/+23 17:31/54/+23 18:31/54/+23 19:31/54/+23 20:41/55/+15 21:40/54/+14 22:39/54/+14 23:39/54/+14 24:40/55/+15 25:40/54/+14 26:39/54/+15 27:40/54/+14 28:41/55/+15 29:40/54/+14 30:40/54/+14 31:39/54/+14 32:40/55/+15 33:40/54/+14 34:40/54/+14 35:40/54/+14 36:40/55/+15 37:40/54/+14 38:39/54/+14 39:40/54/+14
+  sum of per-layer deltas: layers 0-1 -0.000 ms, layers 2-39 +0.700 ms (pred 0 / +0.96 [+0.80, +1.15])
+VERDICT L10: UNDECIDED (HR without the drafter 0.118 ms; pred 0.17-0.30 -> PURSUE) | with drafter loaded (seed queued ahead): ts-2k HR 0.415
+VERDICT B12: AGREES (B12 CTX +1.117 vs NEW CTX +1.135; rule |diff| <= 0.30)

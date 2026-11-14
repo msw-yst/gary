@@ -1,0 +1,7 @@
+== before (13:50:54)
+== pinned, idle (13:54:08)
+== B1 tp4h4 untraced (MEASURED)
+-- pin-before : decode: 256 tokens in 4374 ms (58.31 tok/s); CPU lane: 0 of  | helper per token: 44.2 experts, the lane's issue + wait 4.86 ms
+helper timeline T 1: 6942 requests, us each: XTX gap (last answer -> request) 309.8 | request -> issued 21.8 | issued -> CPU lane done 0.0 | -> joined 157.4 | -> published 0.0 | request -> answer 179.3
+-- pin-after : decode: 256 tokens in 4184 ms (60.95 tok/s); CPU lane: 0 of  | helper per token: 44.2 experts, the lane's issue + wait 4.13 ms
+helper timeline T 1: 6942 requests, us each: XTX gap (last answer -> request) 309.6 | request -> issued 22.7 | issued -> CPU lane done 0.0 | -> joined 129.5 | -> published 0.0 | request -> answer 152.2

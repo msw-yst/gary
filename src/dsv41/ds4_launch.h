@@ -20,6 +20,62 @@ inline void strata_ds4_launch_at(const char* file, int line, void (*kernel)(KA..
 }
 #define strata_ds4_launch(...) strata_ds4_launch_at(__FILE__, __LINE__, __VA_ARGS__)
 
+// diagnostics (STRATA_DS4_DIAG=1; HIP builds; docs/dsv41/cards/EB-04.md): the engine's launch
+// error reports name the device, arch, raw error code, free VRAM, thread and time of a device's FIRST failure in full and count
+// the rest (summary at exit).  ds4_diag_launch_error returns true when it handled the report (the caller then skips its own line).
+#if defined(STRATA_USE_HIP)
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <mutex>
+#include <thread>
+inline bool ds4_diag_on() {
+    static const bool on = [] { const char* v = std::getenv("STRATA_DS4_DIAG"); return v != nullptr && *v != 0 && *v != '0'; }();
+    return on;
+}
+inline double ds4_diag_s() {   // seconds on the monotonic clock since the first call
+    using C = std::chrono::steady_clock;
+    static const C::time_point t0 = C::now();
+    return std::chrono::duration<double>(C::now() - t0).count();
+}
+struct Ds4DiagErrs {
+    static constexpr int kMax = 64;
+    std::atomic<long> n[kMax];
+    std::mutex mu;
+    Ds4DiagErrs() { for (auto& a : n) a.store(0); }
+    void summary() {
+        for (int i = 0; i < kMax; ++i)
+            if (n[i].load() > 1)
+                std::fprintf(stderr, "DIAG: HIP device %d: %ld launch failures in all (the first is reported in full above)\n", i,
+                             n[i].load());
+    }
+    ~Ds4DiagErrs() { summary(); }
+};
+inline Ds4DiagErrs& ds4_diag_errs() {
+    static Ds4DiagErrs e;
+    return e;
+}
+inline bool ds4_diag_launch_error(const char* where, const char* what, int code) {
+    if (!ds4_diag_on()) return false;
+    int dev = -1;
+    (void) hipGetDevice(&dev);
+    Ds4DiagErrs& E = ds4_diag_errs();
+    const int slot = dev >= 0 && dev < Ds4DiagErrs::kMax ? dev : Ds4DiagErrs::kMax - 1;
+    if (E.n[slot].fetch_add(1) != 0) return true;
+    hipDeviceProp_t p{};
+    (void) hipGetDeviceProperties(&p, dev);
+    size_t fr = 0, tot = 0;
+    const int me = (int) hipMemGetInfo(&fr, &tot);
+    std::lock_guard<std::mutex> lk(E.mu);
+    std::fprintf(stderr, "DIAG first launch failure on HIP device %d (%s, %s): %s %s: code %d %s (%s); free %.0f of %.0f MiB "
+                         "(hipMemGetInfo %d); thread %zu; t=%.3f s\n",
+                 dev, p.gcnArchName, p.name, where, what, code, code != 0 ? hipGetErrorName((hipError_t) code) : "(message only)",
+                 code != 0 ? hipGetErrorString((hipError_t) code) : "no error code", (double) fr / 1048576.0, (double) tot / 1048576.0,
+                 me, std::hash<std::thread::id>()(std::this_thread::get_id()), ds4_diag_s());
+    return true;
+}
+#endif
+
 // (the Metal debug dumps in ds4_model.cu name these; on CUDA there is no deferred queue and a device pointer is not a host view)
 inline void ds4_metal_flush() {}
 namespace strata::gpu {

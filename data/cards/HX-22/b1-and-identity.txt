@@ -1,0 +1,15 @@
+b12run b12-20261111T042817Z - NEW <path> (+ B10E: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path>; ABDDS: DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1); tp4h4: --gpus 0,1,2,7 --tp 4 --helper-device 3,4,5,6; N 256; REPS 3
+stacks: F = DS4_AR_POST=3 DS4_ATTN_MERGE=2 | LP = DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 | HW = DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 | MK = DS4_MK_GU=1 DS4_MK_DN=1
+ID FLP vs OFF: decode IDENTICAL | drafter IDENTICAL | bt IDENTICAL | lines ok
+ID FLPHW vs OFF: decode IDENTICAL | drafter IDENTICAL | bt IDENTICAL | lines ok
+     20 ds4 helper: device N DS4_HW_HEADQ8 check: 16 rows of 5120 (random / zero / NaN / inf / denormal / huge / equal / signed zero / sparse / scaled): the head's int8 rounding q8_quant_kernel's bit 
+     24 ds4 helper: device N DS4_LP_FLAGFUSE=1: a body window's flag written by its combine's last block
+     20 ds4 helper: device N helperwin: DS4_HW_FOLD=1 (a body window's head, body and flag in one graph launch) DS4_HW_HEADQ8=1 (the head rounds x to int8; the body launches no q8_quant of x)
+      5 ds4: helperwin: DS4_HW_PUBT=1: a window of up to 16 rows published by its routing launch's last block (checked at load with DS4_LP_PUBFUSE)
+B1 OFF: 14.384 [14.378-14.393] n3 | +0.000 (+0.0%) NOT SEPARABLE FROM NOISE | predicted -
+B1 F: 13.685 [13.659-13.701] n3 | -0.699 (-4.9%) | predicted -0.60 .. -0.73 (MEASURED alone -0.667, fusion-20261111T004545Z)
+B1 FLP: 13.452 [13.432-13.486] n3 | -0.932 (-6.5%) | predicted -0.75 .. -1.00 (central -0.88: F + LP's FLAGFUSE -0.20 / PUBFUSE -0.11, ~70 % additive)
+B1 FLPHW: 13.375 [13.349-13.399] n3 | -1.009 (-7.0%) | predicted -0.85 .. -1.25 (central -1.02: + FOLD + HEADQ8 -0.10 .. -0.25; PUBT = PUBFUSE at T 1)
+   arms: P0 OFF | PB [DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1] | PN PB + DS4_G906_NEMAX=4 | PA PN + DS4_DSPARK_ADAPT=1 (policy --dspark-conf 0.3 --dspark-block 3)
+B8 OFF: 41.333 [40.700-42.200] n3 | reps 40.7 42.2 41.1 | 
+B8 BEST: 38.533 [38.400-38.600] n3 | reps 38.4 38.6 38.6 | vs OFF -2.800 (-6.8%) | predicted -0.8 .. -2.0 ms a step (MK inert at T 8); NOT SEPARABLE likely (leadpath's B8 base drifted 44.5 -> 52.2)

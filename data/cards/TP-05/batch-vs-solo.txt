@@ -1,0 +1,24 @@
+== bt-tp3h3-1 rc=3
+batch-test B=8: 255 steps in 17167 ms (67.3 ms a step): 14.85 tok/s a sequence, 118.83 tok/s in all (solo 49.76 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 23; seq 1 DIFFERS
+== bt-tp3h3-2 rc=3
+batch-test B=8: 255 steps in 17140 ms (67.2 ms a step): 14.88 tok/s a sequence, 119.02 tok/s in all (solo 49.87 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 23; seq 1 DIFFERS
+== bt-tp3h3-3 rc=3
+batch-test B=8: 255 steps in 17081 ms (67.0 ms a step): 14.93 tok/s a sequence, 119.43 tok/s in all (solo 49.80 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 23; seq 1 DIFFERS
+== bt-tp3h4-1 rc=3
+batch-test B=8: 255 steps in 17053 ms (66.9 ms a step): 14.95 tok/s a sequence, 119.63 tok/s in all (solo 49.06 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 45; seq 1 DIFFERS
+== bt-tp3h4-2 rc=3
+batch-test B=8: 255 steps in 17000 ms (66.7 ms a step): 15.00 tok/s a sequence, 120.00 tok/s in all (solo 49.04 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 45; seq 1 DIFFERS
+== bt-tp3h4-3 rc=3
+batch-test B=8: 255 steps in 17023 ms (66.8 ms a step): 14.98 tok/s a sequence, 119.84 tok/s in all (solo 49.13 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 45; seq 1 DIFFERS
+== bt-tp4h3-1 rc=3
+batch-test B=8: 255 steps in 18085 ms (70.9 ms a step): 14.10 tok/s a sequence, 112.80 tok/s in all (solo 53.89 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 3; seq 1 DIFFERS 
+== bt-tp4h3-2 rc=3
+batch-test B=8: 255 steps in 17721 ms (69.5 ms a step): 14.39 tok/s a sequence, 115.12 tok/s in all (solo 54.01 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 3; seq 1 DIFFERS 
+== bt-tp4h3-3 rc=3
+batch-test B=8: 255 steps in 17635 ms (69.2 ms a step): 14.46 tok/s a sequence, 115.68 tok/s in all (solo 53.80 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 3; seq 1 DIFFERS 
+== bt-tp4h4-1 rc=3
+batch-test B=8: 255 steps in 17955 ms (70.4 ms a step): 14.20 tok/s a sequence, 113.62 tok/s in all (solo 53.13 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 3; seq 1 DIFFERS 
+== bt-tp4h4-2 rc=3
+batch-test B=8: 255 steps in 18355 ms (72.0 ms a step): 13.89 tok/s a sequence, 111.14 tok/s in all (solo 53.07 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 3; seq 1 DIFFERS 
+== bt-tp4h4-3 rc=3
+batch-test B=8: 255 steps in 17869 ms (70.1 ms a step): 14.27 tok/s a sequence, 114.16 tok/s in all (solo 53.22 a sequence); greedy vs solo: 0 of 8 identical ( seq 0 DIFFERS at token 3; seq 1 DIFFERS 

@@ -1,0 +1,25 @@
+d13sid d13sid-20261113T041101Z - V d13s NEW <path> (<hash>) D13 <path>; served env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1; long env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2
+SRVID srvid-U vs srvid-REF (U; --serve PAR 1, greedy, T / DONE fields): IDENTICAL | T lines 1025 | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok
+SRVID srvid-U vs srvid-D13U (U; --serve PAR 1, greedy, T / DONE fields): IDENTICAL | T lines 1025 | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok
+SRVID srvid-ON vs srvid-D13 (ON; --serve PAR 1, greedy, T / DONE fields): IDENTICAL | T lines 1025 | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok
+SRV dref: lines ok | VRAM experts 6866 | so far 2401 steps (0 drafted), 4199 rows, drafts kept greedy 0/0 sampled 0/0, sampled rows in plain steps 4199
+SRV dx3: lines ok | VRAM experts 6866 | ds4 batch: bank 0 holds 1663 tokens of this prompt: taken into the model
+SRV lp3: lines ok | VRAM experts 6826 | so far 1539 steps (0 drafted), 4596 rows, drafts kept greedy 0/0 sampled 0/0, sampled rows in plain steps 4596
+SRV lx3: lines ok | VRAM experts 6826 | so far 538 steps (538 drafted), 5448 rows, drafts kept greedy 0/0 sampled 3015/3867, sampled rows in plain steps 0
+CMP A1.json vs A2.json: IDENTICAL (8 of 8 identical)
+CMP A2.json vs B3.json: IDENTICAL (8 of 8 identical)
+DCMP 600 vs 600 sequences, 10 tests at alpha 0.01 (Bonferroni 0.0010 each): PASS
+   DSANITY ref: n 600 of 600, distinct sequences 36 (line >= 25), top sequence share 0.318 (line <= 0.5), distinct seeds 600: ok
+   DSANITY test: n 600 of 600, distinct sequences 39 (line >= 25), top sequence share 0.330 (line <= 0.5), distinct seeds 600: ok
+   DCMP control pos 1 (the solo path's draw in both arms): chi2 0.3 df 4 p 0.9883 (line >= 0.001)
+dref BSTAT dist: steps 2401 (0 drafted), rows 4199, sampled drafts kept 0/0 (0.0 %), drafts a bank-round 0.00, tokens a bank-round 1.00, sampled rows in plain steps 4199
+dx3 BSTAT dist: steps 1505 (1505 drafted), rows 4657, sampled drafts kept 345/803 (43.0 %), drafts a bank-round 0.21, tokens a bank-round 1.09, sampled rows in plain steps 0
+dx3 BSTAT mid: steps 222 (222 drafted), rows 1893, sampled drafts kept 0/0 (0.0 %), drafts a bank-round 0.00, tokens a bank-round 1.00, sampled rows in plain steps 0
+dx3 BSTAT prime: steps 42 (42 drafted), rows 413, sampled drafts kept 0/0 (0.0 %), drafts a bank-round 0.00, tokens a bank-round 1.00, sampled rows in plain steps 0
+lp3 BSTAT load: steps 1539 (0 drafted), rows 4596, sampled drafts kept 0/0 (0.0 %), drafts a bank-round 0.00, tokens a bank-round 1.00, sampled rows in plain steps 4596
+lx3 BSTAT load: steps 538 (538 drafted), rows 5448, sampled drafts kept 3015/3867 (78.0 %), drafts a bank-round 2.45, tokens a bank-round 2.91, sampled rows in plain steps 0
+sbi: PASSED
+   SBR4 (dsv41srv12y, best12c2 + srvbatch, PAR 4): plain r4 128.24 [127.54-128.93], r4x3 158.89 [153.39-162.73] x1.239
+lp3 conc 3: total 129.56 [128.91-130.21] n3 | ms a token 23.16 [23.04-23.27] n3 | agg with prefill 61.29 [61.15-61.52] n3
+lx3 conc 3: total 157.79 [156.61-159.58] n3 | ms a token 19.02 [18.80-19.17] n3 | agg with prefill 66.82 [66.52-67.19] n3
+sbl: CONFIRMED (lx3 / lp3 = 1.218 >= 1.10; plain 129.556, drafted 157.789 tok/s at conc 3; SBR4 1.239)

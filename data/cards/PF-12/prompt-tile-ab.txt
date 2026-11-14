@@ -1,0 +1,15 @@
+# kernel bench verdicts (bench card, v1 / v2 / v3)
+VERDICT PFT: FAIL - PRIMARY NEW/OLD 1.318 (need <= 0.70), OLD - NEW -13.743 ms (need > 2 x IQR = 0.468), worst cell 1.586 (IQ2_XS:IQ2_XS T512 flat; need <= 1.05)
+VERDICT PFT2: FAIL - chosen arm C2L (lowest PRIMARY ratio among arms exact everywhere); PRIMARY x0.673 (need <= 0.70, OLD - NEW 14.136 ms vs 2 x IQR 0.244); HELD-OUT: IQ2_XXS:IQ2_S T8192 real x0.695; IQ2_XS:IQ2_XS T8192 real x0.783 (FAILS); IQ2_XS:IQ2_S T8192 real x0.776 (FAILS); worst cell x1.254 (IQ2_XS:IQ2_XS T512 flat; need <= 1.05)
+VERDICT PFT3: PASS - DISPATCH type-mix-weighted 8K total x0.706 (need <= 0.75); worst 8K cell x0.791 (IQ2_XS:IQ2_XS T8192 meas; need <= 0.85); worst cell x0.996 (IQ2_XS:IQ3_XXS T256 tiny; need <= 1.03)
+# engine port: identity and served A/B
+d13sid pfe-20261113T104144Z - V pfe NEW <path> (<hash>) D13 <path>; served env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1; long env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS
+SRVID pid-U vs pid-REF (U; --serve PAR 1, greedy, T / DONE fields): IDENTICAL | T lines 1025 | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok
+SRVID pid-ON vs pid-OFF (ON; --serve PAR 1, greedy, T / DONE fields): IDENTICAL | T lines 1025 | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok
+== DS4_PF_TILE prefill A/B (median ttft s over every request of every round; [min .. max of the round medians, rounds])
+ttft 2k: OFF 2.700 [2.700 .. 2.700, 3] | ON 2.300 [2.300 .. 2.300, 3] | PLA 2.700 [2.700 .. 2.700, 3] | ON/OFF x0.852 PLA/OFF x1.000
+ttft 8k: OFF 7.200 [7.200 .. 7.200, 3] | ON 6.100 [6.100 .. 6.100, 3] | PLA 7.200 [7.200 .. 7.200, 3] | ON/OFF x0.847 PLA/OFF x1.000
+ttft 32k: OFF 27.000 [27.000 .. 27.100, 3] | ON 22.900 [22.900 .. 23.200, 3] | PLA 27.000 [27.000 .. 27.000, 3] | ON/OFF x0.848 PLA/OFF x1.000
+ttft c4-8k: OFF 18.150 [18.050 .. 18.150, 3] | ON 15.500 [15.400 .. 15.500, 3] | PLA 18.750 [18.100 .. 18.900, 3] | ON/OFF x0.854 PLA/OFF x1.033
+decode 2k (ms a token, serial): OFF 9.05 ON 9.02 PLA 9.02 | ON/OFF x0.9967 PLA/OFF x0.9967
+VERDICT PFE SPEED: PASS - 8k ttft ON/OFF x0.847 (need <= 0.93); placebo PLA/OFF x1.000 (need within +-3 %); decode ON/OFF x0.9967 (need <= 1.005)

@@ -1,0 +1,34 @@
+# Engine A/B of DS4_IXS_DISPATCH=16384: OLD = build 14, NEW = the dispatch build, PLA = NEW with the flag inert;
+# 4 alternating reps; drafter off, greedy, one session. NOTE: this run used 5 MI50 helpers (see card), not production's 4.
+IXID b1-NEW-1 vs b1-OLD-1 (T 1, greedy): stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | engagement ok (4 devices) | lines ok
+IXID b1-PLA-1 vs b1-OLD-1 (T 1, greedy): stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | engagement ok | lines ok
+IXID b1-NEW-2 vs b1-OLD-2 (T 1, greedy): stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | engagement ok (4 devices) | lines ok
+IXID b1-PLA-2 vs b1-OLD-2 (T 1, greedy): stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | engagement ok | lines ok
+IXID b1-NEW-3 vs b1-OLD-3 (T 1, greedy): stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | engagement ok (4 devices) | lines ok
+IXID b1-PLA-3 vs b1-OLD-3 (T 1, greedy): stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | engagement ok | lines ok
+IXID b1-NEW-4 vs b1-OLD-4 (T 1, greedy): stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | engagement ok (4 devices) | lines ok
+IXID b1-PLA-4 vs b1-OLD-4 (T 1, greedy): stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | engagement ok | lines ok
+b1: identity PASSED (every NEW / PLA rep == OLD's, greedy, same placement; NEW engaged)
+IXID b16-NEW-1 vs b16-OLD-1 (T 1, greedy): stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | engagement ok (4 devices) | lines ok
+IXID b16-PLA-1 vs b16-OLD-1 (T 1, greedy): stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | engagement ok | lines ok
+IXID b16-NEW-2 vs b16-OLD-2 (T 1, greedy): stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | engagement ok (4 devices) | lines ok
+IXID b16-PLA-2 vs b16-OLD-2 (T 1, greedy): stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | engagement ok | lines ok
+IXID b16-NEW-3 vs b16-OLD-3 (T 1, greedy): stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | engagement ok (4 devices) | lines ok
+IXID b16-PLA-3 vs b16-OLD-3 (T 1, greedy): stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | engagement ok | lines ok
+IXID b16-NEW-4 vs b16-OLD-4 (T 1, greedy): stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | engagement ok (4 devices) | lines ok
+IXID b16-PLA-4 vs b16-OLD-4 (T 1, greedy): stdout IDENTICAL | placement (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) (7150 of 15744 in VRAM) | engagement ok | lines ok
+b16: identity PASSED (every NEW / PLA rep == OLD's, greedy, same placement; NEW engaged)
+b1: NEW - OLD -0.1350 ms (rep spread 0.0348); PLA - OLD +0.0035 (spread 0.0487)
+b16: NEW - OLD -0.0417 ms (rep spread 0.0752); PLA - OLD +0.0172 (spread 0.0752)
+== b1: B1 decode, 64-id prompt, --dspark off, greedy, one session; ms a token, valid reps
+OLD: mean 13.1822 spread 0.0348 n 4 | 13.1735 13.1874 13.2013 13.1666
+NEW: mean 13.0472 spread 0.0204 n 4 | 13.0412 13.0548 13.0565 13.0361
+PLA: mean 13.1857 spread 0.0487 n 4 | 13.1944 13.1596 13.1804 13.2083
+b1: NEW - OLD -0.1350 ms (rep spread 0.0348); PLA - OLD +0.0035 (spread 0.0487)
+== b16: B1 decode, 15872-id prompt (~16K), --dspark off, greedy, one session; ms a token, valid reps
+OLD: mean 14.4577 spread 0.0752 n 4 | 14.4886 14.4134 14.4760 14.4530
+NEW: mean 14.4160 spread 0.0707 n 4 | 14.4592 14.3885 14.4155 14.4009
+PLA: mean 14.4749 spread 0.0482 n 4 | 14.5075 14.4718 14.4613 14.4592
+b16: NEW - OLD -0.0417 ms (rep spread 0.0752); PLA - OLD +0.0172 (spread 0.0752)
+prediction (pre-registration 4, pre-registered): b1 NEW - OLD -0.04 .. -0.07 ms a token, central -0.05 (8 indexer calls a decode token, members in parallel); b16 about -0.02
+VERDICT IXSDISP: PASS - b1 NEW - OLD -0.1350 ms (spread 0.0348), PLA - OLD +0.0035 (spread 0.0487); b16 NEW - OLD -0.0417 ms

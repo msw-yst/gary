@@ -1,0 +1,21 @@
+# Build 15 identity phase: build 14 (B14) vs build 15 (B15); U = flags unset, P = as deployed; d decode, x drafter decode,
+# bt batch test, 32k / 110k long prompts; srvid = one served user, greedy. First pass stopped on a check-design error (see card).
+ID id-U-d-B15 vs id-U-d-B14 [d]: stdout IDENTICAL | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok |
+ID id-U-x-B15 vs id-U-x-B14 [x]: stdout IDENTICAL | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok |
+ID id-U-bt-B15 vs id-U-bt-B14 [bt]: stdout IDENTICAL | placement (7136 of 15744 in VRAM) (7136 of 15744 in VRAM) (7136 of 15744 in VRAM) (7136 of 15744 in VRAM) | lines ok, id-U-bt-B14 has a new-feature line (flags unset), id-U-bt-B15 has a new-feature line (flags unset) |
+id: id-U-bt-B15 NOT bit-identical to id-U-bt-B14 (or rc / line / placement / engagement) - STOP
+ID id-U-d-B15 vs id-U-d-B14 [d]: stdout IDENTICAL | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok |
+ID id-U-x-B15 vs id-U-x-B14 [x]: stdout IDENTICAL | placement (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) (7176 of 15744 in VRAM) | lines ok |
+ID id-U-bt-B15 vs id-U-bt-B14 [bt]: stdout IDENTICAL | placement (7136 of 15744 in VRAM) (7136 of 15744 in VRAM) (7136 of 15744 in VRAM) (7136 of 15744 in VRAM) | lines ok |
+ID id-P-d-B15 vs id-P-d-B14 [d]: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok | id-P-d-B14:L8 engaged (2040); id-P-d-B14:TK engaged (d); id-P-d-B15:L8 engaged (2040); id-P-d-B15:TK engaged (d);
+ID id-P-x-B15 vs id-P-x-B14 [x]: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok | id-P-x-B14:L8 engaged (1104); id-P-x-B14:TK engaged (x); id-P-x-B15:L8 engaged (1104); id-P-x-B15:TK engaged (x);
+ID id-P-bt-B15 vs id-P-bt-B14 [bt]: stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | lines ok | id-P-bt-B14:L8 engaged (22440); id-P-bt-B14:TK engaged (bt); id-P-bt-B15:L8 engaged (22440); id-P-bt-B15:TK engaged (bt);
+ID id-P-32k-B15 vs id-P-32k-B14 [32k]: stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | lines ok | id-P-32k-B14:L8 engaged (504); id-P-32k-B14:TK engaged (32k); id-P-32k-B15:L8 engaged (504); id-P-32k-B15:TK engaged (32k);
+ID id-P-110k-B15 vs id-P-110k-B14 [110k]: stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | lines ok | id-P-110k-B14:L8 engaged (504); id-P-110k-B14:TK engaged (110k); id-P-110k-B15:L8 engaged (504); id-P-110k-B15:TK engaged (110k);
+SRVID srvid-B15P vs srvid-B14P (ON; --serve PAR 1, greedy, T / DONE fields): IDENTICAL | T lines 1025 | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | lines ok
+VERDICT BUILD 15 IDENTITY: PASS
+id15 d: PF_TILE engaged lines 4 | TOPK_MB_BATCH engaged lines 0 | QO lines 1
+id15 x: PF_TILE engaged lines 4 | TOPK_MB_BATCH engaged lines 0 | QO lines 1
+id15 bt: PF_TILE engaged lines 4 | TOPK_MB_BATCH engaged lines 0 | QO lines 1
+id15 32k: PF_TILE engaged lines 4 | TOPK_MB_BATCH engaged lines 0 | QO lines 1
+id15 110k: PF_TILE engaged lines 4 | TOPK_MB_BATCH engaged lines 0 | QO lines 1

@@ -1,0 +1,41 @@
+# per-arm lead / member segments from the timestamp arms (one 64-token B1 run an arm), lpseg.py output
+# ts-PRE = DS4_AHEAD=0 + DS4_LP_ROUTE=1; ts-ALL = AHEAD=0 + ROUTE + FLAGFUSE (PUBFUSE / JOINCOMB stand aside under the stamps)
+lpseg ts-base: lead 0, members [1, 2, 7] (us; a row is one recorded token x DD layer)
+release->publish                   n  2520  mean    48.5  median    48.8  p10    45.8  p90    51.3
+publish->join_in                   n  2457  mean    66.1  median    64.8  p10    58.7  p90    75.8
+join_in->join_out                  n  2457  mean    19.5  median    15.2  p10     2.2  p90    34.3
+join_out->moeAR                    n  2457  mean    17.7  median    17.8  p10    15.8  p90    20.0
+lead release->moeAR                n  2520  mean   152.1  median   148.7  p10   129.6  p90   172.2
+member release->moeAR              n  7560  mean   117.2  median   116.4  p10   109.3  p90   125.7
+margin (lead - member arrival)     n  7560  mean    35.7  median    32.5  p10     8.4  p90    59.9
+publish->moeAR                     n  2520  mean   103.6  median    99.0  p10    83.3  p90   123.1
+
+lpseg ts-PRE: lead 0, members [1, 2, 7] (us; a row is one recorded token x DD layer)
+release->publish                   n  2520  mean    49.0  median    49.2  p10    46.2  p90    52.0
+publish->join_in                   n  2457  mean    66.0  median    64.7  p10    58.7  p90    75.4
+join_in->join_out                  n  2457  mean    17.3  median    15.2  p10     2.2  p90    33.3
+join_out->moeAR                    n  2457  mean    18.1  median    18.1  p10    15.8  p90    21.2
+lead release->moeAR                n  2520  mean   150.6  median   149.6  p10   130.2  p90   170.0
+member release->moeAR              n  7560  mean   117.9  median   116.9  p10   109.9  p90   126.8
+margin (lead - member arrival)     n  7560  mean    33.1  median    32.6  p10     7.7  p90    59.1
+publish->moeAR                     n  2520  mean   101.6  median    99.4  p10    83.2  p90   120.5
+
+lpseg ts-FF: lead 0, members [1, 2, 7] (us; a row is one recorded token x DD layer)
+release->publish                   n  2520  mean    48.4  median    48.8  p10    45.8  p90    51.0
+publish->join_in                   n  2457  mean    66.7  median    65.8  p10    58.2  p90    75.5
+join_in->join_out                  n  2457  mean    13.2  median     8.8  p10     2.2  p90    27.0
+join_out->moeAR                    n  2457  mean    17.8  median    17.8  p10    15.8  p90    20.4
+lead release->moeAR                n  2520  mean   146.4  median   143.2  p10   135.2  p90   159.8
+member release->moeAR              n  7560  mean   117.3  median   116.4  p10   109.2  p90   126.0
+margin (lead - member arrival)     n  7560  mean    29.8  median    26.5  p10    12.0  p90    50.9
+publish->moeAR                     n  2520  mean    98.0  median    94.9  p10    88.7  p90   110.4
+
+lpseg ts-ALL: lead 0, members [1, 2, 7] (us; a row is one recorded token x DD layer)
+release->publish                   n  2520  mean    48.9  median    49.1  p10    46.1  p90    51.8
+publish->join_in                   n  2457  mean    66.8  median    65.7  p10    58.3  p90    75.4
+join_in->join_out                  n  2457  mean    13.9  median    10.0  p10     2.2  p90    28.1
+join_out->moeAR                    n  2457  mean    17.7  median    17.8  p10    15.8  p90    20.0
+lead release->moeAR                n  2520  mean   147.5  median   144.8  p10   135.7  p90   161.2
+member release->moeAR              n  7560  mean   118.3  median   117.8  p10   109.8  p90   127.0
+margin (lead - member arrival)     n  7560  mean    29.7  median    27.3  p10    10.5  p90    51.0
+publish->moeAR                     n  2520  mean    98.6  median    95.5  p10    89.1  p90   110.7

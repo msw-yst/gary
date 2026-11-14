@@ -1,3 +1,9 @@
+> **This is a fork of Strata.** Branch `dsv41-amd` adds DeepSeek V4.1 Flash on 4x RX 7900 XTX + 4x Instinct MI50:
+> tensor parallel over the XTX cards, with the MI50s as expert helpers, plus the batching, drafting and prefill work that
+> goes with it. Every change is opt-in or documented with its measurement: start at
+> [docs/dsv41/README.md](docs/dsv41/README.md); latest results: [docs/dsv41/UPDATE-2026-11-14.md](docs/dsv41/UPDATE-2026-11-14.md). Built by YST, https://yst.dev. Licence and credits: [NOTICE.md](NOTICE.md).
+> Upstream's README follows unchanged.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="apps/host/public/brand/strata-lockup-dark.svg">

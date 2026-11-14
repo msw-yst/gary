@@ -1,0 +1,16 @@
+lprun lp-20261111T020331Z - NEW <path> (+ B10E: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path>; ABDDS: DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1); tp4h4: --gpus 0,1,2,7 --tp 4 --helper-device 3,4,5,6; N 256; drafter off
+== B1 (ms a token; MEASURED, one run an arm; base 14.343, base2 14.304, mean 14.323; drift = base2 - base)
+B1 AH0 [DS4_AHEAD=0]: 14.343 | +0.020 vs base | predicted -0.15 .. -0.30 | stdout vs base: IDENTICAL | rc=0
+B1 RT [DS4_AHEAD=0 DS4_LP_ROUTE=1]: 14.337 | +0.014 vs base | predicted -0.35 .. -0.60 | stdout vs base: IDENTICAL | rc=0
+B1 PF [DS4_AHEAD=0 DS4_LP_PUBFUSE=1]: 14.217 | -0.106 vs base | predicted -0.25 .. -0.40 | stdout vs base: IDENTICAL | rc=0
+B1 JC [DS4_LP_JOINCOMB=1]: 14.318 | -0.005 vs base | predicted -0.05 .. -0.15 | stdout vs base: IDENTICAL | rc=0
+B1 FF [DS4_LP_FLAGFUSE=1]: 14.122 | -0.201 vs base | predicted -0.10 .. -0.30 | stdout vs base: IDENTICAL | rc=0
+B1 ALL [DS4_AHEAD=0 DS4_LP_ROUTE=1 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1]: 14.055 | -0.268 vs base | predicted -0.55 .. -1.00 | stdout vs base: IDENTICAL | rc=0
+== B8 (ms a step; MEASURED, one run an arm; base 44.5, base2 52.2, mean 48.350; drift = base2 - base)
+B8 AH0 [DS4_AHEAD=0]: 41.1 | -7.250 vs base | predicted -0.30 .. -0.90 | stdout vs base: IDENTICAL | rc=0
+B8 RT [DS4_AHEAD=0 DS4_LP_ROUTE=1]: 40.8 | -7.550 vs base | predicted -0.50 .. -1.20 | stdout vs base: IDENTICAL | rc=0
+B8 PF [DS4_AHEAD=0 DS4_LP_PUBFUSE=1]: 40.6 | -7.750 vs base | predicted -0.30 -0.90 (= AH0: PUBFUSE is one-row .. -0.90 (= AH0: PUBFUSE is one-row only) | stdout vs base: IDENTICAL | rc=0
+B8 JC [DS4_LP_JOINCOMB=1]: 40.4 | -7.950 vs base | predicted -0.05 .. -0.20 | stdout vs base: IDENTICAL | rc=0
+B8 FF [DS4_LP_FLAGFUSE=1]: 40.2 | -8.150 vs base | predicted -0.15 .. -0.45 | stdout vs base: IDENTICAL | rc=0
+B8 ALL [DS4_AHEAD=0 DS4_LP_ROUTE=1 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1]: 39.8 | -8.550 vs base | predicted -0.70 .. -1.80 | stdout vs base: IDENTICAL | rc=0
+TRIPPED: 0 new lines since start

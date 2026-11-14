@@ -1,0 +1,36 @@
+== DS4_HELPER_DD_SKIP timing (MEASURED; ms a step mean [min-max] nREPS | the lane's helper issue + wait ms a step | vs ABDD)
+tp3h3 B1 AB: 17.27 [17.20-17.30] n3 | 3.280 | vs ABDD +0.67 ms (+4.0%)
+tp3h3 B1 ABDD: 16.60 [16.60-16.60] n3 | 0.100 | vs ABDD +0.00 ms (+0.0%)
+tp3h3 B1 ABDDS: 16.40 [16.40-16.40] n3 | 0.100 | vs ABDD -0.20 ms (-1.2%)
+tp3h3 B8 AB: 45.50 [44.90-46.60] n3 | 14.960 | vs ABDD +1.47 ms (+3.3%)
+tp3h3 B8 ABDD: 44.03 [44.00-44.10] n3 | 0.550 | vs ABDD +0.00 ms (+0.0%)
+tp3h3 B8 ABDDS: 43.93 [43.80-44.20] n3 | 0.550 | vs ABDD -0.10 ms (-0.2%)
+tp4h4 B1 AB: 16.10 [16.10-16.10] n3 | 2.687 | vs ABDD +0.63 ms (+4.1%)
+tp4h4 B1 ABDD: 15.47 [15.40-15.50] n3 | 0.090 | vs ABDD +0.00 ms (+0.0%)
+tp4h4 B1 ABDDS: 16.67 [15.20-19.60] n3 | 0.093 | vs ABDD +1.20 ms (+7.8%)
+tp4h4 B8 AB: 45.93 [45.50-46.50] n3 | 17.297 | vs ABDD +0.70 ms (+1.5%)
+tp4h4 B8 ABDD: 45.23 [42.70-48.60] n3 | 0.967 | vs ABDD +0.00 ms (+0.0%)
+tp4h4 B8 ABDDS: 42.70 [41.90-43.60] n3 | 0.683 | vs ABDD -2.53 ms (-5.6%)
+skb-tp3h3-AB-1 stdout vs skb-tp3h3-AB-1: IDENTICAL
+skb-tp3h3-AB-2 stdout vs skb-tp3h3-AB-1: IDENTICAL
+skb-tp3h3-AB-3 stdout vs skb-tp3h3-AB-1: IDENTICAL
+skb-tp3h3-ABDD-1 stdout vs skb-tp3h3-AB-1: IDENTICAL
+skb-tp3h3-ABDD-2 stdout vs skb-tp3h3-AB-1: IDENTICAL
+skb-tp3h3-ABDD-3 stdout vs skb-tp3h3-AB-1: IDENTICAL
+skb-tp3h3-ABDDS-1 stdout vs skb-tp3h3-AB-1: IDENTICAL
+skb-tp3h3-ABDDS-2 stdout vs skb-tp3h3-AB-1: IDENTICAL
+skb-tp3h3-ABDDS-3 stdout vs skb-tp3h3-AB-1: IDENTICAL
+skb-tp4h4-AB-1 stdout vs skb-tp4h4-AB-1: IDENTICAL
+skb-tp4h4-AB-2 stdout vs skb-tp4h4-AB-1: IDENTICAL
+skb-tp4h4-AB-3 stdout vs skb-tp4h4-AB-1: IDENTICAL
+skb-tp4h4-ABDD-1 stdout vs skb-tp4h4-AB-1: IDENTICAL
+skb-tp4h4-ABDD-2 stdout vs skb-tp4h4-AB-1: IDENTICAL
+skb-tp4h4-ABDD-3 stdout vs skb-tp4h4-AB-1: IDENTICAL
+skb-tp4h4-ABDDS-1 stdout vs skb-tp4h4-AB-1: IDENTICAL
+skb-tp4h4-ABDDS-2 stdout vs skb-tp4h4-AB-1: IDENTICAL
+skb-tp4h4-ABDDS-3 stdout vs skb-tp4h4-AB-1: IDENTICAL
+== skipped helper waits (MEASURED; the lead's device counters; a join = one DD layer of one request; 39 DD layers a token / step)
+tp3h3 B1 plain decode (id, N 256): 19391 of 29835 skipped (65.0 %) over 9945 joins = 76.0 of 117.0 helper waits a token skipped
+tp3h3 B8 steps (bt 1,8 minus bt 1): 1155 of 29835 skipped (3.9 %) over 9945 joins = 4.5 of 117.0 helper waits a step skipped
+tp4h4 B1 plain decode (id, N 256): 32916 of 39780 skipped (82.7 %) over 9945 joins = 129.1 of 156.0 helper waits a token skipped
+tp4h4 B8 steps (bt 1,8 minus bt 1): 8942 of 39780 skipped (22.5 %) over 9945 joins = 35.1 of 156.0 helper waits a step skipped

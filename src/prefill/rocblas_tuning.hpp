@@ -5,6 +5,10 @@
 // made by that tool names, per shape and token bucket, the solution index to run instead; Gemm::f16_inplace reads it
 // through STRATA_ROCBLAS_TUNING.  Indices are valid for one architecture and one rocBLAS build (its full version
 // string), and the table carries both; any other pair is refused and the default kernels run.
+//
+// (FG-04): rows of type `f32` too - FP32 in, FP32 out, FP32 compute, the same call convention (W^T . X,
+// lda = ldb = K, ldc = ldy floats): the DeepSeek-V4.1 engine's mHC mix GEMM (src/dsv41/ds4_model.cu hc_mix_chunk;
+// tools/hip/tune_rocblas --dsv41-mix makes them).  closest() without a type reads the f16o rows only, as before.
 #pragma once
 
 #include <climits>
@@ -26,6 +30,7 @@ struct Row {
     int t_bucket = 0;
     bool tuned = false;   // false: the default kernel measured best at this bucket (the row bounds its neighbours' reach)
     int solution = 0;     // rocBLAS solution indices can be negative
+    bool f32 = false;     // the row's type: false f16o, true f32
 };
 
 class Table {
@@ -69,10 +74,11 @@ public:
             std::string type, solution, extra;
             Row parsed;
             if (!(row >> type >> parsed.n >> parsed.k >> parsed.ldy >> parsed.t_bucket >> solution) || (row >> extra) ||
-                type != "f16o" || parsed.n <= 0 || parsed.k <= 0 || parsed.ldy < parsed.n || parsed.t_bucket <= 0) {
+                (type != "f16o" && type != "f32") || parsed.n <= 0 || parsed.k <= 0 || parsed.ldy < parsed.n || parsed.t_bucket <= 0) {
                 err = "invalid rocBLAS tuning row at line " + std::to_string(line_number);
                 return false;
             }
+            parsed.f32 = type == "f32";
             if (solution != "default") {
                 char* end = nullptr;
                 const long value = std::strtol(solution.c_str(), &end, 10);
@@ -84,8 +90,8 @@ public:
                 parsed.solution = (int) value;
             }
             for (const auto& existing : rows_) {
-                if (existing.n == parsed.n && existing.k == parsed.k && existing.ldy == parsed.ldy &&
-                    existing.t_bucket == parsed.t_bucket) {
+                if (existing.f32 == parsed.f32 && existing.n == parsed.n && existing.k == parsed.k &&
+                    existing.ldy == parsed.ldy && existing.t_bucket == parsed.t_bucket) {
                     err = "duplicate rocBLAS tuning key at line " + std::to_string(line_number);
                     return false;
                 }
@@ -102,11 +108,12 @@ public:
     /// The row of this shape whose token bucket is nearest to t (the smaller bucket on a tie); null when the shape
     /// has no row at all (never measured).  A `default` row says the default kernel measured best there, so a tuned
     /// neighbour's solution reaches no further than halfway to it.
-    const Row* closest(int n, int k, int ldy, int t) const {
+    /// `f32`: the f32 rows instead (the default reads the f16o rows only).
+    const Row* closest(int n, int k, int ldy, int t, bool f32 = false) const {
         const Row* best = nullptr;
         int64_t best_distance = std::numeric_limits<int64_t>::max();
         for (const auto& row : rows_) {
-            if (row.n != n || row.k != k || row.ldy != ldy) continue;
+            if (row.f32 != f32 || row.n != n || row.k != k || row.ldy != ldy) continue;
             const int64_t distance = row.t_bucket >= t ? int64_t(row.t_bucket) - t : int64_t(t) - row.t_bucket;
             if (distance < best_distance || (distance == best_distance && row.t_bucket < best->t_bucket)) {
                 best = &row;

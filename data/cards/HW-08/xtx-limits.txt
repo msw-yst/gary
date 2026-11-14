@@ -1,0 +1,11 @@
+# Per-XTX board limits and live readings, read from the amdgpu sysfs (power1_cap, power1_cap_default,
+# power1_cap_max, pp_od_clk_voltage OD_SCLK upper point, pp_dpm_sclk active level) with the box idle after load.
+# Hand-transcribed from one read-only shell session; temperatures from the status page during the agent run.
+card     board (PCI subsystem vendor)  cap_W  default_W  cap_max_W  od_sclk_max_MHz  sclk_now_MHz  junction_under_agent_load_C
+XTX #1   Sapphire PULSE                272    303        402        2965             3050          66-68
+XTX #2   ASRock                        294    327        402        2920             3043          68-73
+XTX #3   Gigabyte                      272    303        402        3015             3084          84-89 (92 peak, prefill)
+XTX #4   ASRock (Gen4 x8 slot)         261    291        402        2870             2976          74-76
+# All caps are 90 % of each board's own default (272/303, 294/327, 261/291).
+# Thermal watcher (stops the server container): 2026-11-10 23:52:54 UTC "XTX #3 junction 92 C > 90: stopping",
+# about 38 s into reading a 245,840-token prompt. The watcher writes a log line every 10 s and on a trip.

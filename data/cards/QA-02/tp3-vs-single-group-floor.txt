@@ -1,0 +1,3 @@
+## qo vs qref
+ALL             4995      95.84%   1.79e-03  1.53e-02   3.3999   3.4013
+GATE FAIL (top-1 >= 95 %, median KL <= 1e-3)

@@ -42,6 +42,42 @@ endif()
 # carried to a card it has no code for stops at startup with a clear message instead of "invalid device function".
 string(REPLACE ";" "," STRATA_HIP_ARCHS "${STRATA_HIP_ARCH_LIST}")
 
+# prototype (docs/dsv41/cards/EB-01.md): wave64 helper expert-cache architectures.  Kept apart from
+# CMAKE_HIP_ARCHITECTURES (whose wave32-only check above stays as it is): only the helper-path sources get these as
+# extra --offload-arch targets (CMakeLists.txt, next to the quantize_act.cu -ffp-contract option), and the runtime sees
+# them as STRATA_HIP_HELPER_ARCHS="gfx906".  Empty (the default) changes nothing.
+set(STRATA_HIP_HELPER_ARCHS "" CACHE STRING
+    "prototype: wave64 helper expert-cache architecture(s) compiled into the helper-path sources only (gfx906)")
+set(_strata_hip_helper_allowed gfx906)
+string(REPLACE " " ";" _strata_hip_helper_norm "${STRATA_HIP_HELPER_ARCHS}")
+set(STRATA_HIP_HELPER_ARCH_LIST "")
+foreach(_arch IN LISTS _strata_hip_helper_norm)
+  if(_arch STREQUAL "")
+    continue()
+  endif()
+  if(NOT _arch IN_LIST _strata_hip_helper_allowed)
+    message(FATAL_ERROR
+      "Strata HIP: STRATA_HIP_HELPER_ARCHS allows only ${_strata_hip_helper_allowed} (no target-id features); "
+      "it is '${STRATA_HIP_HELPER_ARCHS}'")
+  endif()
+  list(APPEND STRATA_HIP_HELPER_ARCH_LIST "${_arch}")
+endforeach()
+list(REMOVE_DUPLICATES STRATA_HIP_HELPER_ARCH_LIST)
+set(STRATA_HIP_HELPER_OFFLOAD_OPTIONS "")
+foreach(_arch IN LISTS STRATA_HIP_HELPER_ARCH_LIST)
+  list(APPEND STRATA_HIP_HELPER_OFFLOAD_OPTIONS "--offload-arch=${_arch}")
+endforeach()
+string(REPLACE ";" "," STRATA_HIP_HELPER_ARCHS_STR "${STRATA_HIP_HELPER_ARCH_LIST}")
+# fallback (docs/dsv41/cards/EB-04.md): if the HIP runtime refuses to register a fat binary that has no code object for a
+# visible helper card, every HIP translation unit of every target gets the helper architectures, not only the four
+# helper-path sources.  Device code that cannot compile for gfx906 is a __builtin_trap() stub there; the role-aware arch
+# checks keep those kernels off the helper.  Applied at the end of CMakeLists.txt (strata_hip_helper_alltu_apply).
+option(STRATA_HIP_HELPER_ALLTU
+       "prototype: add STRATA_HIP_HELPER_ARCHS to every HIP source of every target (needs STRATA_HIP_HELPER_ARCHS)" OFF)
+if(STRATA_HIP_HELPER_ALLTU AND NOT STRATA_HIP_HELPER_ARCH_LIST)
+  message(FATAL_ERROR "STRATA_HIP_HELPER_ALLTU=ON needs a non-empty STRATA_HIP_HELPER_ARCHS (gfx906)")
+endif()
+
 enable_language(HIP)
 # CMake caches CMAKE_HIP_FLAGS_<CONFIG> while it enables HIP, before it tests the compiler.  A configure that stopped
 # there because HIP could not compile at all (Visual Studio 2026's <cmath> with the HIP SDK 7.2, a wrong ROCm path)
@@ -96,6 +132,11 @@ add_library(strata_hip_runtime INTERFACE)
 target_include_directories(strata_hip_runtime BEFORE INTERFACE
   "${STRATA_HIP_COMPAT_INCLUDE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_definitions(strata_hip_runtime INTERFACE STRATA_USE_HIP=1 "STRATA_HIP_ARCHS=\"${STRATA_HIP_ARCHS}\"")
+# strata_core (src/core/device.cu) and strata_kernels (iq_kernels.cu, through strata_core) link this target, so
+# both see it; a C string ("gfx906") that #ifdef can also test.
+if(STRATA_HIP_HELPER_ARCH_LIST)
+  target_compile_definitions(strata_hip_runtime INTERFACE "STRATA_HIP_HELPER_ARCHS=\"${STRATA_HIP_HELPER_ARCHS_STR}\"")
+endif()
 option(STRATA_GFX1012_PORTABLE_DOT "Use the portable signed-byte dot control on gfx1012" OFF)
 if(STRATA_GFX1012_PORTABLE_DOT)
   target_compile_definitions(strata_hip_runtime INTERFACE STRATA_GFX1012_PORTABLE_DOT=1)
@@ -135,3 +176,37 @@ foreach(_source IN ITEMS tests/hip/intrinsics.cpp tests/hip/native_qsa_score.cpp
 endforeach()
 
 message(STATUS "Strata: HIP enabled, arch ${STRATA_HIP_ARCHS}")
+if(STRATA_HIP_HELPER_ARCH_LIST)
+  if(STRATA_HIP_HELPER_ALLTU)
+    message(STATUS "Strata: helper arch ${STRATA_HIP_HELPER_ARCHS_STR} (every HIP source, STRATA_HIP_HELPER_ALLTU)")
+  else()
+    message(STATUS "Strata: helper arch ${STRATA_HIP_HELPER_ARCHS_STR} (helper-path sources only)")
+  endif()
+endif()
+
+# Called once at the end of the top-level CMakeLists.txt, when every target exists: walks every directory (tests/,
+# fetched ggml included) and appends the helper --offload-arch options to the HIP compile of each buildsystem target.
+# The $<COMPILE_LANGUAGE:HIP> guard leaves the CXX/C sources of the same targets untouched.
+function(strata_hip_helper_alltu_apply)
+  if(NOT STRATA_HIP_HELPER_ALLTU OR NOT STRATA_HIP_HELPER_OFFLOAD_OPTIONS)
+    return()
+  endif()
+  set(_dirs "${CMAKE_SOURCE_DIR}")
+  set(_n 0)
+  while(_dirs)
+    list(POP_FRONT _dirs _dir)
+    get_property(_sub DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
+    list(APPEND _dirs ${_sub})
+    get_property(_tgts DIRECTORY "${_dir}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_t IN LISTS _tgts)
+      get_target_property(_type ${_t} TYPE)
+      if(_type MATCHES "^(STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY|EXECUTABLE)$")
+        foreach(_opt IN LISTS STRATA_HIP_HELPER_OFFLOAD_OPTIONS)
+          set_property(TARGET ${_t} APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:HIP>:${_opt}>")
+        endforeach()
+        math(EXPR _n "${_n} + 1")
+      endif()
+    endforeach()
+  endwhile()
+  message(STATUS "Strata: STRATA_HIP_HELPER_ALLTU: ${STRATA_HIP_HELPER_OFFLOAD_OPTIONS} on the HIP sources of ${_n} targets")
+endfunction()

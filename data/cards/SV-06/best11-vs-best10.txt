@@ -1,0 +1,7 @@
+== best11 (ABDDS + pin) vs best10 (MEASURED; tp4h4 plain decode, 2K text, N 256)
+-- b11-best10 rc=0: decode: 256 tokens in 4407 ms (57.87 tok/s); CPU lane: 0 of 
+-- b11-best10p rc=0: decode: 256 tokens in 4273 ms (59.68 tok/s); CPU lane: 0 of 
+-- b11-best11 rc=0: decode: 256 tokens in 3913 ms (65.16 tok/s); CPU lane: 0 of 
+stdout best11 vs best10: IDENTICAL; best10p vs best10: IDENTICAL
+helper device-direct (DS4_HELPER_DD): 9945 requests joined on the device (9945 armed sets), 0 helper picks answered on the CPU instead, 0 host answers
+helper device-direct skip (DS4_HELPER_DD_SKIP): 32916 of 39780 helper waits skipped (82.7 %; joins 9945)

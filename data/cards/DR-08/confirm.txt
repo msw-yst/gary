@@ -1,0 +1,23 @@
+# Confirm run on build 15: served, sampled t 0.6, 8 drafter prompts, 4 reps, blocks 3 and 5 only (by design)
+rep 1: 65 of 72 request positions matched (every block served, drafts, 16 <= G < 1024); blocks B3 B5
+rep 2: 64 of 72 request positions matched (every block served, drafts, 16 <= G < 1024); blocks B3 B5
+rep 3: 66 of 72 request positions matched (every block served, drafts, 16 <= G < 1024); blocks B3 B5
+rep 4: 62 of 72 request positions matched (every block served, drafts, 16 <= G < 1024); blocks B3 B5
+== PRIMARY: matched mix, ms a generated token (MEASURED; sampled t 0.6, the 8 drafter prompts)
+  BASE (3, 0.3): 10.233 [10.100-10.429] n4 | PLA (3, 0.3, seeds + 1000): 10.177 [10.012-10.465] n4
+  placebo PLA - BASE -0.55 % (content noise: other random draws, the same policy)
+  (2, 0.3): NO DATA (0 reps)
+  (2, 0.4): NO DATA (0 reps)
+  (3, 0.4): 10.127 [10.023-10.245] n4 | delta -1.04 % | N 3.21 % | predicted -0.4 % [-1.5, +0.5]: inside -> NOT SEPARABLE
+  (4, 0.3): NO DATA (0 reps)
+  (4, 0.4): NO DATA (0 reps)
+  (5, 0.3): 10.394 [10.182-10.622] n4 | delta +1.57 % | N 4.30 % | predicted +0.5 % [-0.8, +1.8]: inside -> NOT SEPARABLE
+  (5, 0.4): 10.071 [9.898-10.311] n4 | delta -1.58 % | N 4.04 % | predicted -0.1 % [-1.5, +1.5]: below -> NOT SEPARABLE
+== secondary (info): tokens a round, rows a round, kept rate, per position kept/reached, cost-normalised ms a token
+  (3, 0.3): tokens a round 2.106 | rows a round 1.87 | kept 59.1 % | 1: 72% 2: 67% 3: 80% | normalised 10.390 ms
+  ('PLA', 3): tokens a round 2.107 | rows a round 1.87 | kept 59.1 % | 1: 72% 2: 68% 3: 81% | normalised 10.389 ms
+  (3, 0.4): tokens a round 1.973 | rows a round 1.38 | kept 70.6 % | 1: 79% 2: 77% 3: 82% | normalised 10.455 ms
+  (5, 0.3): tokens a round 2.237 | rows a round 2.51 | kept 49.4 % | 1: 72% 2: 69% 3: 82% 4: 64% 5: 64% | normalised 10.500 ms
+  (5, 0.4): tokens a round 2.101 | rows a round 1.84 | kept 59.8 % | 1: 78% 2: 76% 3: 81% 4: 70% 5: 66% | normalised 10.378 ms
+VERDICT L18: NO DATA (3 of 7 cells have data)
+TRIPPED: 0 new lines since start

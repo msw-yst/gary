@@ -35,35 +35,46 @@ inline int64_t now_ns() {
         .count();
 }
 
-/// Rows already fetched: key -> `bytes` of payload, at most `cap` rows (grown on demand in blocks), clock eviction.
-/// Not thread-safe (the caller locks).
+/// Rows already fetched: key -> `bytes` of payload, at most `cap` rows, clock eviction.  Not thread-safe (the caller locks).
+/// every structure is sized at init - the payload one block (its pages touched only as rows land), the keys and
+/// marks, and an open-addressing index (linear probing, deletion by backward shift) - so filling the cache during the
+/// decode allocates nothing.  (It was an unordered_map node a new row, payload blocks of 4096 rows and doubling key
+/// vectors: the main arena growing by brk, and blocks above the mmap threshold mmapped, while the decode ran -
+/// docs/dsv41/cards/EB-05.md, mechanism 2.)
 class EgRowCache {
 public:
     void init(size_t cap, size_t bytes) {
-        cap_ = cap;
+        cap_ = std::min<size_t>(cap, (size_t) 0x7fffffff);
         bytes_ = bytes;
-        map_.reserve(std::min<size_t>(cap, 1u << 20));
+        n_ = 0;
+        hand_ = 0;
+        if (cap_ == 0 || bytes_ == 0) return;
+        data_.reset(new uint8_t[cap_ * bytes_]);   // (no pages until written: rows land into it as they are read)
+        keys_.assign(cap_, 0);
+        ref_.assign(cap_, 0);
+        size_t t = 64;
+        while (t < 2 * cap_) t <<= 1;
+        ix_key_.assign(t, kEmpty);
+        ix_slot_.assign(t, 0);
+        mask_ = t - 1;
     }
     size_t capacity() const { return cap_; }
-    size_t size() const { return keys_.size(); }
+    size_t size() const { return n_; }
     /// The row's payload, or nullptr (a hit marks it recently used).
     const uint8_t* find(uint64_t key) {
-        const auto it = map_.find(key);
-        if (it == map_.end()) return nullptr;
-        ref_[it->second] = 1;
-        return at(it->second);
+        const int64_t s = lookup(key);
+        if (s < 0) return nullptr;
+        ref_[(size_t) s] = 1;
+        return at((uint32_t) s);
     }
     /// Room for key's payload (the caller fills it): a new slot while below capacity, else the clock's victim.
     uint8_t* put(uint64_t key) {
-        if (cap_ == 0 || bytes_ == 0) return nullptr;
-        const auto it = map_.find(key);
-        if (it != map_.end()) return at(it->second);
+        if (cap_ == 0 || bytes_ == 0 || key == kEmpty) return nullptr;
+        const int64_t have = lookup(key);
+        if (have >= 0) return at((uint32_t) have);
         uint32_t s;
-        if (keys_.size() < cap_) {
-            s = (uint32_t) keys_.size();
-            if (s % kBlock == 0) blocks_.emplace_back(new uint8_t[(size_t) kBlock * bytes_]);
-            keys_.push_back(key);
-            ref_.push_back(0);
+        if (n_ < cap_) {
+            s = (uint32_t) n_++;
         } else {
             while (ref_[hand_]) {   // (a second chance for rows used since the hand last passed)
                 ref_[hand_] = 0;
@@ -71,23 +82,55 @@ public:
             }
             s = hand_;
             hand_ = (hand_ + 1) % (uint32_t) cap_;
-            map_.erase(keys_[s]);
-            keys_[s] = key;
-            ref_[s] = 0;
+            erase(keys_[s]);
         }
-        map_.emplace(key, s);
+        keys_[s] = key;
+        ref_[s] = 0;
+        insert(key, s);
         return at(s);
     }
 
 private:
-    static constexpr uint32_t kBlock = 4096;
-    uint8_t* at(uint32_t s) { return blocks_[s / kBlock].get() + (size_t) (s % kBlock) * bytes_; }
-    size_t cap_ = 0, bytes_ = 0;
+    static constexpr uint64_t kEmpty = ~uint64_t{0};   // (keys are id * 8 + layer: never this)
+    uint8_t* at(uint32_t s) { return data_.get() + (size_t) s * bytes_; }
+    size_t home(uint64_t k) const { return (size_t) ((k * 0x9E3779B97F4A7C15ull) >> 17) & mask_; }
+    int64_t lookup(uint64_t k) const {
+        if (ix_key_.empty()) return -1;
+        for (size_t i = home(k);; i = (i + 1) & mask_) {
+            if (ix_key_[i] == kEmpty) return -1;
+            if (ix_key_[i] == k) return (int64_t) ix_slot_[i];
+        }
+    }
+    void insert(uint64_t k, uint32_t s) {
+        size_t i = home(k);
+        while (ix_key_[i] != kEmpty) i = (i + 1) & mask_;
+        ix_key_[i] = k;
+        ix_slot_[i] = s;
+    }
+    void erase(uint64_t k) {   // (backward shift: the probe chains stay whole, no tombstones)
+        size_t i = home(k);
+        while (ix_key_[i] != kEmpty && ix_key_[i] != k) i = (i + 1) & mask_;
+        if (ix_key_[i] == kEmpty) return;
+        for (size_t j = i;;) {
+            j = (j + 1) & mask_;
+            if (ix_key_[j] == kEmpty) break;
+            const size_t h = home(ix_key_[j]);
+            // entry j may move into the hole at i unless its home lies cyclically in (i, j]
+            const bool stays = i <= j ? (i < h && h <= j) : (i < h || h <= j);
+            if (stays) continue;
+            ix_key_[i] = ix_key_[j];
+            ix_slot_[i] = ix_slot_[j];
+            i = j;
+        }
+        ix_key_[i] = kEmpty;
+    }
+    size_t cap_ = 0, bytes_ = 0, n_ = 0, mask_ = 0;
     uint32_t hand_ = 0;
-    std::unordered_map<uint64_t, uint32_t> map_;
+    std::unique_ptr<uint8_t[]> data_;
     std::vector<uint64_t> keys_;
     std::vector<uint8_t> ref_;
-    std::vector<std::unique_ptr<uint8_t[]>> blocks_;
+    std::vector<uint64_t> ix_key_;
+    std::vector<uint32_t> ix_slot_;
 };
 
 /// One row to fetch: its bytes to dst, its scales to scales.  mx8: n bytes at off of a file, [scale, 32 codes] blocks

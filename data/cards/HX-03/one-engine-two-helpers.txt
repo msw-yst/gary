@@ -1,0 +1,9 @@
+# perf matrix 1main-2helpers 2026-11-06T17:05:29+00:00; repeats 5; HIP_VISIBLE_DEVICES=0,1,3
+## cache auto
+PASS A/B: decode median a 56.40 / b 58.95 tok/s (+4.5%), prefill median a 659 / b 658 tok/s, helper 40.5 entries/token
+## cache 5000
+PASS A/B: decode median a 49.00 / b 76.58 tok/s (+56.3%), prefill median a 658 / b 657 tok/s, helper 96.6 entries/token
+## cache 2500
+PASS A/B: decode median a 42.53 / b 55.23 tok/s (+29.8%), prefill median a 655 / b 655 tok/s, helper 230.2 entries/token
+## cache 1000
+PASS A/B: decode median a 39.22 / b 81.83 tok/s (+108.6%), prefill median a 540 / b 540 tok/s, helper 410.0 entries/token

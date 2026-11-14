@@ -1,0 +1,100 @@
+# production phase, per rep: generated tokens and decode ms summed over the rep's requests (from the serve lines below)
+run	requests	generated_tokens	decode_ms	ms_a_generated_token
+prod-P0-1	7	1626	20022	12.314
+prod-P0-2	7	629	6897	10.965
+prod-P0-3	7	1626	19792	12.172
+prod-PA-1	7	656	6877	10.483
+prod-PA-2	7	609	6389	10.491
+prod-PA-3	7	609	6400	10.509
+prod-PB-1	7	1626	18855	11.596
+prod-PB-2	7	629	6593	10.482
+prod-PB-3	7	1626	18851	11.593
+prod-PN-1	7	1626	18970	11.667
+prod-PN-2	7	1626	19003	11.687
+prod-PN-3	7	629	6626	10.534
+
+# serve lines
+prod-P0-1 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 9162 ms (1480.6 tok/s), 62 generated in 643 ms (96.47 tok/s); CPU lane 0.0% of the experts
+prod-P0-1 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 10024 ms (1542.8 tok/s), 122 generated in 1214 ms (100.47 tok/s); CPU lane 0.0% of the experts
+prod-P0-1 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 16151 ms (1924.7 tok/s), 102 generated in 1152 ms (88.57 tok/s); CPU lane 0.0% of the experts
+prod-P0-1 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4584 ms (984.9 tok/s), 71 generated in 866 ms (81.98 tok/s); CPU lane 0.0% of the experts
+prod-P0-1 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4487 ms (847.6 tok/s), 101 generated in 1130 ms (89.39 tok/s); CPU lane 0.0% of the experts
+prod-P0-1 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5873 ms (1203.6 tok/s), 1024 generated in 13209 ms (77.52 tok/s); CPU lane 0.0% of the experts
+prod-P0-1 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31199 ms (1943.0 tok/s), 144 generated in 1808 ms (79.65 tok/s); CPU lane 0.0% of the experts
+prod-P0-2 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8457 ms (1604.0 tok/s), 62 generated in 650 ms (95.44 tok/s); CPU lane 0.0% of the experts
+prod-P0-2 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9118 ms (1696.0 tok/s), 122 generated in 1214 ms (100.47 tok/s); CPU lane 0.0% of the experts
+prod-P0-2 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15732 ms (1975.9 tok/s), 102 generated in 1148 ms (88.84 tok/s); CPU lane 0.0% of the experts
+prod-P0-2 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4363 ms (1034.7 tok/s), 71 generated in 828 ms (85.71 tok/s); CPU lane 0.0% of the experts
+prod-P0-2 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4214 ms (902.4 tok/s), 95 generated in 1127 ms (84.29 tok/s); CPU lane 0.0% of the experts
+prod-P0-2 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5217 ms (1354.9 tok/s), 109 generated in 1182 ms (92.19 tok/s); CPU lane 0.0% of the experts
+prod-P0-2 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31179 ms (1944.3 tok/s), 68 generated in 748 ms (90.85 tok/s); CPU lane 0.0% of the experts
+prod-P0-3 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8450 ms (1605.3 tok/s), 62 generated in 649 ms (95.54 tok/s); CPU lane 0.0% of the experts
+prod-P0-3 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9122 ms (1695.3 tok/s), 122 generated in 1221 ms (99.94 tok/s); CPU lane 0.0% of the experts
+prod-P0-3 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15793 ms (1968.3 tok/s), 102 generated in 1162 ms (87.81 tok/s); CPU lane 0.0% of the experts
+prod-P0-3 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4336 ms (1041.2 tok/s), 71 generated in 859 ms (82.64 tok/s); CPU lane 0.0% of the experts
+prod-P0-3 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4214 ms (902.6 tok/s), 101 generated in 1130 ms (89.39 tok/s); CPU lane 0.0% of the experts
+prod-P0-3 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5266 ms (1342.4 tok/s), 1024 generated in 12963 ms (79.00 tok/s); CPU lane 0.0% of the experts
+prod-P0-3 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31227 ms (1941.3 tok/s), 144 generated in 1808 ms (79.64 tok/s); CPU lane 0.0% of the experts
+prod-PA-1 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8498 ms (1596.3 tok/s), 62 generated in 611 ms (101.45 tok/s); CPU lane 0.0% of the experts
+prod-PA-1 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9170 ms (1686.4 tok/s), 92 generated in 1043 ms (88.19 tok/s); CPU lane 0.0% of the experts
+prod-PA-1 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15779 ms (1970.1 tok/s), 102 generated in 1081 ms (94.33 tok/s); CPU lane 0.0% of the experts
+prod-PA-1 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4331 ms (1042.5 tok/s), 95 generated in 913 ms (104.11 tok/s); CPU lane 0.0% of the experts
+prod-PA-1 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4213 ms (902.7 tok/s), 119 generated in 1161 ms (102.49 tok/s); CPU lane 0.0% of the experts
+prod-PA-1 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5266 ms (1342.3 tok/s), 84 generated in 893 ms (94.02 tok/s); CPU lane 0.0% of the experts
+prod-PA-1 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31270 ms (1938.6 tok/s), 102 generated in 1175 ms (86.78 tok/s); CPU lane 0.0% of the experts
+prod-PA-2 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8495 ms (1596.7 tok/s), 62 generated in 613 ms (101.19 tok/s); CPU lane 0.0% of the experts
+prod-PA-2 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9170 ms (1686.4 tok/s), 92 generated in 1042 ms (88.28 tok/s); CPU lane 0.0% of the experts
+prod-PA-2 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15747 ms (1974.0 tok/s), 102 generated in 1082 ms (94.29 tok/s); CPU lane 0.0% of the experts
+prod-PA-2 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4364 ms (1034.5 tok/s), 96 generated in 994 ms (96.61 tok/s); CPU lane 0.0% of the experts
+prod-PA-2 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4216 ms (902.1 tok/s), 121 generated in 1278 ms (94.71 tok/s); CPU lane 0.0% of the experts
+prod-PA-2 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5226 ms (1352.8 tok/s), 54 generated in 495 ms (109.12 tok/s); CPU lane 0.0% of the experts
+prod-PA-2 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31233 ms (1940.9 tok/s), 82 generated in 885 ms (92.64 tok/s); CPU lane 0.0% of the experts
+prod-PA-3 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8444 ms (1606.4 tok/s), 62 generated in 614 ms (100.99 tok/s); CPU lane 0.0% of the experts
+prod-PA-3 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9089 ms (1701.4 tok/s), 92 generated in 1044 ms (88.08 tok/s); CPU lane 0.0% of the experts
+prod-PA-3 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15833 ms (1963.3 tok/s), 102 generated in 1085 ms (93.98 tok/s); CPU lane 0.0% of the experts
+prod-PA-3 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4319 ms (1045.3 tok/s), 96 generated in 994 ms (96.55 tok/s); CPU lane 0.0% of the experts
+prod-PA-3 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4213 ms (902.7 tok/s), 121 generated in 1282 ms (94.41 tok/s); CPU lane 0.0% of the experts
+prod-PA-3 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5236 ms (1350.0 tok/s), 54 generated in 496 ms (108.83 tok/s); CPU lane 0.0% of the experts
+prod-PA-3 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31193 ms (1943.4 tok/s), 82 generated in 885 ms (92.66 tok/s); CPU lane 0.0% of the experts
+prod-PB-1 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8503 ms (1595.4 tok/s), 62 generated in 618 ms (100.38 tok/s); CPU lane 0.0% of the experts
+prod-PB-1 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9169 ms (1686.5 tok/s), 122 generated in 1159 ms (105.27 tok/s); CPU lane 0.0% of the experts
+prod-PB-1 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15848 ms (1961.5 tok/s), 102 generated in 1102 ms (92.59 tok/s); CPU lane 0.0% of the experts
+prod-PB-1 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4334 ms (1041.7 tok/s), 71 generated in 825 ms (86.04 tok/s); CPU lane 0.0% of the experts
+prod-PB-1 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4214 ms (902.4 tok/s), 101 generated in 1072 ms (94.24 tok/s); CPU lane 0.0% of the experts
+prod-PB-1 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5223 ms (1353.4 tok/s), 1024 generated in 12356 ms (82.88 tok/s); CPU lane 0.0% of the experts
+prod-PB-1 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31226 ms (1941.4 tok/s), 144 generated in 1723 ms (83.56 tok/s); CPU lane 0.0% of the experts
+prod-PB-2 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8446 ms (1606.1 tok/s), 62 generated in 620 ms (100.02 tok/s); CPU lane 0.0% of the experts
+prod-PB-2 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9119 ms (1695.8 tok/s), 122 generated in 1160 ms (105.20 tok/s); CPU lane 0.0% of the experts
+prod-PB-2 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15758 ms (1972.6 tok/s), 102 generated in 1101 ms (92.62 tok/s); CPU lane 0.0% of the experts
+prod-PB-2 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4327 ms (1043.4 tok/s), 71 generated in 790 ms (89.91 tok/s); CPU lane 0.0% of the experts
+prod-PB-2 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4216 ms (902.0 tok/s), 95 generated in 1079 ms (88.05 tok/s); CPU lane 0.0% of the experts
+prod-PB-2 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5267 ms (1342.2 tok/s), 109 generated in 1128 ms (96.64 tok/s); CPU lane 0.0% of the experts
+prod-PB-2 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31174 ms (1944.6 tok/s), 68 generated in 715 ms (95.13 tok/s); CPU lane 0.0% of the experts
+prod-PB-3 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8451 ms (1605.1 tok/s), 62 generated in 617 ms (100.46 tok/s); CPU lane 0.0% of the experts
+prod-PB-3 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9126 ms (1694.4 tok/s), 122 generated in 1159 ms (105.27 tok/s); CPU lane 0.0% of the experts
+prod-PB-3 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15852 ms (1961.0 tok/s), 102 generated in 1102 ms (92.56 tok/s); CPU lane 0.0% of the experts
+prod-PB-3 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4331 ms (1042.4 tok/s), 71 generated in 823 ms (86.26 tok/s); CPU lane 0.0% of the experts
+prod-PB-3 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4217 ms (901.9 tok/s), 101 generated in 1077 ms (93.78 tok/s); CPU lane 0.0% of the experts
+prod-PB-3 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5265 ms (1342.5 tok/s), 1024 generated in 12347 ms (82.93 tok/s); CPU lane 0.0% of the experts
+prod-PB-3 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31176 ms (1944.5 tok/s), 144 generated in 1726 ms (83.42 tok/s); CPU lane 0.0% of the experts
+prod-PN-1 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8544 ms (1587.7 tok/s), 62 generated in 623 ms (99.53 tok/s); CPU lane 0.0% of the experts
+prod-PN-1 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9125 ms (1694.7 tok/s), 122 generated in 1168 ms (104.41 tok/s); CPU lane 0.0% of the experts
+prod-PN-1 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15798 ms (1967.7 tok/s), 102 generated in 1107 ms (92.10 tok/s); CPU lane 0.0% of the experts
+prod-PN-1 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4339 ms (1040.6 tok/s), 71 generated in 828 ms (85.73 tok/s); CPU lane 0.0% of the experts
+prod-PN-1 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4215 ms (902.3 tok/s), 101 generated in 1079 ms (93.64 tok/s); CPU lane 0.0% of the experts
+prod-PN-1 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5266 ms (1342.4 tok/s), 1024 generated in 12429 ms (82.39 tok/s); CPU lane 0.0% of the experts
+prod-PN-1 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31330 ms (1934.9 tok/s), 144 generated in 1736 ms (82.93 tok/s); CPU lane 0.0% of the experts
+prod-PN-2 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8456 ms (1604.2 tok/s), 62 generated in 623 ms (99.46 tok/s); CPU lane 0.0% of the experts
+prod-PN-2 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9120 ms (1695.5 tok/s), 122 generated in 1173 ms (104.00 tok/s); CPU lane 0.0% of the experts
+prod-PN-2 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15760 ms (1972.4 tok/s), 102 generated in 1112 ms (91.69 tok/s); CPU lane 0.0% of the experts
+prod-PN-2 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4332 ms (1042.3 tok/s), 71 generated in 835 ms (85.01 tok/s); CPU lane 0.0% of the experts
+prod-PN-2 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4215 ms (902.2 tok/s), 101 generated in 1083 ms (93.22 tok/s); CPU lane 0.0% of the experts
+prod-PN-2 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5267 ms (1342.0 tok/s), 1024 generated in 12438 ms (82.33 tok/s); CPU lane 0.0% of the experts
+prod-PN-2 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31238 ms (1940.6 tok/s), 144 generated in 1739 ms (82.79 tok/s); CPU lane 0.0% of the experts
+prod-PN-3 ds4 serve: prompt 13565 tokens = 0 reused + 13565 read in 8460 ms (1603.4 tok/s), 62 generated in 618 ms (100.32 tok/s); CPU lane 0.0% of the experts
+prod-PN-3 ds4 serve: prompt 15464 tokens = 0 reused + 15464 read in 9126 ms (1694.6 tok/s), 122 generated in 1165 ms (104.70 tok/s); CPU lane 0.0% of the experts
+prod-PN-3 ds4 serve: prompt 31085 tokens = 0 reused + 31085 read in 15745 ms (1974.3 tok/s), 102 generated in 1106 ms (92.21 tok/s); CPU lane 0.0% of the experts
+prod-PN-3 ds4 serve: prompt 4515 tokens = 0 reused + 4515 read in 4366 ms (1034.2 tok/s), 71 generated in 793 ms (89.48 tok/s); CPU lane 0.0% of the experts
+prod-PN-3 ds4 serve: prompt 3803 tokens = 0 reused + 3803 read in 4216 ms (902.0 tok/s), 95 generated in 1091 ms (87.11 tok/s); CPU lane 0.0% of the experts
+prod-PN-3 ds4 serve: prompt 7069 tokens = 0 reused + 7069 read in 5218 ms (1354.7 tok/s), 109 generated in 1133 ms (96.21 tok/s); CPU lane 0.0% of the experts
+prod-PN-3 ds4 serve: prompt 60621 tokens = 0 reused + 60621 read in 31115 ms (1948.3 tok/s), 68 generated in 720 ms (94.45 tok/s); CPU lane 0.0% of the experts

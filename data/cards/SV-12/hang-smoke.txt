@@ -1,0 +1,14 @@
+hang-rate summary hangrate-20261113T102856Z (4 segments)
+ARM A (prod): 4 prompts (L15 1, L16 1, S 2), 0 hangs (named-p2p 0, named-key 0, stall-unnamed 0, exit-other 0) -> 0.0000 a prompt [95% 0.0000, 0.4899]; ~0.00 a 1,000 all-reduce calls
+      hangs by kind: L15 0, L16 0, S 0 | prompt read ms (mean, n): L15 8853 (1), L16 10236 (1), S 1286 (2)
+      one-sided Fisher p (arm A hangs less than the other three pooled): 1.0000
+ARM B (DS4_AR_P2PK=0): 4 prompts (L15 1, L16 1, S 2), 0 hangs (named-p2p 0, named-key 0, stall-unnamed 0, exit-other 0) -> 0.0000 a prompt [95% 0.0000, 0.4899]; ~0.00 a 1,000 all-reduce calls
+      hangs by kind: L15 0, L16 0, S 0 | prompt read ms (mean, n): L15 9156 (1), L16 10430 (1), S 1666 (2)
+      one-sided Fisher p (arm B hangs less than the other three pooled): 1.0000
+ARM C (DS4_PF_HELPER=0): 4 prompts (L15 1, L16 1, S 2), 0 hangs (named-p2p 0, named-key 0, stall-unnamed 0, exit-other 0) -> 0.0000 a prompt [95% 0.0000, 0.4899]; ~0.00 a 1,000 all-reduce calls
+      hangs by kind: L15 0, L16 0, S 0 | prompt read ms (mean, n): L15 9266 (1), L16 9134 (1), S 3362 (2)
+      one-sided Fisher p (arm C hangs less than the other three pooled): 1.0000
+ARM D (STRATA_DS4_PROMPT_SKIP_TP=0): 4 prompts (L15 1, L16 1, S 2), 0 hangs (named-p2p 0, named-key 0, stall-unnamed 0, exit-other 0) -> 0.0000 a prompt [95% 0.0000, 0.4899]; ~0.00 a 1,000 all-reduce calls
+      hangs by kind: L15 0, L16 0, S 0 | prompt read ms (mean, n): L15 13977 (1), L16 16249 (1), S 1310 (2)
+      one-sided Fisher p (arm D hangs less than the other three pooled): 1.0000
+READING: no hang in any arm (16 prompts): no rate to compare; the 95 % upper bound a prompt is ~0.7500 an arm

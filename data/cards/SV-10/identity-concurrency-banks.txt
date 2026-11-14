@@ -1,0 +1,52 @@
+# build 13 merge identity (d13id-20261112T141811Z)
+ID id-d-U vs id-d-REF [d]: stdout IDENTICAL | placement (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) | lines ok |
+ID l8-d-M vs l8-d-S [d]: stdout IDENTICAL | placement (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) | lines ok | l8-d-S:L8 engaged (2040); l8-d-M:L8 engaged (2040);
+ID l8-x-M vs l8-x-S [x]: stdout IDENTICAL | placement (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) | lines ok | l8-x-S:L8 engaged (1008); l8-x-M:L8 engaged (1008);
+ID l8-bt-M vs l8-bt-S [bt]: stdout IDENTICAL | placement (7132 of 15744 in VRAM) (7132 of 15744 in VRAM) (7132 of 15744 in VRAM) (7132 of 15744 in VRAM) | lines ok | l8-bt-S:L8 engaged (22440); l8-bt-M:L8 engaged (22440);
+ID tk-32k-M vs tk-32k-S [32k]: stdout IDENTICAL | placement (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) | lines ok | tk-32k-S:TK engaged (32k); tk-32k-M:TK engaged (32k);
+ID tk-110k-M vs tk-110k-S [110k]: stdout IDENTICAL | placement (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) | lines ok | tk-110k-S:TK engaged (110k); tk-110k-M:TK engaged (110k);
+ID tk-x32k-M vs tk-x32k-S [x32k]: stdout IDENTICAL | placement (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) (7099 of 15744 in VRAM) | lines ok | tk-x32k-S:TK engaged (x32k); tk-x32k-M:TK engaged (x32k);
+ID sg-d-M vs sg-d-S [d]: stdout IDENTICAL | placement (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) | lines ok | sg-d-S:SG engaged (388 launches); sg-d-M:SG engaged (388 launches);
+ID sg-x-M vs sg-x-S [x]: stdout IDENTICAL | placement (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) | lines ok | sg-x-S:SG engaged (388 launches); sg-x-M:SG engaged (388 launches);
+ID sg-bt-M vs sg-bt-S [bt]: stdout IDENTICAL | placement (7137 of 15744 in VRAM) (7137 of 15744 in VRAM) (7137 of 15744 in VRAM) (7137 of 15744 in VRAM) | lines ok | sg-bt-S:SG engaged (388 launches); sg-bt-M:SG engaged (388 launches);
+ID all-d-ON vs all-d-OFF [d]: stdout IDENTICAL | placement (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) | lines ok | all-d-ON:L8 engaged (2040); all-d-ON:TK engaged (d); all-d-ON:SG engaged (388 launches);
+ID all-x-ON vs all-x-OFF [x]: stdout IDENTICAL | placement (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) | lines ok | all-x-ON:L8 engaged (1008); all-x-ON:TK engaged (x); all-x-ON:SG engaged (388 launches);
+ID all-bt-ON vs all-bt-OFF [bt]: stdout IDENTICAL | placement (7132 of 15744 in VRAM) (7132 of 15744 in VRAM) (7132 of 15744 in VRAM) (7132 of 15744 in VRAM) | lines ok | all-bt-ON:L8 engaged (22440); all-bt-ON:TK engaged (bt); all-bt-ON:SG engaged (388 launches);
+ID all-110k-ON vs all-110k-OFF [110k]: stdout IDENTICAL | placement (7094 of 15744 in VRAM) (7094 of 15744 in VRAM) (7094 of 15744 in VRAM) (7094 of 15744 in VRAM) | lines ok | all-110k-ON:L8 engaged (504); all-110k-ON:TK engaged (110k); all-110k-ON:SG engaged (388 launches);
+id: PASSED
+VERDICT DEPLOY13 (d13) IDENTITY: PASS
+# batched greedy vs solo greedy, conc 3: mmap off (d13sid-20261112T181232Z)
+CMP A1.json vs A2.json: IDENTICAL (8 of 8 identical)
+CMP A2.json vs B3.json: DIFFER (5 of 8 identical; differ: [1, 2, 4])
+DCMP 600 vs 600 sequences, 10 tests at alpha 0.01 (Bonferroni 0.0010 each): PASS
+sbi: NOT PASSED: dx3-lines CMP(A2.json vs B3.json) - STOP
+# batched greedy vs solo greedy, conc 3: prompt helper off (d13sid-20261112T182248Z)
+CMP A1.json vs A2.json: IDENTICAL (8 of 8 identical)
+CMP A2.json vs B3.json: IDENTICAL (8 of 8 identical)
+DCMP 600 vs 600 sequences, 10 tests at alpha 0.01 (Bonferroni 0.0010 each): PASS
+sbi: NOT PASSED: dref-lines dx3-lines - STOP
+# batched greedy vs solo greedy, conc 3: Engram-ahead off (d13sid-20261112T183122Z)
+CMP A1.json vs A2.json: IDENTICAL (8 of 8 identical)
+CMP A2.json vs B3.json: DIFFER (5 of 8 identical; differ: [1, 2, 4])
+DCMP 600 vs 600 sequences, 10 tests at alpha 0.01 (Bonferroni 0.0010 each): PASS
+sbi: NOT PASSED: dref-lines dx3-lines CMP(A2.json vs B3.json) - STOP
+# batched greedy vs solo greedy, conc 3: build 13s, prompt helper on (d13sid-20261113T024003Z)
+id: PASSED
+srvid: PASSED
+CMP A1.json vs A2.json: IDENTICAL (8 of 8 identical)
+CMP A2.json vs B3.json: DIFFER (5 of 8 identical; differ: [1, 2, 4])
+DCMP 600 vs 600 sequences, 10 tests at alpha 0.01 (Bonferroni 0.0010 each): PASS
+sbi: NOT PASSED: dx3-lines CMP(A2.json vs B3.json) - STOP
+# batched greedy vs solo greedy, conc 3: build 13s, prompt helper off (d13sid-20261113T041101Z)
+id: PASSED
+srvid: PASSED
+CMP A1.json vs A2.json: IDENTICAL (8 of 8 identical)
+CMP A2.json vs B3.json: IDENTICAL (8 of 8 identical)
+DCMP 600 vs 600 sequences, 10 tests at alpha 0.01 (Bonferroni 0.0010 each): PASS
+sbi: PASSED
+# bank tax (l6-20261112T184118Z)
+ID K1p vs K4: token ids IDENTICAL | VRAM experts EQUAL | hash EQUAL
+ID K2p vs K4: token ids IDENTICAL | VRAM experts EQUAL | hash EQUAL
+ID K1 vs K4: token ids DIFFER or missing | VRAM experts DIFFERENT | hash DIFFERENT or none
+VERDICT L6 ENGINE: NO TAX: K4 - K1p +0.007 ms a token (+0.1 %) on identical tokens; K2p 11.321 between (monotone in banks)
+VERDICT L6 SERVER: NO TAX: S4 - S1p +0.089 ms a token (+0.9 %) on identical text; p99 gap S4 / S1p 1.01

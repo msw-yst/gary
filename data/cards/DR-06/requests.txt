@@ -1,0 +1,103 @@
+ds4 serve: prompt 15 tokens = 0 reused + 15 read in 90 ms (167.3 tok/s), 8 generated in 85 ms (93.82 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 4 of 6 kept; per position (kept / reached): 1: 3/4 75% 2: 1/1 100% 3: 0/1 0%
+ds4 serve: prompt 3514 tokens = 0 reused + 3514 read in 7700 ms (456.3 tok/s), 119 generated in 1335 ms (89.14 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 66 of 121 kept; per position (kept / reached): 1: 40/51 78% 2: 15/28 54% 3: 11/15 73%
+ds4 serve: prompt 7029 tokens = 3633 reused + 3396 read in 4798 ms (707.8 tok/s), 179 generated in 1894 ms (94.51 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 101 of 185 kept; per position (kept / reached): 1: 61/74 82% 2: 26/49 53% 3: 14/24 58%
+ds4 serve: prompt 8424 tokens = 7208 reused + 1216 read in 3387 ms (359.0 tok/s), 128 generated in 1511 ms (84.71 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 68 of 133 kept; per position (kept / reached): 1: 43/60 72% 2: 13/27 48% 3: 12/13 92%
+ds4 serve: prompt 15131 tokens = 8552 reused + 6579 read in 5750 ms (1144.1 tok/s), 158 generated in 1870 ms (84.51 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 85 of 177 kept; per position (kept / reached): 1: 53/73 73% 2: 19/38 50% 3: 13/19 68%
+ds4 serve: prompt 19281 tokens = 15289 reused + 3992 read in 4827 ms (827.1 tok/s), 184 generated in 2020 ms (91.07 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 101 of 179 kept; per position (kept / reached): 1: 64/81 79% 2: 24/42 57% 3: 13/21 62%
+ds4 serve: prompt 25384 tokens = 19465 reused + 5919 read in 5793 ms (1021.8 tok/s), 115 generated in 1264 ms (90.98 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 65 of 112 kept; per position (kept / reached): 1: 39/50 78% 2: 14/25 56% 3: 12/14 86%
+ds4 serve: prompt 31744 tokens = 25499 reused + 6245 read in 5781 ms (1080.3 tok/s), 174 generated in 2149 ms (80.98 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 89 of 201 kept; per position (kept / reached): 1: 55/85 65% 2: 25/43 58% 3: 9/20 45%
+ds4 serve: prompt 37641 tokens = 31918 reused + 5723 read in 5542 ms (1032.7 tok/s), 131 generated in 1517 ms (86.33 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 72 of 140 kept; per position (kept / reached): 1: 40/59 68% 2: 18/28 64% 3: 14/16 88%
+ds4 serve: prompt 44722 tokens = 37772 reused + 6950 read in 6118 ms (1136.1 tok/s), 302 generated in 3620 ms (83.41 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 148 of 286 kept; per position (kept / reached): 1: 97/154 63% 2: 35/51 69% 3: 16/25 64%
+ds4 serve: prompt 54389 tokens = 45024 reused + 9365 read in 8296 ms (1128.9 tok/s), 96 generated in 1163 ms (82.58 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 51 of 104 kept; per position (kept / reached): 1: 30/44 68% 2: 13/18 72% 3: 8/13 62%
+ds4 serve: prompt 60749 tokens = 54484 reused + 6265 read in 5976 ms (1048.4 tok/s), 164 generated in 1899 ms (86.38 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 86 of 157 kept; per position (kept / reached): 1: 54/76 71% 2: 19/33 58% 3: 13/17 76%
+ds4 serve: prompt 64347 tokens = 60913 reused + 3434 read in 5065 ms (678.0 tok/s), 165 generated in 1932 ms (85.38 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 91 of 171 kept; per position (kept / reached): 1: 53/74 72% 2: 24/36 67% 3: 14/22 64%
+ds4 serve: prompt 68272 tokens = 64512 reused + 3760 read in 5017 ms (749.5 tok/s), 681 generated in 8073 ms (84.35 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 323 of 526 kept; per position (kept / reached): 1: 239/343 70% 2: 61/89 69% 3: 23/31 74%
+ds4 serve: prompt 73853 tokens = 68952 reused + 4901 read in 5435 ms (901.7 tok/s), 357 generated in 4404 ms (81.06 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 161 of 284 kept; per position (kept / reached): 1: 123/188 65% 2: 30/43 70% 3: 8/13 62%
+ds4 serve: prompt 75073 tokens = 74210 reused + 863 read in 3250 ms (265.6 tok/s), 103 generated in 1247 ms (82.58 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 54 of 99 kept; per position (kept / reached): 1: 33/45 73% 2: 14/22 64% 3: 7/12 58%
+ds4 serve: prompt 78991 tokens = 75176 reused + 3815 read in 5075 ms (751.7 tok/s), 1127 generated in 12553 ms (89.78 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 596 of 1009 kept; per position (kept / reached): 1: 383/514 75% 2: 144/237 61% 3: 69/118 58%
+ds4 serve: prompt 80276 tokens = 80117 reused + 159 read in 745 ms (213.5 tok/s), 9144 generated in 112158 ms (81.53 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 4231 of 8012 kept; per position (kept / reached): 1: 3091/4662 66% 2: 829/1399 59% 3: 311/616 50%
+ds4 serve: prompt 90314 tokens = 89419 reused + 895 read in 3370 ms (265.6 tok/s), 1955 generated in 22070 ms (88.58 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 1048 of 1938 kept; per position (kept / reached): 1: 638/887 72% 2: 269/449 60% 3: 141/224 63%
+ds4 serve: prompt 93074 tokens = 92269 reused + 805 read in 3271 ms (246.1 tok/s), 2409 generated in 25466 ms (94.60 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 1365 of 2152 kept; per position (kept / reached): 1: 809/1020 79% 2: 380/549 69% 3: 176/304 58%
+ds4 serve: prompt 95496 tokens = 95483 reused + 13 read in 84 ms (154.0 tok/s), 1122 generated in 10923 ms (102.72 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 690 of 1038 kept; per position (kept / reached): 1: 374/424 88% 2: 217/309 70% 3: 99/175 57%
+ds4 serve: prompt 96631 tokens = 96618 reused + 13 read in 85 ms (153.0 tok/s), 2103 generated in 19102 ms (110.10 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 1358 of 1857 kept; per position (kept / reached): 1: 678/744 91% 2: 436/575 76% 3: 244/358 68%
+ds4 serve: prompt 98747 tokens = 98733 reused + 14 read in 91 ms (154.0 tok/s), 116 generated in 1156 ms (100.37 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 71 of 100 kept; per position (kept / reached): 1: 41/45 91% 2: 18/26 69% 3: 12/15 80%
+ds4 serve: prompt 100996 tokens = 98863 reused + 2133 read in 4147 ms (514.3 tok/s), 114 generated in 1249 ms (91.25 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 63 of 97 kept; per position (kept / reached): 1: 38/47 81% 2: 15/22 68% 3: 10/13 77%
+ds4 serve: prompt 101696 tokens = 101110 reused + 586 read in 3263 ms (179.6 tok/s), 936 generated in 10872 ms (86.09 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 467 of 754 kept; per position (kept / reached): 1: 312/425 73% 2: 104/154 68% 3: 51/78 65%
+ds4 serve: prompt 102645 tokens = 102632 reused + 13 read in 85 ms (153.1 tok/s), 148 generated in 1798 ms (82.32 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 78 of 154 kept; per position (kept / reached): 1: 47/70 67% 2: 22/30 73% 3: 9/19 47%
+ds4 serve: prompt 103584 tokens = 102793 reused + 791 read in 3275 ms (241.5 tok/s), 373 generated in 3778 ms (98.73 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 220 of 319 kept; per position (kept / reached): 1: 128/149 86% 2: 60/86 70% 3: 32/48 67%
+ds4 serve: prompt 103970 tokens = 103957 reused + 13 read in 84 ms (154.2 tok/s), 1361 generated in 16253 ms (83.74 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 672 of 1156 kept; per position (kept / reached): 1: 480/661 73% 2: 133/224 59% 3: 59/106 56%
+ds4 serve: prompt 105344 tokens = 105331 reused + 13 read in 85 ms (152.3 tok/s), 113 generated in 1017 ms (111.11 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 74 of 90 kept; per position (kept / reached): 1: 37/39 95% 2: 22/27 81% 3: 15/17 88%
+ds4 serve: prompt 105526 tokens = 105457 reused + 69 read in 370 ms (186.7 tok/s), 2810 generated in 35506 ms (79.14 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 1222 of 2171 kept; per position (kept / reached): 1: 935/1421 66% 2: 211/331 64% 3: 76/136 56%
+ds4 serve: prompt 108412 tokens = 108335 reused + 77 read in 379 ms (203.3 tok/s), 1227 generated in 13412 ms (91.49 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 663 of 1037 kept; per position (kept / reached): 1: 391/546 72% 2: 166/230 72% 3: 106/145 73%
+ds4 serve: prompt 109652 tokens = 109639 reused + 13 read in 85 ms (152.6 tok/s), 427 generated in 3949 ms (108.12 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 270 of 356 kept; per position (kept / reached): 1: 138/157 88% 2: 79/97 81% 3: 53/70 76%
+ds4 serve: prompt 110092 tokens = 110079 reused + 13 read in 87 ms (149.9 tok/s), 5175 generated in 58265 ms (88.82 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 2801 of 4800 kept; per position (kept / reached): 1: 1782/2272 78% 2: 727/1207 60% 3: 292/528 55%
+ds4 serve: prompt 18563 tokens = 0 reused + 18563 read in 11115 ms (1670.1 tok/s), 2783 generated in 32099 ms (86.70 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 1355 of 2284 kept; per position (kept / reached): 1: 967/1326 73% 2: 283/451 63% 3: 105/187 56%
+ds4 serve: prompt 25992 tokens = 2255 reused + 23737 read in 12839 ms (1848.8 tok/s), 118 generated in 1424 ms (82.84 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 58 of 115 kept; per position (kept / reached): 1: 36/56 64% 2: 14/22 64% 3: 8/12 67%
+ds4 serve: prompt 26998 tokens = 26110 reused + 888 read in 3325 ms (267.0 tok/s), 149 generated in 1568 ms (95.00 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 82 of 125 kept; per position (kept / reached): 1: 52/65 80% 2: 24/29 83% 3: 6/15 40%
+ds4 serve: prompt 27564 tokens = 27147 reused + 417 read in 1827 ms (228.2 tok/s), 88 generated in 921 ms (95.57 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 52 of 85 kept; per position (kept / reached): 1: 31/36 86% 2: 15/20 75% 3: 6/14 43%
+ds4 serve: prompt 28882 tokens = 27652 reused + 1230 read in 3340 ms (368.3 tok/s), 71 generated in 812 ms (87.47 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 36 of 59 kept; per position (kept / reached): 1: 22/31 71% 2: 8/10 80% 3: 6/7 86%
+ds4 serve: prompt 30819 tokens = 28953 reused + 1866 read in 3800 ms (491.0 tok/s), 2631 generated in 26696 ms (98.56 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 1526 of 2315 kept; per position (kept / reached): 1: 943/1079 87% 2: 405/644 63% 3: 178/300 59%
+ds4 serve: prompt 33463 tokens = 33450 reused + 13 read in 82 ms (158.4 tok/s), 112 generated in 1066 ms (105.02 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 71 of 88 kept; per position (kept / reached): 1: 34/37 92% 2: 21/24 88% 3: 16/18 89%
+ds4 serve: prompt 33996 tokens = 33575 reused + 421 read in 1890 ms (222.7 tok/s), 133 generated in 1550 ms (85.83 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 65 of 109 kept; per position (kept / reached): 1: 43/61 70% 2: 16/24 67% 3: 6/12 50%
+ds4 serve: prompt 34418 tokens = 34128 reused + 290 read in 1311 ms (221.3 tok/s), 447 generated in 4200 ms (106.43 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 274 of 367 kept; per position (kept / reached): 1: 152/171 89% 2: 79/97 81% 3: 43/65 66%
+ds4 serve: prompt 34934 tokens = 34865 reused + 69 read in 338 ms (203.9 tok/s), 317 generated in 3775 ms (83.96 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 146 of 236 kept; per position (kept / reached): 1: 110/163 67% 2: 23/29 79% 3: 13/15 87%
+ds4 serve: prompt 36511 tokens = 35251 reused + 1260 read in 3397 ms (370.9 tok/s), 2324 generated in 29210 ms (79.56 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 975 of 1696 kept; per position (kept / reached): 1: 795/1243 64% 2: 134/197 68% 3: 46/83 55%
+ds4 serve: prompt 40455 tokens = 38835 reused + 1620 read in 3888 ms (416.6 tok/s), 191 generated in 2398 ms (79.65 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 93 of 203 kept; per position (kept / reached): 1: 61/96 64% 2: 19/35 54% 3: 13/18 72%
+ds4 serve: prompt 42067 tokens = 40646 reused + 1421 read in 3714 ms (382.6 tok/s), 1902 generated in 23048 ms (82.52 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 853 of 1451 kept; per position (kept / reached): 1: 646/957 68% 2: 147/224 66% 3: 60/105 57%
+ds4 serve: prompt 44038 tokens = 43969 reused + 69 read in 337 ms (204.5 tok/s), 908 generated in 10404 ms (87.27 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 447 of 698 kept; per position (kept / reached): 1: 323/431 75% 2: 83/120 69% 3: 41/61 67%
+ds4 serve: prompt 45015 tokens = 44946 reused + 69 read in 346 ms (199.5 tok/s), 1982 generated in 24607 ms (80.55 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 843 of 1431 kept; per position (kept / reached): 1: 684/1039 66% 2: 110/156 71% 3: 49/74 66%
+ds4 serve: prompt 3515 tokens = 2255 reused + 1260 read in 3562 ms (353.8 tok/s), 66 generated in 672 ms (98.17 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 37 of 59 kept; per position (kept / reached): 1: 21/28 75% 2: 10/10 100% 3: 6/9 67%
+ds4 serve: prompt 3798 tokens = 3580 reused + 218 read in 965 ms (225.8 tok/s), 110 generated in 1154 ms (95.28 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 62 of 103 kept; per position (kept / reached): 1: 37/46 80% 2: 15/25 60% 3: 10/15 67%
+ds4 serve: prompt 10430 tokens = 3908 reused + 6522 read in 5491 ms (1187.7 tok/s), 175 generated in 1915 ms (91.40 tok/s); CPU lane 0.0% of the experts
+ds4 serve: drafts 98 of 185 kept; per position (kept / reached): 1: 57/75 76% 2: 25/44 57% 3: 16/22 73%
+ds4 serve: prompt 14060 tokens = 10605 reused + 3455 read in 4528 ms (763.0 tok/s), 0 generated in 0 ms (0.00 tok/s); CPU lane 0.0% of the experts

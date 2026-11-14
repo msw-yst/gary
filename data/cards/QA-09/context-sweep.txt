@@ -1,0 +1,21 @@
+l11brun l11b-20261113T122323Z - NEW <path> (<hash>); env DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1 DS4_PF_HELPER=8192 DS4_TOPK_MB=1 (OFF arm =0); tp4h4: --gpus 0,1,2,8 --tp 4 --helper-device 4,5,6,7;
+== (b) the context sweep (prereg.md 4)
+== ms a token (MEASURED: decode lines, 128 tokens, B1, drafter off; VRAM experts of the lead)
+  s-1k        14.643  (ok; VRAM experts 7098)
+  s-110k      15.006  (ok; VRAM experts 7098)
+  s-128k      14.975  (ok; VRAM experts 7098)
+  s-1k-mc256  14.661  (ok; VRAM experts 7051)
+  s-256k      15.475  (ok; VRAM experts 7051)
+  s-256k-OFF  16.321  (ok; VRAM experts 7051)
+  s-1k-ref    14.605  (ok; VRAM experts 7098)
+  s-1k-mc512  14.637  (ok; VRAM experts 6928)
+  s-512k      15.808  (ok; VRAM experts 6928)
+noise N = max(|s-1k-ref - s-1k| = 0.038, 0.21) = 0.210 ms
+== prereg verdicts (delta = plus - minus, ms a token)
+d110    +0.363 ms (N 0.210); predicted +0.31 [+0.20, +0.45] -> PASS  - 110K vs 1K, TOPK_MB on (anchor: topkmb-20261112T100252Z ON +0.314)
+d128    +0.331 ms (N 0.210); predicted +0.37 [+0.25, +0.55] -> PASS  - 128K vs 1K, TOPK_MB on
+dmc256  +0.017 ms (N 0.210); predicted +0.06 [+0.00, +0.20] -> NOT SEPARABLE  - max-context 262144 vs 131072 at 1K (placement: fewer VRAM experts)
+d256    +0.814 ms (N 0.210); predicted +0.76 [+0.55, +1.20] -> PASS  - 256K vs 1K, both at max-context 262144, TOPK_MB on
+dtk256  +0.846 ms (N 0.210); predicted +0.55 [+0.35, +0.90] -> PASS  - TOPK_MB's gain at 256K (OFF - ON)
+dmc512  -0.006 ms (N 0.210); predicted +0.15 [+0.03, +0.35] -> NOT SEPARABLE  - max-context 524288 vs 131072 at 1K (placement)
+d512    +1.171 ms (N 0.210); predicted +1.60 [+1.10, +2.50] -> PASS  - 512K vs 1K, both at max-context 524288, TOPK_MB on

@@ -1,0 +1,24 @@
+l18run l18-20261113T190226Z - V b12pf <path> (<hash>); env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1 DS4_BATCH_PREFILL_SHARE=0.5 DS4_PF_HELPER=8192 ; tp4h4: --gpus 0,1,2,8 --tp 4 --helper-device 4
+rep 1: 65 of 72 request positions matched (every block served, drafts, 16 <= G < 1024); blocks B2 B3 B4 B5
+rep 2: 65 of 72 request positions matched (every block served, drafts, 16 <= G < 1024); blocks B2 B3 B4 B5
+== PRIMARY: matched mix, ms a generated token (MEASURED; sampled t 0.6, the 8 drafter prompts)
+  BASE (3, 0.3): 10.630 [10.501-10.759] n2 | PLA (3, 0.3, seeds + 1000): 10.370 [10.332-10.409] n2
+  placebo PLA - BASE -2.44 % (content noise: other random draws, the same policy)
+  (2, 0.3): 10.532 [10.417-10.647] n2 | delta -0.92 % | N 2.44 % | predicted +0.3 % [-1.0, +1.5]: inside -> NOT SEPARABLE
+  (2, 0.4): 10.558 [10.478-10.637] n2 | delta -0.68 % | N 2.44 % | predicted -0.1 % [-1.5, +1.5]: inside -> NOT SEPARABLE
+  (3, 0.4): 10.411 [10.276-10.545] n2 | delta -2.06 % | N 2.53 % | predicted -0.4 % [-1.5, +0.5]: below -> NOT SEPARABLE
+  (4, 0.3): 10.414 [10.187-10.642] n2 | delta -2.03 % | N 4.29 % | predicted +0.3 % [-0.8, +1.2]: below -> NOT SEPARABLE
+  (4, 0.4): 10.473 [10.342-10.604] n2 | delta -1.47 % | N 2.46 % | predicted -0.2 % [-1.5, +1.2]: inside -> NOT SEPARABLE
+  (5, 0.3): 10.442 [10.393-10.490] n2 | delta -1.77 % | N 2.44 % | predicted +0.5 % [-0.8, +1.8]: below -> NOT SEPARABLE
+  (5, 0.4): 10.208 [10.138-10.279] n2 | delta -3.97 % | N 2.44 % | predicted -0.1 % [-1.5, +1.5]: below -> BETTER
+== secondary (info): tokens a round, rows a round, kept rate, per position kept/reached, cost-normalised ms a token
+  (3, 0.3): tokens a round 2.025 | rows a round 1.79 | kept 57.2 % | 1: 69% 2: 68% 3: 78% | normalised 10.706 ms
+  ('PLA', 3): tokens a round 2.095 | rows a round 1.82 | kept 60.1 % | 1: 73% 2: 70% 3: 81% | normalised 10.385 ms
+  (2, 0.3): tokens a round 1.965 | rows a round 1.44 | kept 67.2 % | 1: 75% 2: 67% | normalised 10.576 ms
+  (2, 0.4): tokens a round 1.863 | rows a round 1.16 | kept 74.4 % | 1: 79% 2: 76% | normalised 10.778 ms
+  (3, 0.4): tokens a round 1.956 | rows a round 1.41 | kept 67.7 % | 1: 77% 2: 78% 3: 77% | normalised 10.591 ms
+  (4, 0.3): tokens a round 2.226 | rows a round 2.31 | kept 53.2 % | 1: 71% 2: 69% 3: 82% 4: 63% | normalised 10.323 ms
+  (4, 0.4): tokens a round 2.007 | rows a round 1.58 | kept 63.7 % | 1: 75% 2: 75% 3: 85% 4: 67% | normalised 10.535 ms
+  (5, 0.3): tokens a round 2.282 | rows a round 2.57 | kept 49.8 % | 1: 72% 2: 70% 3: 80% 4: 62% 5: 67% | normalised 10.367 ms
+  (5, 0.4): tokens a round 2.094 | rows a round 1.79 | kept 61.1 % | 1: 78% 2: 78% 3: 80% 4: 70% 5: 68% | normalised 10.351 ms
+VERDICT L18: ADOPT-CANDIDATE (5, 0.4) (confirm in a second run before changing the served policy)

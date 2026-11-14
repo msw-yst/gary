@@ -1,0 +1,38 @@
+l8run l8-20261112T071519Z - NEW <path> (<hash>); served env: DS4_HC_FUSE=2 DS4_ROUTE_FUSE=2 DS4_DECODE_TRIM=7 DS4_ROUTER_BF16=1 STRATA_ROCBLAS_TUNING=<path> DS4_HELPER_OVERLAP=1 DS4_HELPER_BATCH=1 DS4_HELPER_DD=1 DS4_HELPER_DD_SKIP=1 DS4_AR_POST=3 DS4_ATTN_MERGE=2 DS4_AHEAD=0 DS4_LP_PUBFUSE=1 DS4_LP_JOINCOMB=1 DS4_LP_FLAGFUSE=1 DS4_HW_FOLD=1 DS4_HW_HEADQ8=1 DS4_HW_PUBT=1 DS4_EG_SPLIT=1; tp4h4: --gpus 0,1,2,7 --tp 4 --helper-device 3,4,5,6; N 256; REPS 6 PREPS 6
+== identity
+ID id-d-U vs id-d-REF: stdout IDENTICAL | placement (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) (7177 of 15744 in VRAM) | lines ok
+ID id-d-ON vs id-d-OFF: stdout IDENTICAL | placement (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) | lines ok
+ID id-x-ON vs id-x-OFF: stdout IDENTICAL | placement (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) (7172 of 15744 in VRAM) | lines ok
+ID id-bt-ON vs id-bt-OFF: stdout IDENTICAL | placement (7132 of 15744 in VRAM) (7132 of 15744 in VRAM) (7132 of 15744 in VRAM) (7132 of 15744 in VRAM) | lines ok
+== engagement (every ON process; NOT ENGAGED makes that rep NO DATA)
+b1-ON-1: engaged (2072 prefetches taken)
+b1-ON-2: engaged (2072 prefetches taken)
+b1-ON-3: engaged (2072 prefetches taken)
+b1-ON-4: engaged (2072 prefetches taken)
+b1-ON-5: engaged (2072 prefetches taken)
+b1-ON-6: engaged (2072 prefetches taken)
+prod-ON-1: engaged (2496 prefetches taken)
+prod-ON-2: engaged (2496 prefetches taken)
+prod-ON-3: engaged (2496 prefetches taken)
+prod-ON-4: engaged (2496 prefetches taken)
+prod-ON-5: engaged (2496 prefetches taken)
+prod-ON-6: engaged (2496 prefetches taken)
+== identity: ok (4 ID lines)
+== b1 (B1 plain decode, ms a token; valid reps only)
+  b1 OFF: 13.335 [13.203-13.732] n6  reps 13.203 13.289 13.256 13.263 13.732 13.270
+  b1 ON: 13.196 [13.165-13.226] n6  reps 13.226 13.203 13.172 13.210 13.165 13.201
+  b1 PLA: 13.243 [13.219-13.280] n6  reps 13.228 13.280 13.231 13.271 13.219 13.229
+  b1: delta ON-OFF -0.139 ms (-1.04 %) | placebo PLA-OFF -0.092 (bound 0.05) | noise 0.529 | predicted -0.12 .. -0.02 (central -0.07): below (larger gain than predicted)
+VERDICT B1: NOT SEPARABLE (placebo over its bound)
+== prod PRIMARY: matched mix, 8 of 8 request positions (every arm-rep served, drafts, 16 <= gen < 1024)
+  prod OFF: 10.102 [10.086-10.111] n6  reps 10.086 10.102 10.101 10.109 10.104 10.111
+  prod ON: 9.991 [9.969-10.034] n6  reps 10.034 9.987 9.969 9.975 10.003 9.977
+  prod PLA: 10.106 [10.091-10.123] n6  reps 10.093 10.098 10.114 10.120 10.091 10.123
+  prod: delta ON-OFF -0.111 ms (-1.10 %) | placebo PLA-OFF +0.004 (bound 0.20) | noise 0.064 | predicted -0.14 .. -0.02 (central -0.07): inside
+VERDICT PROD: PASS
+== prod secondary (all usable requests, the mix NOT matched; info only)
+  prod-all OFF: 10.102  reps 10.086 10.102 10.101 10.109 10.104 10.111
+  prod-all ON: 9.991  reps 10.034 9.987 9.969 9.975 10.003 9.977
+  prod-all PLA: 10.106  reps 10.093 10.098 10.114 10.120 10.091 10.123
+VERDICT L8: PASS
+TRIPPED: 0 new lines since start
