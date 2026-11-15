@@ -1,0 +1,92 @@
+# Served A/B, base build 17s (base) vs + DS4_ECSWAP=1 (swap), rounds base swap swap base; 'life' = one server
+# after 50 earlier prompts. Sanitised extract.
+PHASE r1-hla    VALID
+PHASE r1-hlc    VALID
+PHASE r1-life   VALID
+PHASE r2-hla    VALID
+PHASE r2-hlc    VALID
+PHASE r2-life   VALID
+PHASE r3-hla    VALID
+PHASE r3-hlc    VALID
+PHASE r3-life   VALID
+PHASE r4-hla    VALID
+PHASE r4-hlc    VALID
+PHASE r4-life   VALID
+PHASE r1-probe  VALID
+PHASE r2-probe  VALID
+PHASE r3-probe  VALID
+PHASE r4-probe  VALID
+PHASES VALID: 16 of 16
+CELL hla PAR 4: 1 user 2K, ms a token
+  rounds: r1 base 8.514 | r2 swap 8.633 | r3 swap 8.582 | r4 base 8.480 ms
+  delta +0.111 ms (+1.3 %) | exceeds within-arm spread: YES (|delta| 0.111 > spread 0.051) | drift base r4 - r1 -0.034
+CELL hla PAR 4: 1 user 2K, first token
+  rounds: r1 base 2.198 | r2 swap 2.182 | r3 swap 2.182 | r4 base 2.192 s
+  delta -0.013 s (-0.6 %) | exceeds within-arm spread: YES (|delta| 0.013 > spread 0.005) | drift base r4 - r1 -0.005
+CELL hla PAR 4: 1 user 8K, ms a token
+  rounds: r1 base 8.732 | r2 swap 8.710 | r3 swap 8.674 | r4 base 8.697 ms
+  delta -0.023 ms (-0.3 %) | exceeds within-arm spread: NO (|delta| 0.023 <= spread 0.036: within round-to-round noise) | drift base r4 - r1 -0.034
+CELL hla PAR 4: 1 user 8K, first token
+  rounds: r1 base 5.844 | r2 swap 5.847 | r3 swap 5.860 | r4 base 5.855 s
+  delta +0.004 s (+0.1 %) | exceeds within-arm spread: NO (|delta| 0.004 <= spread 0.013: within round-to-round noise) | drift base r4 - r1 +0.011
+CELL hla PAR 4: 4 users, total tok/s
+  rounds: r1 base 160.706 | r2 swap 158.690 | r3 swap 161.874 | r4 base 161.173 tok/s
+  delta -0.658 tok/s (-0.4 %) | exceeds within-arm spread: NO (|delta| 0.658 <= spread 3.184: within round-to-round noise) | drift base r4 - r1 +0.467
+CELL hla PAR 4: 4 users, ms a token each
+  rounds: r1 base 24.890 | r2 swap 25.217 | r3 swap 24.711 | r4 base 24.818 ms
+  delta +0.110 ms (+0.4 %) | exceeds within-arm spread: NO (|delta| 0.110 <= spread 0.506: within round-to-round noise) | drift base r4 - r1 -0.072
+CELL hla PAR 4: 1 user 32K cold, first token
+  rounds: r1 base 18.793 | r2 swap 18.607 | r3 swap 18.673 | r4 base 18.686 s
+  delta -0.099 s (-0.5 %) | exceeds within-arm spread: NO (|delta| 0.099 <= spread 0.107: within round-to-round noise) | drift base r4 - r1 -0.107
+CELL hlc PAR 8: 8 users, total tok/s
+  rounds: r1 base 203.703 | r2 swap 204.223 | r3 swap 204.552 | r4 base 200.911 tok/s
+  delta +2.080 tok/s (+1.0 %) | exceeds within-arm spread: NO (|delta| 2.080 <= spread 2.792: within round-to-round noise) | drift base r4 - r1 -2.792
+CELL hlc PAR 8: 8 users, ms a token each
+  rounds: r1 base 39.275 | r2 swap 39.175 | r3 swap 39.110 | r4 base 39.840 ms
+  delta -0.415 ms (-1.0 %) | exceeds within-arm spread: NO (|delta| 0.415 <= spread 0.566: within round-to-round noise) | drift base r4 - r1 +0.566
+CELL hlc PAR 8: 8 users 8K, total tok/s (report-only)
+  rounds: r1 base 202.226 | r2 swap 202.873 | r3 swap 202.329 | r4 base 202.592 tok/s
+  delta +0.192 tok/s (+0.1 %) | exceeds within-arm spread: NO (|delta| 0.192 <= spread 0.544: within round-to-round noise) | drift base r4 - r1 +0.366
+CELL hlc PAR 8: 8 users 8K, ms a token each (report-only)
+  rounds: r1 base 39.560 | r2 swap 39.435 | r3 swap 39.541 | r4 base 39.489 ms
+  delta -0.037 ms (-0.1 %) | exceeds within-arm spread: NO (|delta| 0.037 <= spread 0.106: within round-to-round noise) | drift base r4 - r1 -0.072
+CELL hlc PAR 8: 8 users 8K, first token (report-only)
+  rounds: r1 base 28.236 | r2 swap 27.410 | r3 swap 27.458 | r4 base 28.186 s
+  delta -0.777 s (-2.8 %) | exceeds within-arm spread: YES (|delta| 0.777 > spread 0.050) | drift base r4 - r1 -0.050
+CELL life PAR 4: 1 user 2K after 50 prompts, first token
+  rounds: r1 base 2.701 | r2 swap 2.061 | r3 swap 2.066 | r4 base 2.635 s
+  delta -0.605 s (-22.7 %) | exceeds within-arm spread: YES (|delta| 0.605 > spread 0.066) | drift base r4 - r1 -0.066
+CELL life PAR 4: 1 user 2K after 50 prompts, ms a token (report-only)
+  rounds: r1 base 9.210 | r2 swap 9.331 | r3 swap 9.255 | r4 base 9.393 ms
+  delta -0.008 ms (-0.1 %) | exceeds within-arm spread: NO (|delta| 0.008 <= spread 0.183: within round-to-round noise) | drift base r4 - r1 +0.183
+E1  life 1 user 2K first token after 50 prompts (delta %)  OUT (better than predicted)    delta -22.7 %; predicted -8.0 [-14.0, -3.0]; resolved vs round spread: yes
+E2  hla 1 user 32K cold first token (delta %; BASE build 17s) IN                             delta -0.5 %; predicted 0.0 [-1.5, 1.5]; resolved vs round spread: no
+E3  hla 1 user 2K first token (delta %)                    IN                             delta -0.6 %; predicted -1.0 [-3.0, 1.0]; resolved vs round spread: yes
+E3b hla 1 user 8K first token (delta %)                    IN                             delta +0.1 %; predicted -1.0 [-3.0, 1.0]; resolved vs round spread: no
+E4  hla 1 user 2K ms a token (delta ms)                    OUT (worse than predicted)     delta +0.111; predicted -0.03 [-0.1, 0.03]; resolved vs round spread: yes
+E4b hla 1 user 8K ms a token (delta ms)                    IN                             delta -0.023; predicted -0.03 [-0.1, 0.03]; resolved vs round spread: no
+E5  hla 4 users total tok/s (delta %)                      IN                             delta -0.4 %; predicted 0.0 [-2.0, 2.0]; resolved vs round spread: no
+E5m hla 4 users ms a token (delta %)                       IN                             delta +0.4 %; predicted 0.0 [-2.0, 2.0]; resolved vs round spread: no
+E6  hlc 8 users total tok/s (delta %)                      IN                             delta +1.0 %; predicted 0.0 [-2.0, 2.0]; resolved vs round spread: no
+E6m hlc 8 users ms a token (delta %)                       IN                             delta -1.0 %; predicted 0.0 [-2.0, 2.0]; resolved vs round spread: no
+REPORT life 1 user 2K ms a token (no prediction): delta -0.008 (-0.1 %), resolved vs round spread: no
+REPORT hlc 8 users 8K total tok/s (no prediction): delta +0.192 (+0.1 %), resolved vs round spread: no
+REPORT hlc 8 users 8K ms a token (no prediction): delta -0.037 (-0.1 %), resolved vs round spread: no
+REPORT hlc 8 users 8K first token (no prediction): delta -0.777 (-2.8 %), resolved vs round spread: yes
+DRAFT r1 base 1540 steps (22 drafted), 6148 rows, kept greedy 0/0 sampled 9/28
+DRAFT r2 swap  1541 steps (24 drafted), 6153 rows, kept greedy 0/0 sampled 6/30
+DRAFT r3 swap  1541 steps (25 drafted), 6172 rows, kept greedy 0/0 sampled 8/51
+DRAFT r4 base 1539 steps (23 drafted), 6155 rows, kept greedy 0/0 sampled 10/36
+PROBE r1 base swaps after the prompts: total 35 (2K 8, 6.5K 12, 31K 15) | 2K: prompt 2048 tok 1454.3 ms, 64 new, accepted 28 of 44 offered, decode 679.2 ms, 18.87 ms a step | 6.5K: prompt 6500 tok 4569.6 ms, 64 new, accepted 30 of 75 offere
+PROBE r2 swap  swaps after the prompts: total 24 (2K 8, 6.5K 8, 31K 8) | 2K: prompt 2048 tok 1517.6 ms, 64 new, accepted 28 of 44 offered, decode 676.2 ms, 18.78 ms a step | 6.5K: prompt 6500 tok 4550.5 ms, 64 new, accepted 27 of 73 offered
+PROBE r2 AUDIT last: requests 3120, picks 65520, twice 0, handed 0, device checks 12480, mismatched 0, timeouts 0 | ECSWAP: 16 handovers (0 freed), 0 fallbacks, 0 plain, table audits 3 (0 incomplete), twice 0, dropped 0, table mismatches 0,
+PROBE r3 swap  swaps after the prompts: total 24 (2K 8, 6.5K 8, 31K 8) | 2K: prompt 2048 tok 1517.4 ms, 64 new, accepted 28 of 44 offered, decode 682.9 ms, 18.97 ms a step | 6.5K: prompt 6500 tok 4603.1 ms, 64 new, accepted 27 of 73 offered
+PROBE r3 AUDIT last: requests 3120, picks 65520, twice 0, handed 0, device checks 12480, mismatched 0, timeouts 0 | ECSWAP: 16 handovers (0 freed), 0 fallbacks, 0 plain, table audits 3 (0 incomplete), twice 0, dropped 0, table mismatches 0,
+PROBE r4 base swaps after the prompts: total 35 (2K 8, 6.5K 12, 31K 15) | 2K: prompt 2048 tok 1454.5 ms, 64 new, accepted 28 of 44 offered, decode 677.9 ms, 18.83 ms a step | 6.5K: prompt 6500 tok 4621.9 ms, 64 new, accepted 30 of 75 offere
+PROBE32 base prompt ms: mean 17672.8 [17652.3, 17693.2]
+PROBE32 base io: MB read mean 0.0 [0.0, 0.0], major faults mean 0 [0, 0]
+PROBE32 swap prompt ms: mean 17769.2 [17724.5, 17813.9]
+PROBE32 swap io: MB read mean 0.0 [0.0, 0.0], major faults mean 0 [0, 0]
+VERDICT ECSWAP-AB SPEED: COMPLETE (8 of 10 predictions IN: E1 OUT (better than predicted), E2 IN, E3 IN, E3b IN, E4 OUT (worse than predicted), E4b IN, E5 IN, E5m IN, E6 IN, E6m IN)
+VERDICT ECSWAP-AB EXACTLY-ONCE: PASS (r2: 16 handovers, 3 table audits: 0 twice, 0 dropped, 0 mismatches; DD 0 twice, 12480 device checks; r3: 16 handovers, 3 table audits: 0 twice, 0 dropped, 0 mismatches; DD 0 twice, 12480 device checks)
+TRIPPED: 0 new lines since start

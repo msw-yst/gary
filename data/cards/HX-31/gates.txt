@@ -1,0 +1,30 @@
+# DS4_SETTLE_AFTER gates on build 17: check 0 flag unset == build 17; check 1 the same end placements with =1 and =2.
+# Sanitised extract.
+check 0 ID g0-P-d vs build-16 re-validation run ref-P-d [d]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (2040); TK engaged (d);
+check 0 ID g0-P-bt vs build-16 re-validation run ref-P-bt [bt]: PASS | stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | L8 engaged (22440); TK engaged (bt);
+check 0 ID g0-L-32k vs build-16 re-validation run ref-L-32k [32k]: PASS | stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | L8 engaged (504); TK engaged (32k);
+PROBE g0-Q-b17: rc 0 | swaps after the prompts [8 8 8] | hashes [] | DONE prompt ms [321.4 1569.6 4918.7 17875.5]
+PROBE g0-Q-S0: rc 0 | swaps after the prompts [8 8 8] | hashes [] | DONE prompt ms [316.5 1768.7 4909.1 17744.8]
+check 0 Q: PASS (build 17s flag unset == build 17: probe T / DONE IDENTICAL, swaps [8 8 8])
+g0: PASSED
+PROBE g1-H0: rc 0 | swaps after the prompts [8 8 8] | hashes [192a7187eae64ec9 2fe6968a2ed8263a f383789644fdc690] | DONE prompt ms [317.4 1658.2 4708.6 17588.1]
+PROBE g1-H1: rc 0 | swaps after the prompts [8 8 8] | hashes [192a7187eae64ec9 2fe6968a2ed8263a f383789644fdc690] | DONE prompt ms [307.4 1455.1 4997.5 17641.4]
+PROBE g1-H2: rc 0 | swaps after the prompts [8 8 8] | hashes [192a7187eae64ec9 2fe6968a2ed8263a f383789644fdc690] | DONE prompt ms [307.5 1455.4 4551.2 17667.4]
+check 1 H1: PASS (=1: the same 3 end placements, the greedy tokens IDENTICAL, the same swaps); REPORT DONE fields vs H0: IDENTICAL
+check 1 H2: PASS (=2: the same 3 end placements); REPORT T / DONE vs H0: IDENTICAL
+REPORT DONE prompt ms (warm-up 2K 6.5K 31K): H0 [317.4 1658.2 4708.6 17588.1] H1 [307.4 1455.1 4997.5 17641.4] H2 [307.5 1455.4 4551.2 17667.4]
+g1: PASSED
+VERDICT B17S check 0: PASS
+VERDICT B17S check 1: PASS
+VERDICT B17S GATES: PASS (g0 g1)
+ds4: placement after the prompt's settle: 192a7187eae64ec9 (7053 experts in VRAM, 8 swaps so far)
+ds4: placement after the prompt's settle: 2fe6968a2ed8263a (7053 experts in VRAM, 16 swaps so far)
+ds4: placement after the prompt's settle: f383789644fdc690 (7053 experts in VRAM, 24 swaps so far)
+ds4: DS4_SETTLE_AFTER=1: a prompt's cache settle runs after its first token (at once, blocking)
+ds4: placement after the prompt's settle: 192a7187eae64ec9 (7053 experts in VRAM, 8 swaps so far)
+ds4: placement after the prompt's settle: 2fe6968a2ed8263a (7053 experts in VRAM, 16 swaps so far)
+ds4: placement after the prompt's settle: f383789644fdc690 (7053 experts in VRAM, 24 swaps so far)
+ds4: DS4_SETTLE_AFTER=2: a prompt's cache settle runs after its first token (its rounds over the decode ticks)
+ds4: placement after the prompt's settle: 192a7187eae64ec9 (7053 experts in VRAM, 8 swaps so far)
+ds4: placement after the prompt's settle: 2fe6968a2ed8263a (7053 experts in VRAM, 16 swaps so far)
+ds4: placement after the prompt's settle: f383789644fdc690 (7053 experts in VRAM, 24 swaps so far)

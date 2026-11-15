@@ -1,0 +1,29 @@
+# Build 17 (build 16 + DS4_BT_FUSE=1 + DS4_ECOWN=1) gates: check 0 both off == build 16; check 1 both on, cache off;
+# check 2 cache on, audit. Sanitised extract.
+check 0 ID g0-P-d vs build-16 re-validation run ref-P-d [d]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (2040); TK engaged (d);
+check 0 ID g0-P-x vs build-16 re-validation run ref-P-x [x]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (1104); TK engaged (x);
+check 0 ID g0-P-bt vs build-16 re-validation run ref-P-bt [bt]: PASS | stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | L8 engaged (22440); TK engaged (bt);
+check 0 ID g0-L-32k vs build-16 re-validation run ref-L-32k [32k]: PASS | stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | L8 engaged (504); TK engaged (32k);
+check 0 ID g0-L-110k vs build-16 re-validation run ref-L-110k [110k]: PASS | stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | L8 engaged (504); TK engaged (110k);
+check 0 ID g0-F-bt vs batched-fusion run idbt-b16 [fbt]: PASS | stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) |
+check 0 SRVID g0-S vs build-16 re-validation run ref-S (--serve PAR 1 greedy, T / DONE fields): PASS | T lines 1025 | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM)
+g0: PASSED
+check 1 ID g1-P-d vs build-16 re-validation run ref-P-d [d]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (2040); TK engaged (d);
+check 1 ID g1-P-x vs build-16 re-validation run ref-P-x [x]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (1104); TK engaged (x);
+check 1 ID g1-P-bt vs build-16 re-validation run ref-P-bt [bt]: PASS | stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | L8 engaged (22440); TK engaged (bt);
+check 1 ID g1-L-32k vs build-16 re-validation run ref-L-32k [32k]: PASS | stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | L8 engaged (504); TK engaged (32k);
+check 1 ID g1-F-bt vs batched-fusion run idbt-b16 [fbt]: PASS | stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | BT_FUSE engaged 4 of 4;
+check 1 SRVID g1-S vs build-16 re-validation run ref-S (--serve PAR 1 greedy, T / DONE fields): PASS | T lines 1025 | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM)
+check 1 run g1-sv-b16: lines ok | VRAM experts (6866 of 15744 in | so-far lines 0 | BT_FUSE engaged lines 0 of 4
+check 1 run g1-sv-b17: lines ok | VRAM experts (6866 of 15744 in | so-far lines 0 | BT_FUSE engaged lines 4 of 4
+check 1 SV: PASS (served PAR 4 greedy conc 4, cache off: b17 == b16 for id0 and id1)
+g1: PASSED
+check 2 run g2: lines ok | VRAM experts (6826 of 15744 in | so-far lines 71 | BT_FUSE engaged lines 0 of 4
+check 2 detail: 71 'so far' lines with the full audit format
+check 2 detail: last 'so far': requests 144651, picks 2924064, twice 0, handed 139852, zero-copy 0, lane/lead differences 0, VRAM experts in a helper's table now 520, swaps 926, device checks 578604, mismatched 0, timeouts 0
+g2: PASSED
+VERDICT B17 check 0: PASS
+VERDICT B17 check 1: PASS
+VERDICT B17 check 2: PASS
+REPORT B17 check 2 BT_FUSE engaged lines (report-only, conc 1): 0
+VERDICT B17 GATES: PASS (g0 g1 g2)

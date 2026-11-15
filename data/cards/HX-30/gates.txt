@@ -1,0 +1,30 @@
+# DS4_ECOWN gates: check 0 flag off == build 16; check 1 flag on, cache off == build 16; check 2 served, cache on, audit;
+# check 3 batch 1/2/8 == solo with the test timing mode. Sanitised extract.
+check 0 ID g0-P-d vs build-16 re-validation run ref-P-d [d]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (2040); TK engaged (d);
+check 0 ID g0-P-x vs build-16 re-validation run ref-P-x [x]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (1104); TK engaged (x);
+check 0 ID g0-P-bt vs build-16 re-validation run ref-P-bt [bt]: PASS | stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | L8 engaged (22440); TK engaged (bt);
+check 0 ID g0-L-32k vs build-16 re-validation run ref-L-32k [32k]: PASS | stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | L8 engaged (504); TK engaged (32k);
+check 0 ID g0-L-110k vs build-16 re-validation run ref-L-110k [110k]: PASS | stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | L8 engaged (504); TK engaged (110k);
+check 0 SRVID g0-S vs build-16 re-validation run ref-S (--serve PAR 1 greedy, T / DONE fields): PASS | T lines 1025 | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM)
+g0: PASSED
+check 1 ID g1-P-d vs build-16 re-validation run ref-P-d [d]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (2040); TK engaged (d);
+check 1 ID g1-P-x vs build-16 re-validation run ref-P-x [x]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (1104); TK engaged (x);
+check 1 ID g1-P-bt vs build-16 re-validation run ref-P-bt [bt]: PASS | stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | L8 engaged (22440); TK engaged (bt);
+check 1 ID g1-L-32k vs build-16 re-validation run ref-L-32k [32k]: PASS | stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | L8 engaged (504); TK engaged (32k);
+check 1 SRVID g1-S vs build-16 re-validation run ref-S (--serve PAR 1 greedy, T / DONE fields): PASS | T lines 1025 | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM)
+g1: PASSED
+check 2 run: lines ok | VRAM experts (6826 of 15744 in | so-far lines 71
+check 2 detail: 71 'so far' lines with the full audit format
+check 2 detail: last 'so far': requests 144651, picks 2924064, twice 0, handed 139852, zero-copy 0, lane/lead differences 0, VRAM experts in a helper's table now 520, swaps 926, device checks 578604, mismatched 0, timeouts 0
+g2: PASSED
+check 3 detail: B=1 1 of 1, B=2 2 of 2, B=8 8 of 8 identical; rc 0
+check 3 detail: warm line yes | freeze after read 1, 8 swaps, in flight 0 / 0 | audit lines: exit report 1, so far 20
+check 3 detail: last audit - requests 109395, picks 1133730, twice 0, handed 352, zero-copy 0, lane/lead differences 0, VRAM experts in a helper's table now 8, swaps 8, device checks 437580, mismatched 0, timeouts 0
+g3: PASSED
+VERDICT ECOWN check 0: PASS
+VERDICT ECOWN check 1: PASS
+VERDICT ECOWN check 2: PASS
+VERDICT ECOWN check 3: PASS
+REPORT ECOWN check 3-BASE (build 16, cache on, report-only): G3BASE: B=1 1 of 1, B=2 2 of 2, B=8 8 of 8 identical; rc 0 (build 16, DS4_EC_FIX=1, cache on, no test mode; report-only)
+REPORT ECOWN G3B (DD on vs off, report-only): G3B: IDENTICAL (1200 bytes; DD rc=0 freeze swaps 8 | lane rc=0 freeze swaps 8; report-only)
+VERDICT ECOWN GATES: PASS (g0 g1 g2 g3)

@@ -1,0 +1,79 @@
+# Helper-step breakdown on build 17 with untraced phase stamps (DS4_PHASE_TIMES=1). id = single process B1,
+# drf = drafter on, srv = served one user. GGAP = launch gap per kernel, stream vs graph replay. Sanitised extract.
+== identity (flag ON vs OFF, stdout token for token; ptrun.sh PTID lines)
+PTID id-ON vs id-OFF: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines id-OFF: ok; id-ON: ok
+PTID ab-ON-2 vs ab-OFF-2: stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | rc rc=0/rc=0 | lines ab-OFF-2: ok; ab-ON-2: ok
+PTID drf-ON vs drf-OFF: stdout IDENTICAL (drafter on, greedy) | decode: 256 tokens in 2371 ms (107.57 tok/s); CPU lane: 0 of | decode: 256 tokens in 2332 ms (109.35 tok/s); CPU lane: 0 of
+== overhead (the same binary, DS4_PHASE_TIMES=1 vs unset)
+B1 drafter off, ms a token: OFF 12.631 12.687 | ON 12.737 12.728 | mean OFF 12.659 ON 12.732 | d +0.073 ms (+0.58 %) | rep spread 0.056 ms
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 5604 of 5627 pick layers (99.6 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 145 of 156 pick layers (92.9 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 307 of 316 pick layers (97.2 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 671 of 1358 pick layers (49.4 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 611 of 1290 pick layers (47.4 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 532 of 986 pick layers (54.0 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 141 of 156 pick layers (90.4 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 1321 of 1339 pick layers (98.7 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 5688 of 6343 pick layers (89.7 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 2202 of 2339 pick layers (94.1 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 19433 of 20083 pick layers (96.8 %)
+  MI50 helpers, us a window (median / p90 / min):
+  helper later than the lead's join start: 38 of 39 pick layers (97.4 %)
+== prereg (prereg.md 3) - B1 drafter off, lead, ms a token
+  attn      5.157  prereg 5.36 [4.60, 6.00] IN
+  attnAR    0.775  prereg 0.85 [0.40, 1.30] IN
+  router+P  1.397  prereg 1.50 [1.00, 2.00] IN
+  G         2.703  prereg 2.60 [2.00, 3.20] IN
+  J+C       0.972  prereg 1.00 [0.60, 1.50] IN
+  moeAR     0.776  prereg 0.57 [0.30, 1.00] IN
+  layers    11.832  prereg 11.88 [11.20, 12.60] IN
+  tail      0.760  prereg 0.74 [0.40, 1.40] IN
+  step      12.596  prereg 12.62 [12.20, 13.20] IN
+  real inter-kernel gap (ar / c / moe, median us): 2.92 / 2.87 / 2.92  prereg 0.5 [0.1, 1.5] OUT
+  MI50 publish -> flag a pick window (pub_wake + chain, median us by helper): 79.8 79.8 79.8 81.0  prereg 65 [45, 80] OUT
+  helper later than the lead's join start: 99.6 % of pick layers  prereg 55 [35, 75] OUT
+  closure: lead stamped step median 12.596 ms vs the engine's decode ms a token 12.728 (-1.04 %; prereg |.| <= 3 %) IN
+VERDICT PHASETIME: OK (identity IDENTICAL; overhead +0.58 % < 1 %; 9 of 9 prereg rows IN; closure -1.04 %)
+== fix 1 reading (prereg.md 3): the lead's MoE stage vs the MI50 helpers, by arm and window size
+id-ON   T1   steps  254 | step 12.596 ms | lead G 2.703 ms (65.4 us/layer) J 0.498 ms (10.7 us/layer) C 0.473 | helpers: pub_wake 5.9 head 20.9 gate_up 25.9 q8_down 19.2 comb_flag 8.0 chain 74.2 us | later than the join 5604 of 5627 (99.6 %
+id-ON   T16  steps    4 | step 49.492 ms | lead G 13.625 ms (309.4 us/layer) J 5.899 ms (164.4 us/layer) C 2.980 | helpers: pub_wake 7.1 head 30.8 gate_up 173.4 q8_down 140.5 comb_flag 19.7 chain 363.4 us | later than the join 145 of 156 (9
+drf-ON  T1   steps   14 | step 14.330 ms | lead G 2.748 ms (67.9 us/layer) J 0.535 ms (12.2 us/layer) C 0.484 | helpers: pub_wake 5.6 head 20.5 gate_up 26.1 q8_down 19.5 comb_flag 8.0 chain 74.6 us | later than the join 307 of 316 (97.2 %) 
+drf-ON  T2   steps   45 | step 17.291 ms | lead G 3.854 ms (89.6 us/layer) J 0.435 ms (4.2 us/layer) C 0.645 | helpers: pub_wake 6.4 head 16.7 gate_up 27.8 q8_down 26.8 comb_flag 8.0 chain 79.1 us | later than the join 671 of 1358 (49.4 %) 
+drf-ON  T3   steps   37 | step 19.554 ms | lead G 4.627 ms (108.0 us/layer) J 0.632 ms (5.3 us/layer) C 0.824 | helpers: pub_wake 6.9 head 17.1 gate_up 31.9 q8_down 32.7 comb_flag 8.2 chain 88.8 us | later than the join 611 of 1290 (47.4 %)
+drf-ON  T4   steps   28 | step 22.027 ms | lead G 5.256 ms (122.5 us/layer) J 0.759 ms (6.4 us/layer) C 0.982 | helpers: pub_wake 7.1 head 17.9 gate_up 37.5 q8_down 39.4 comb_flag 8.4 chain 103.3 us | later than the join 532 of 986 (54.0 %)
+drf-ON  T16  steps    4 | step 49.869 ms | lead G 13.682 ms (311.9 us/layer) J 5.965 ms (150.2 us/layer) C 2.864 | helpers: pub_wake 6.9 head 30.2 gate_up 171.5 q8_down 139.7 comb_flag 19.0 chain 364.0 us | later than the join 141 of 156 (9
+srv-ON  T1   steps   35 | step 16.623 ms | lead G 2.511 ms (59.7 us/layer) J 1.460 ms (28.4 us/layer) C 0.586 | helpers: pub_wake 5.5 head 21.0 gate_up 26.3 q8_down 20.2 comb_flag 8.0 chain 75.5 us | later than the join 1321 of 1339 (98.7 %
+srv-ON  T2   steps  163 | step 19.929 ms | lead G 3.480 ms (80.8 us/layer) J 1.957 ms (44.6 us/layer) C 0.770 | helpers: pub_wake 6.7 head 18.4 gate_up 30.9 q8_down 30.0 comb_flag 8.2 chain 90.2 us | later than the join 5688 of 6343 (89.7 %
+srv-ON  T3   steps   60 | step 22.563 ms | lead G 4.064 ms (93.5 us/layer) J 2.609 ms (65.4 us/layer) C 0.955 | helpers: pub_wake 7.4 head 20.2 gate_up 43.9 q8_down 41.5 comb_flag 10.9 chain 115.7 us | later than the join 2202 of 2339 (94.1
+srv-ON  T4   steps  515 | step 25.660 ms | lead G 4.621 ms (106.5 us/layer) J 3.441 ms (86.2 us/layer) C 1.164 | helpers: pub_wake 7.5 head 21.6 gate_up 51.3 q8_down 50.0 comb_flag 11.9 chain 135.0 us | later than the join 19433 of 20083 (9
+srv-ON  T6   steps    1 | step 38.688 ms | lead G 12.790 ms (146.2 us/layer) J 4.901 ms (113.0 us/layer) C 1.504 | helpers: pub_wake 7.0 head 24.9 gate_up 85.1 q8_down 68.2 comb_flag 14.9 chain 192.6 us | later than the join 38 of 39 (97.4 
+GGAP kernels 1000 reps 20 blocks 60 work 64 devices 8
+GGAP dev 0 gfx1100 empty us/kernel stream 3.306 (min 3.282)  graph 2.913 (min 2.908)  saved 0.393
+GGAP dev 0 gfx1100 small us/kernel stream 4.667 (min 4.649)  graph 3.792 (min 3.790)  saved 0.875
+GGAP dev 1 gfx1100 empty us/kernel stream 3.316 (min 3.286)  graph 2.913 (min 2.904)  saved 0.404
+GGAP dev 1 gfx1100 small us/kernel stream 4.665 (min 4.644)  graph 3.778 (min 3.773)  saved 0.888
+GGAP dev 2 gfx1100 empty us/kernel stream 3.278 (min 3.243)  graph 2.887 (min 2.878)  saved 0.391
+GGAP dev 2 gfx1100 small us/kernel stream 4.597 (min 4.584)  graph 3.713 (min 3.707)  saved 0.884
+GGAP dev 3 gfx1100 empty us/kernel stream 3.357 (min 3.330)  graph 2.950 (min 2.938)  saved 0.407
+GGAP dev 3 gfx1100 small us/kernel stream 4.757 (min 4.703)  graph 3.852 (min 3.811)  saved 0.905
+GGAP dev 4 gfx906:sramecc-:xnack- empty us/kernel stream 2.256 (min 2.158)  graph 1.304 (min 1.304)  saved 0.951
+GGAP dev 4 gfx906:sramecc-:xnack- small us/kernel stream 3.983 (min 3.975)  graph 3.216 (min 3.214)  saved 0.767
+GGAP dev 5 gfx906:sramecc-:xnack- empty us/kernel stream 2.238 (min 2.161)  graph 1.305 (min 1.303)  saved 0.933
+GGAP dev 5 gfx906:sramecc-:xnack- small us/kernel stream 3.986 (min 3.977)  graph 3.214 (min 3.212)  saved 0.772
+GGAP dev 6 gfx906:sramecc-:xnack- empty us/kernel stream 2.268 (min 2.205)  graph 1.304 (min 1.303)  saved 0.964
+GGAP dev 6 gfx906:sramecc-:xnack- small us/kernel stream 3.989 (min 3.980)  graph 3.216 (min 3.212)  saved 0.773
+GGAP dev 7 gfx906:sramecc-:xnack- empty us/kernel stream 2.225 (min 2.160)  graph 1.304 (min 1.302)  saved 0.922
+GGAP dev 7 gfx906:sramecc-:xnack- small us/kernel stream 3.984 (min 3.974)  graph 3.215 (min 3.212)  saved 0.769
+GGAP done
+VERDICT HELPERSTEP: OK (identity IDENTICAL; served one-user CAP of a helper-side change: 1.460 ms a step at T1, 1.957, 2.609, 3.441, 4.901 at the other window sizes)

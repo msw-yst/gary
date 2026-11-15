@@ -503,6 +503,8 @@ build ([QA-08](cards/QA-08.md)); XTX #3 was re-pasted. Next:
   build 16's re-validation ([SV-16](cards/SV-16.md)). Also on 14 Nov: a warm-turn run, reuse 96 % with a 32K turn at 2.1 s, and reuse is exact at fixed placement ([SV-15](cards/SV-15.md)).
 - **14 Nov, the rest of the day:** served build 15 vs 16 on the same day, why one user got slower, a fix for that which is
   measured but not in this release, the batched fusion, and the full card grid: [UPDATE-2026-11-14.md](UPDATE-2026-11-14.md).
+- **15 Nov:** build 17 (+12.5 % with 8 users) and swap instead of evict (−22.7 % on a long-running server's first
+  token), both measured, neither in this release: [UPDATE-2026-11-15.md](UPDATE-2026-11-15.md).
 
 ## Acknowledgements
 

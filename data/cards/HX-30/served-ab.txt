@@ -1,0 +1,60 @@
+# Served A/B, build 16 (b16) vs build 16 + DS4_ECOWN=1 (own), rounds b16 own own b16. Sanitised extract.
+PHASE r1-hla    VALID
+PHASE r1-hlc    VALID
+PHASE r2-hla    VALID
+PHASE r2-hlc    VALID
+PHASE r3-hla    VALID
+PHASE r3-hlc    VALID
+PHASE r4-hla    VALID
+PHASE r4-hlc    VALID
+PHASE r1-probe  VALID
+PHASE r2-probe  VALID
+PHASE r3-probe  VALID
+PHASE r4-probe  VALID
+PHASES VALID: 12 of 12
+CELL hla PAR 4: 1 user 2K, ms a token
+  rounds: r1 b16 8.397 | r2 own 8.436 | r3 own 8.445 | r4 b16 8.389 ms
+  delta +0.047 ms (+0.6 %) | exceeds within-arm spread: YES (|delta| 0.047 > spread 0.009) | drift b16 r4 - r1 -0.008
+CELL hla PAR 4: 1 user 2K, first token
+  rounds: r1 b16 2.315 | r2 own 2.210 | r3 own 2.222 | r4 b16 2.315 s
+  delta -0.099 s (-4.3 %) | exceeds within-arm spread: YES (|delta| 0.099 > spread 0.012) | drift b16 r4 - r1 +0.000
+CELL hla PAR 4: 1 user 8K, ms a token
+  rounds: r1 b16 9.425 | r2 own 9.234 | r3 own 9.231 | r4 b16 9.421 ms
+  delta -0.191 ms (-2.0 %) | exceeds within-arm spread: YES (|delta| 0.191 > spread 0.004) | drift b16 r4 - r1 -0.004
+CELL hla PAR 4: 1 user 8K, first token
+  rounds: r1 b16 6.708 | r2 own 5.877 | r3 own 5.873 | r4 b16 6.715 s
+  delta -0.836 s (-12.5 %) | exceeds within-arm spread: YES (|delta| 0.836 > spread 0.007) | drift b16 r4 - r1 +0.007
+CELL hla PAR 4: 4 users, total tok/s
+  rounds: r1 b16 152.660 | r2 own 153.833 | r3 own 153.337 | r4 b16 151.141 tok/s
+  delta +1.684 tok/s (+1.1 %) | exceeds within-arm spread: YES (|delta| 1.684 > spread 1.519) | drift b16 r4 - r1 -1.519
+CELL hla PAR 4: 4 users, ms a token each
+  rounds: r1 b16 26.202 | r2 own 26.004 | r3 own 26.088 | r4 b16 26.466 ms
+  delta -0.289 ms (-1.1 %) | exceeds within-arm spread: YES (|delta| 0.289 > spread 0.264) | drift b16 r4 - r1 +0.264
+CELL hla PAR 4: 1 user 32K cold, first token
+  rounds: r1 b16 18.254 | r2 own 18.749 | r3 own 18.662 | r4 b16 18.179 s
+  delta +0.489 s (+2.7 %) | exceeds within-arm spread: YES (|delta| 0.489 > spread 0.087) | drift b16 r4 - r1 -0.075
+CELL hlc PAR 8: 8 users, total tok/s
+  rounds: r1 b16 186.589 | r2 own 191.109 | r3 own 187.429 | r4 b16 186.553 tok/s
+  delta +2.698 tok/s (+1.4 %) | exceeds within-arm spread: NO (|delta| 2.698 <= spread 3.681: within round-to-round noise) | drift b16 r4 - r1 -0.036
+CELL hlc PAR 8: 8 users, ms a token each
+  rounds: r1 b16 42.931 | r2 own 41.880 | r3 own 42.711 | r4 b16 42.935 ms
+  delta -0.638 ms (-1.5 %) | exceeds within-arm spread: NO (|delta| 0.638 <= spread 0.831: within round-to-round noise) | drift b16 r4 - r1 +0.005
+P1  hla 1 user 2K ms a token (delta ms)    OUT (worse than predicted)     delta +0.047; predicted -0.3 [-0.5, -0.1]; resolved vs round spread: yes
+P1b hla 1 user 8K ms a token (delta ms)    IN                             delta -0.191; predicted -0.45 [-0.9, -0.1]; resolved vs round spread: yes
+P2  hla 1 user 8K first token (delta %)    IN                             delta -12.5 %; predicted -10.0 [-15.0, -5.0]; resolved vs round spread: yes
+P4  hla 4 users total tok/s (delta %)      IN                             delta +1.1 %; predicted 0.0 [-3.0, 3.0]; resolved vs round spread: yes
+P4b hlc 8 users total tok/s (delta %)      IN                             delta +1.4 %; predicted 0.0 [-3.0, 3.0]; resolved vs round spread: no
+REPORT hla 32K cold first token (no prediction): delta +0.489 s (+2.7 %), resolved vs round spread: yes
+DRAFT r1 b16 1542 steps (23 drafted), 6159 rows, kept greedy 0/0 sampled 5/35
+DRAFT r2 own 1539 steps (21 drafted), 6157 rows, kept greedy 0/0 sampled 8/36
+DRAFT r3 own 1542 steps (27 drafted), 6161 rows, kept greedy 0/0 sampled 11/43
+DRAFT r4 b16 1539 steps (20 drafted), 6153 rows, kept greedy 0/0 sampled 6/30
+PROBE r1 b16 swaps after the prompts: total 0 (2K 0, 6.5K 0) | DONE line unreadable | DONE line unreadable
+PROBE r2 own swaps after the prompts: total 20 (2K 8, 6.5K 12) | DONE line unreadable | DONE line unreadable
+PROBE r2 AUDIT last: requests 1677, picks 39780, twice 0, handed 3, zero-copy 0, lane/lead differences 0, VRAM experts in a helper's table now 8 (max 8), swaps 8, device checks 6708, mismatched 0, timeouts 0
+PROBE r3 own swaps after the prompts: total 20 (2K 8, 6.5K 12) | DONE line unreadable | DONE line unreadable
+PROBE r3 AUDIT last: requests 1677, picks 39780, twice 0, handed 3, zero-copy 0, lane/lead differences 0, VRAM experts in a helper's table now 8 (max 8), swaps 8, device checks 6708, mismatched 0, timeouts 0
+PROBE r4 b16 swaps after the prompts: total 0 (2K 0, 6.5K 0) | DONE line unreadable | DONE line unreadable
+VERDICT ECOWN-AB SPEED: COMPLETE (4 of 5 predictions IN: P1 OUT (worse than predicted), P1b IN, P2 IN, P4 IN, P4b IN)
+VERDICT ECOWN-AB EXACTLY-ONCE: PASS (r2: 0 twice, 3 handed, max 8 promoted-and-held; r3: 0 twice, 3 handed, max 8 promoted-and-held)
+TRIPPED: 0 new lines since start

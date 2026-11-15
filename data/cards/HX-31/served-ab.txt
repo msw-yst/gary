@@ -1,0 +1,79 @@
+# Served A/B, build 17 (b17) vs build 17 + DS4_SETTLE_AFTER=2 (b17s), rounds b17 b17s b17s b17. Sanitised extract.
+PHASE r1-hla    VALID
+PHASE r1-hlc    VALID
+PHASE r2-hla    VALID
+PHASE r2-hlc    VALID
+PHASE r3-hla    VALID
+PHASE r3-hlc    VALID
+PHASE r4-hla    VALID
+PHASE r4-hlc    VALID
+PHASE r1-probe  VALID
+PHASE r2-probe  VALID
+PHASE r3-probe  VALID
+PHASE r4-probe  VALID
+PHASES VALID: 12 of 12
+CELL hla PAR 4: 1 user 2K, ms a token
+  rounds: r1 b17 8.453 | r2 b17s 8.493 | r3 b17s 8.484 | r4 b17 8.459 ms
+  delta +0.033 ms (+0.4 %) | exceeds within-arm spread: YES (|delta| 0.033 > spread 0.009) | drift b17 r4 - r1 +0.006
+CELL hla PAR 4: 1 user 2K, first token
+  rounds: r1 b17 2.216 | r2 b17s 2.198 | r3 b17s 2.192 | r4 b17 2.214 s
+  delta -0.020 s (-0.9 %) | exceeds within-arm spread: YES (|delta| 0.020 > spread 0.006) | drift b17 r4 - r1 -0.002
+CELL hla PAR 4: 1 user 8K, ms a token
+  rounds: r1 b17 9.230 | r2 b17s 8.699 | r3 b17s 8.701 | r4 b17 9.248 ms
+  delta -0.539 ms (-5.8 %) | exceeds within-arm spread: YES (|delta| 0.539 > spread 0.018) | drift b17 r4 - r1 +0.018
+CELL hla PAR 4: 1 user 8K, first token
+  rounds: r1 b17 5.871 | r2 b17s 5.846 | r3 b17s 5.845 | r4 b17 5.875 s
+  delta -0.027 s (-0.5 %) | exceeds within-arm spread: YES (|delta| 0.027 > spread 0.005) | drift b17 r4 - r1 +0.005
+CELL hla PAR 4: 4 users, total tok/s
+  rounds: r1 b17 161.539 | r2 b17s 161.094 | r3 b17s 162.107 | r4 b17 161.328 tok/s
+  delta +0.167 tok/s (+0.1 %) | exceeds within-arm spread: NO (|delta| 0.167 <= spread 1.013: within round-to-round noise) | drift b17 r4 - r1 -0.210
+CELL hla PAR 4: 4 users, ms a token each
+  rounds: r1 b17 24.762 | r2 b17s 24.831 | r3 b17s 24.675 | r4 b17 24.795 ms
+  delta -0.026 ms (-0.1 %) | exceeds within-arm spread: NO (|delta| 0.026 <= spread 0.155: within round-to-round noise) | drift b17 r4 - r1 +0.033
+CELL hla PAR 4: 1 user 32K cold, first token
+  rounds: r1 b17 18.669 | r2 b17s 18.540 | r3 b17s 18.572 | r4 b17 18.712 s
+  delta -0.134 s (-0.7 %) | exceeds within-arm spread: YES (|delta| 0.134 > spread 0.043) | drift b17 r4 - r1 +0.043
+CELL hlc PAR 8: 8 users, total tok/s
+  rounds: r1 b17 202.691 | r2 b17s 202.936 | r3 b17s 203.994 | r4 b17 203.414 tok/s
+  delta +0.412 tok/s (+0.2 %) | exceeds within-arm spread: NO (|delta| 0.412 <= spread 1.058: within round-to-round noise) | drift b17 r4 - r1 +0.723
+CELL hlc PAR 8: 8 users, ms a token each
+  rounds: r1 b17 39.472 | r2 b17s 39.423 | r3 b17s 39.218 | r4 b17 39.331 ms
+  delta -0.081 ms (-0.2 %) | exceeds within-arm spread: NO (|delta| 0.081 <= spread 0.206: within round-to-round noise) | drift b17 r4 - r1 -0.141
+CELL hlc PAR 8: 8 users 8K, total tok/s (report-only)
+  rounds: r1 b17 202.365 | r2 b17s 202.126 | r3 b17s 203.048 | r4 b17 202.839 tok/s
+  delta -0.015 tok/s (-0.0 %) | exceeds within-arm spread: NO (|delta| 0.015 <= spread 0.922: within round-to-round noise) | drift b17 r4 - r1 +0.474
+CELL hlc PAR 8: 8 users 8K, ms a token each (report-only)
+  rounds: r1 b17 39.533 | r2 b17s 39.581 | r3 b17s 39.401 | r4 b17 39.441 ms
+  delta +0.004 ms (+0.0 %) | exceeds within-arm spread: NO (|delta| 0.004 <= spread 0.180: within round-to-round noise) | drift b17 r4 - r1 -0.092
+CELL hlc PAR 8: 8 users 8K, first token (report-only)
+  rounds: r1 b17 28.518 | r2 b17s 28.205 | r3 b17s 28.272 | r4 b17 28.350 s
+  delta -0.195 s (-0.7 %) | exceeds within-arm spread: YES (|delta| 0.195 > spread 0.168) | drift b17 r4 - r1 -0.168
+P1  hla 1 user 2K ms a token (delta ms)          IN                             delta +0.033; predicted 0.0 [-0.1, 0.1]; resolved vs round spread: yes
+P1b hla 1 user 8K ms a token (delta ms)          OUT (better than predicted)    delta -0.539; predicted 0.0 [-0.1, 0.1]; resolved vs round spread: yes
+P2  hla 1 user 8K first token (delta %)          IN                             delta -0.5 %; predicted -1.0 [-3.0, 1.0]; resolved vs round spread: yes
+P2b hla 1 user 2K first token (delta %)          IN                             delta -0.9 %; predicted -2.0 [-5.0, 1.0]; resolved vs round spread: yes
+P3  hla 1 user 32K cold first token (delta s)    OUT (worse than predicted)     delta -0.134; predicted -0.45 [-0.6, -0.3]; resolved vs round spread: yes
+P4  hla 4 users total tok/s (delta %)            IN                             delta +0.1 %; predicted 0.0 [-2.0, 2.0]; resolved vs round spread: no
+P4m hla 4 users ms a token (delta %)             IN                             delta -0.1 %; predicted 0.0 [-2.0, 2.0]; resolved vs round spread: no
+P5  hlc 8 users total tok/s (delta %)            IN                             delta +0.2 %; predicted 0.0 [-2.0, 2.0]; resolved vs round spread: no
+P5m hlc 8 users ms a token (delta %)             IN                             delta -0.2 %; predicted 0.0 [-2.0, 2.0]; resolved vs round spread: no
+REPORT hlc 8 users 8K total tok/s (no prediction): delta -0.015 (-0.0 %), resolved vs round spread: no
+REPORT hlc 8 users 8K ms a token (no prediction): delta +0.004 (+0.0 %), resolved vs round spread: no
+REPORT hlc 8 users 8K first token (no prediction): delta -0.195 (-0.7 %), resolved vs round spread: yes
+DRAFT r1 b17 1540 steps (25 drafted), 6167 rows, kept greedy 0/0 sampled 11/49
+DRAFT r2 b17s 1541 steps (24 drafted), 6150 rows, kept greedy 0/0 sampled 9/30
+DRAFT r3 b17s 1542 steps (24 drafted), 6149 rows, kept greedy 0/0 sampled 4/24
+DRAFT r4 b17 1541 steps (23 drafted), 6165 rows, kept greedy 0/0 sampled 8/44
+PROBE r1 b17 swaps after the prompts: total 35 (2K 8, 6.5K 12, 31K 15) | 2K: prompt 2048 tok 1510.9 ms, 64 new, accepted 28 of 44 offered, decode 680.3 ms, 18.90 ms a step | 6.5K: prompt 6500 tok 4987.7 ms, 64 new, accepted 30 of 75 offered
+PROBE r2 b17s swaps after the prompts: total 35 (2K 8, 6.5K 12, 31K 15) | 2K: prompt 2048 tok 1457.5 ms, 64 new, accepted 28 of 44 offered, decode 676.1 ms, 18.78 ms a step | 6.5K: prompt 6500 tok 4581.5 ms, 64 new, accepted 30 of 75 offere
+PROBE r2 AUDIT last: requests 3003, picks 65286, twice 0, handed 67, zero-copy 0, lane/lead differences 0, VRAM experts in a helper's table now 16 (max 16), swaps 20, device checks 12012, mismatched 0, timeouts 0
+PROBE r3 b17s swaps after the prompts: total 35 (2K 8, 6.5K 12, 31K 15) | 2K: prompt 2048 tok 1454.1 ms, 64 new, accepted 28 of 44 offered, decode 679.3 ms, 18.87 ms a step | 6.5K: prompt 6500 tok 4619.7 ms, 64 new, accepted 30 of 75 offere
+PROBE r3 AUDIT last: requests 3003, picks 65286, twice 0, handed 67, zero-copy 0, lane/lead differences 0, VRAM experts in a helper's table now 16 (max 16), swaps 20, device checks 12012, mismatched 0, timeouts 0
+PROBE r4 b17 swaps after the prompts: total 35 (2K 8, 6.5K 12, 31K 15) | 2K: prompt 2048 tok 1459.9 ms, 64 new, accepted 28 of 44 offered, decode 676.2 ms, 18.78 ms a step | 6.5K: prompt 6500 tok 4575.9 ms, 64 new, accepted 30 of 75 offered
+PROBE32 b17 prompt ms: mean 17893.8 [17777.1, 18010.4]
+PROBE32 b17 io: MB read mean 0.0 [0.0, 0.0], major faults mean 0 [0, 0]
+PROBE32 b17s prompt ms: mean 17907.2 [17898.8, 17915.5]
+PROBE32 b17s io: MB read mean 0.0 [0.0, 0.0], major faults mean 0 [0, 0]
+VERDICT B17SAB SPEED: COMPLETE (7 of 9 predictions IN: P1 IN, P1b OUT (better than predicted), P2 IN, P2b IN, P3 OUT (worse than predicted), P4 IN, P4m IN, P5 IN, P5m IN)
+VERDICT B17SAB EXACTLY-ONCE: PASS (r2: 0 twice, 67 handed, max 16 promoted-and-held; r3: 0 twice, 67 handed, max 16 promoted-and-held)
+TRIPPED: 0 new lines since start

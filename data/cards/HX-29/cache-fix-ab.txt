@@ -1,0 +1,42 @@
+# Served build 16 with the expert-cache fix on (EC) and off (NOEC), rounds EC NOEC NOEC EC, PAR 4.
+# delta = NOEC - EC. Probes: PAR 1, cache on, --verbose. Sanitised extract of the run summary.
+PHASE r1-hla    VALID
+PHASE r2-hla    VALID
+PHASE r3-hla    VALID
+PHASE r4-hla    VALID
+PHASE r1-probe  VALID
+PHASE r2-probe  VALID
+PHASE r3-probe  VALID
+PHASE r4-probe  VALID
+PHASES VALID: 8 of 8
+CELL hla PAR 4: 1 user 2K, ms a token
+  rounds: r1 EC 8.392 | r2 NOEC 8.015 | r3 NOEC 7.999 | r4 EC 8.391 ms
+  delta -0.385 ms (-4.6 %) | exceeds within-arm spread: YES (|delta| 0.385 > spread 0.016) | drift EC r4 - r1 -0.000
+CELL hla PAR 4: 1 user 2K, first token
+  rounds: r1 EC 2.304 | r2 NOEC 2.228 | r3 NOEC 2.210 | r4 EC 2.321 s
+  delta -0.094 s (-4.0 %) | exceeds within-arm spread: YES (|delta| 0.094 > spread 0.017) | drift EC r4 - r1 +0.017
+CELL hla PAR 4: 1 user 8K, ms a token
+  rounds: r1 EC 9.421 | r2 NOEC 8.640 | r3 NOEC 8.629 | r4 EC 9.441 ms
+  delta -0.796 ms (-8.4 %) | exceeds within-arm spread: YES (|delta| 0.796 > spread 0.020) | drift EC r4 - r1 +0.020
+CELL hla PAR 4: 1 user 8K, first token
+  rounds: r1 EC 6.725 | r2 NOEC 5.874 | r3 NOEC 5.914 | r4 EC 6.730 s
+  delta -0.833 s (-12.4 %) | exceeds within-arm spread: YES (|delta| 0.833 > spread 0.040) | drift EC r4 - r1 +0.005
+CELL hla PAR 4: 4 users, total tok/s
+  rounds: r1 EC 153.418 | r2 NOEC 153.634 | r3 NOEC 151.129 | r4 EC 152.708 tok/s
+  delta -0.682 tok/s (-0.4 %) | exceeds within-arm spread: NO (|delta| 0.682 <= spread 2.505: within round-to-round noise) | drift EC r4 - r1 -0.710
+CELL hla PAR 4: 4 users, ms a token each
+  rounds: r1 EC 26.073 | r2 NOEC 26.036 | r3 NOEC 26.470 | r4 EC 26.198 ms
+  delta +0.118 ms (+0.5 %) | exceeds within-arm spread: NO (|delta| 0.118 <= spread 0.434: within round-to-round noise) | drift EC r4 - r1 +0.125
+H1 hla 1 user 2K ms a token (delta ms)   IN                             delta -0.385; predicted -0.42 [-0.6, -0.25]; resolved vs round spread: yes
+H2 hla 1 user 8K ms a token (delta ms)   IN                             delta -0.796; predicted -0.76 [-1.0, -0.5]; resolved vs round spread: yes
+H3 hla 1 user 8K first token (delta %)   IN                             delta -12.4 %; predicted -13.0 [-17.0, -8.0]; resolved vs round spread: yes
+PROBE r1 EC   swaps after the prompts: total 0 (2K 0, 6.5K 0); EC_FIX so far: 6401 helper-held hits left out, 0 swaps
+PROBE r2 NOEC swaps after the prompts: total 20 (2K 8, 6.5K 12)
+PROBE r3 NOEC swaps after the prompts: total 20 (2K 8, 6.5K 12)
+PROBE r4 EC   swaps after the prompts: total 0 (2K 0, 6.5K 0); EC_FIX so far: 6401 helper-held hits left out, 0 swaps
+PAIR EC r1 vs NOEC r2: swaps after the prompts EC 0, NOEC 20 (NOEC more: yes) | greedy T / DONE (report-only): DIFFER (first at line 64 of 130 / 130)
+PAIR EC r4 vs NOEC r3: swaps after the prompts EC 0, NOEC 20 (NOEC more: yes) | greedy T / DONE (report-only): DIFFER (first at line 64 of 130 / 130)
+VERDICT CACHEFIX HYPOTHESIS: SUPPORTED (H1 H2 H3 all IN and resolved against the round spread: EC_FIX accounts for the served one-user loss)
+VERDICT CACHEFIX PROBE: COMPLETE (swaps after the prompts: EC r1 0 r4 0, NOEC r2 20 r3 20; NOEC more than EC in 2 of 2 pairs; report-only)
+VERDICT CACHEFIX SPEED: COMPLETE (3 of 3 predictions IN: H1 IN, H2 IN, H3 IN)
+TRIPPED: 0 new lines since start

@@ -3,7 +3,7 @@
 This folder records what we changed in Strata's DeepSeek V4.1 Flash engine to run it on a mix of AMD consumer and
 datacenter cards, and what each change did when measured. The long read is [WRITEUP.md](WRITEUP.md); this file is the
 index, and [FEATURES.md](FEATURES.md) maps every switch to the stage of a token it acts on. The latest results are in
-[UPDATE-2026-11-14.md](UPDATE-2026-11-14.md). Each card covers one change or event and follows the same template: what and why, the prediction (and whether it
+[UPDATE-2026-11-14.md](UPDATE-2026-11-14.md) and [UPDATE-2026-11-15.md](UPDATE-2026-11-15.md). Each card covers one change or event and follows the same template: what and why, the prediction (and whether it
 was written down before the run), correctness, timing, results, verdict, how to reproduce, and caveats.
 
 Built by YST. Contact: https://yst.dev
@@ -53,10 +53,13 @@ Builds 10–12 are described in [SV-07](cards/SV-07.md), [SV-06](cards/SV-06.md)
 | 14 | the attention output's int8 tail in its finishing kernel | [FG-08](cards/FG-08.md) |
 | 15 | MI50 prompt tiles; the batched top-k (identity against build 14 PASS, served benchmark done) | [SV-14](cards/SV-14.md) |
 | 16 | the indexer dispatch; fusion items 1 and 3; a prompt-length cap for the MI50 prompt helper; the expert-cache fix, which also ends a double count of expert picks; four upstream correctness fixes (**the release build**: identity against build 15 PASS, 9 of 9) | [SV-16](cards/SV-16.md) |
+| 17 | the batched-path fusion (`DS4_BT_FUSE`) and the cache fix that keeps promotion (`DS4_ECOWN`; replaces `DS4_EC_FIX`) (**not in the published release**: identity against build 16 PASS, served A/B done) | [SV-17](cards/SV-17.md), [HX-30](cards/HX-30.md) |
+| 18 | build 17 + swap instead of evict (`DS4_ECSWAP`) (**staged, re-validation pending**; not in the published release) | [HX-32](cards/HX-32.md) |
 
 Build 16 is the build in this release. Its recommended environment is build 15's served one with
 `DS4_ATTN_MERGE=3` (instead of `=2`) plus `DS4_XK_QA=1 DS4_IXS_DISPATCH=16384 DS4_PF_HELPER_MAXP=8192 DS4_EC_FIX=1`;
-every new switch is off by default in the code, so set them ([SV-16](cards/SV-16.md)). Measurement-only builds (an untraced
+every new switch is off by default in the code, so set them ([SV-16](cards/SV-16.md)). Builds 17 and 18 are measured but
+**not in the published release**: their code is not in the public commit ([UPDATE-2026-11-15.md](UPDATE-2026-11-15.md)). Measurement-only builds (an untraced
 phase timer, a tree-speculation counter, a double-count audit) are not in this release; the cards that mention them say so.
 
 ## Benchmarking GPU permutations
@@ -118,14 +121,14 @@ About 395 GPU-min in all. Until these run, each of these cards carries the priva
 
 | status | cards |
 |---|---|
-| kept | 61 |
+| kept | 64 |
 | dropped | 20 |
-| finding | 18 |
-| method | 12 |
+| finding | 20 |
+| method | 13 |
 | not run | 7 |
 | shelved | 4 |
 | desk | 3 |
-| parked | 3 |
+| parked | 4 |
 | open | 2 |
 | superseded | 2 |
 | hardware event | 2 |
@@ -133,15 +136,16 @@ About 395 GPU-min in all. Until these run, each of these cards carries the priva
 | fixed in this release | 2 |
 | running | 1 |
 | served, validation pending | 1 |
-| explained | 1 |
+| explained | 2 |
 | caveat | 1 |
 | card pulled | 1 |
 | done | 1 |
 | corrected | 1 |
 | pointer | 1 |
-| **total** | **146** |
+| **total** | **154** |
 
-Counts as of 14 Nov 14:00 UTC. Cards added since 11 Nov: EB-08, TP-08–09, HX-24–28, DR-07–09, FG-08–17, CP-05,
+Counts as of 15 Nov 09:00 UTC. Added 14–15 Nov evening and night (none of their code is in the published release):
+HX-29–32, SV-17, FG-18, HW-11, ME-12. Cards added since 11 Nov: EB-08, TP-08–09, HX-24–28, DR-07–09, FG-08–17, CP-05,
 PF-12–13, SV-10–16, HW-09–10, ME-10–11; dated addenda on PF-11, QA-04, QA-08, QA-09, DR-04, DR-06, SV-09, HW-05, HW-06,
 HW-08. Updated 13–14 Nov with results: SV-11, SV-13, SV-14, FG-12, DR-08, HX-26. Updated 14 Nov morning: HW-06
 (addendum replaced), FG-15 and FG-16 (corrected by FG-17), HX-26, PF-13, FG-07, FG-08, FG-12, DR-09, TP-09, SV-14, SV-15
@@ -200,6 +204,10 @@ DeepSeek's own DSpark).
 | [HX-26](cards/HX-26.md) | Expert prefetch: not viable; a prompt-time cache leak found instead, then confirmed and fixed | fixed in this release (`DS4_EC_FIX=1`, build 16) | prefetch n/a; leak yes, larger than predicted (+13.9 % vs +3 %); fix: leak yes, 8K gain lost | decode unaffected (−0.47 %); fix off: answers change after 53 prompts (6 of 8), fix on 8 of 8 identical [M] | +8 host-streamed experts a prompt; 2K TTFT +13.9 % over 50 prompts; with the fix 0 and −0.9 % (MEASURED) |
 | [HX-27](cards/HX-27.md) | More work for the MI50s: they are not idle | desk | — | not run | drafter experts on the MI50s: +0.2 ms a token predicted (INFERRED) |
 | [HX-28](cards/HX-28.md) | Expert picks summed twice: the expert cache and device-direct MI50 windows | fixed in this release (`DS4_EC_FIX=1`, build 16) | yes (4.93 % vs ~2 %, inside 0.2–8 %; fix 0) | a correctness bug: answers changed with uptime, 8 of 8; with the fix 0 double counts [M] | 4.93 % of device-direct picks summed twice after 53 prompts; 0 with the fix (MEASURED) |
+| [HX-29](cards/HX-29.md) | Why one user got slower on build 16: the expert-cache fix stops the cache's promotion | explained | yes (3 of 3) | n/a (switch on vs off; output differs, as expected) | without the fix one user −4.6 % (2K) / −8.4 % (8K) a token, 8K first token −12.4 %; 0 vs 20 cache moves (MEASURED) |
+| [HX-30](cards/HX-30.md) | A cache fix that keeps promotion and counts each pick once (`DS4_ECOWN`) | kept (build 17; not in the published release) | 4 of 5 (2K decode out) | identical to build 16; 0 of 2.92 M picks counted twice; batch == solo [M] | 8K first token −12.5 %, 8K decode −2.0 %, 32K +2.7 % (MEASURED) |
+| [HX-31](cards/HX-31.md) | Settle the cache after the first token (`DS4_SETTLE_AFTER`) | parked | 7 of 9 (32K out, worse; 8K decode out, a token-path effect) | same end placements; 0 counted twice [M] | 32K first token −0.13 s only (MEASURED) |
+| [HX-32](cards/HX-32.md) | Swap instead of evict (`DS4_ECSWAP`): a long-running server keeps its prompt speed | kept (build 18, staged, re-validation pending; not in the published release) | 8 of 10 (life cell out, better; 2K decode out, a token-path effect) | 0 twice / 0 dropped / 0 mismatches over 1,592 handovers [M] | 2K first token after 50 prompts −22.7 % (2.67 → 2.06 s) (MEASURED) |
 | [DR-01](cards/DR-01.md) | DSpark drafter settings: confidence 0.3, block 3 | kept | n/a | no gate (divergence explained as numerics) [R] | +23 % decode (REPORTED) |
 | [DR-02](cards/DR-02.md) | Per-card drafter memory budget | kept | n/a | 1 repeated-token decode in 9 [R] | one text prompt 54.6 → 63.1 tok/s (REPORTED) |
 | [DR-03](cards/DR-03.md) | Drafter blocks tensor-parallel over the lead's group | kept | n/a | not run | +30 % trunk experts per XTX; text 54.2 → 63.6 tok/s (REPORTED) |
@@ -226,6 +234,7 @@ DeepSeek's own DSpark).
 | [FG-15](cards/FG-15.md) | Where a decode step's time goes on build 15: fixed cost and a kernel trace | finding | yes (every band) | batched = solo [M] | step = 11.07 ms + 3.46 ms a user; 88 % of a one-row step is shared (MEASURED); the traced gaps are real (FG-17) |
 | [FG-16](cards/FG-16.md) | A decode fusion plan from the trace; launch gaps cap fusion at about 3 ms | desk (items 1 and 3 in build 16) | items 1 and 3 yes | items 1 and 3 IDENTICAL [M] | five items about −0.45 ms a one-row token (3–4 %) (INFERRED); item 1 −0.208, item 3 −0.157 ms (MEASURED, in build 16) |
 | [FG-17](cards/FG-17.md) | Decode phase timings without a tracer: real kernel gaps 2.9 µs; the MI50s on the critical path | finding (phase-timer build not in this release) | phases yes; gap and helper share no | flag on = off IDENTICAL [M] | B1 step 12.97 ms: attention 5.61, publish → join 2.67; gap 2.9 µs a boundary; helper last in 98.2 % of layers (MEASURED) |
+| [FG-18](cards/FG-18.md) | Where the MI50 helper's time goes in a served step; graph replay and the XTX launch gap | finding (measurement build not in the published release) | 9 of 9 phase rows; gap, chain and lateness out | identical with stamps on [M] | served one user waits for the helpers 9–13 % of a step; graph replay saves 0.4–0.9 µs a kernel (MEASURED) |
 | [AR-01](cards/AR-01.md) | FP16 all-reduce for prompt chunks (default) | kept | n/a | at the rounding floor (1.63e-3) [R] | kept as default (REPORTED) |
 | [AR-02](cards/AR-02.md) | One-phase decode all-reduce (AR_FUSE) | kept (default) | n/a | bitwise SAME [R] | decode +1.2 % (+0.6 % with drafter) (REPORTED) |
 | [AR-03](cards/AR-03.md) | Peer-to-peer decode all-reduce | dropped (NO-GO) | no (predicted +20–30 %, got −4 / −11 %) | bit-identical [R] | −4 % / −11 % (REPORTED) |
@@ -277,6 +286,7 @@ DeepSeek's own DSpark).
 | [SV-14](cards/SV-14.md) | Build 15 and the final served benchmark | kept (build 15; the release build is now build 16) | yes (all three) | 9 of 9 IDENTICAL; served IDENTICAL [M] | 1 user 124 tok/s; TTFT 2K 2.2–2.5 s, 32K 23.1 s; 8 users 185 tok/s (MEASURED) |
 | [SV-15](cards/SV-15.md) | Prompt reuse across agent turns: already built and serving | finding | warm turn no (2.1 s vs 0.9–1.6 predicted) | reuse IDENTICAL to a fresh read at fixed placement [M] (first run's differences: placement) | 92.1 % of live prompt tokens reused (logs); 96 % served, warm 32K turn 2.1 s (MEASURED) |
 | [SV-16](cards/SV-16.md) | Build 16, the release build: five changes on build 15 and four upstream fixes | kept (the release build) | 3 of 5 (one-user decode and 8K first token out) | 8 of 8 single-process + 1 served IDENTICAL to build 15 [M] | 32K cold first token 23.1 → 18.3 s; 8K 5.9 → 6.7 s; several users ±3 % (MEASURED) |
+| [SV-17](cards/SV-17.md) | Build 17 = build 16 + the batched-path fusion + the cache fix that keeps promotion | kept (build 17; not in the published release) | 7 of 9 (both 8-user cells out, better) | identical to build 16; 0 counted twice [M] | 8 users 180.3 → 202.8 tok/s (+12.5 %), 4 users +5.3 %, 8K first token −12.5 % (MEASURED) |
 | [HW-01](cards/HW-01.md) | XTX at 89–98 °C on the first gate runs | caveat (fixed) | n/a | n/a | junction 89–98 °C [M in internal logs] |
 | [HW-02](cards/HW-02.md) | A fourth XTX: junction 31 → 92 °C in 2 seconds | card pulled | n/a | n/a | junction-to-edge gap 46 °C within 2 s at 257 W (MEASURED) |
 | [HW-03](cards/HW-03.md) | A PSU cable splitter burned; cards moved to direct cables, then new PSUs | hardware event | n/a | n/a | — |
@@ -287,6 +297,7 @@ DeepSeek's own DSpark).
 | [HW-08](cards/HW-08.md) | Four XTX boards, four sets of limits; one hot card trips the watcher on long-prompt prefill | finding | n/a | n/a | XTX #4 lowest cap and top clock; XTX #3 junction 92 °C peak (MEASURED) |
 | [HW-09](cards/HW-09.md) | XTX #2's power controller hung and the host lost power; the card was replaced | incident (card replaced) | n/a | n/a | third SMU hang on the same card; replacement board gap ~28 °C (REPORTED) |
 | [HW-10](cards/HW-10.md) | 12 Nov hardware work: a fifth MI50 for benches, XTX #3 re-pasted, a riser at x8 | hardware event | no (the x8 prompt estimate) | n/a | XTX #3 69 °C peak after re-pasting; x8 vs x16 ≤ 0.04 ms a token (REPORTED) |
+| [HW-11](cards/HW-11.md) | Host memory and CPU while serving: the 123 GB is the expert RAM store; Engram lives in the page cache | finding | n/a | n/a | RAM store 119.8 GB preloaded; Engram 7.4 of 110.6 GB in page cache; serving 4–5 cores, prompt bursts 14–16 (REPORTED) |
 | [FN-01](cards/FN-01.md) | Main-engine (Qwen3.8-Flash-Next) helper gates | pointer | — | see EB-01, HX-01 | see EB-01 |
 | [FN-02](cards/FN-02.md) | Flash Next lever audit and ranked plan | desk | — | n/a | MTP ranked first (+45–70 % predicted) (REPORTED) |
 | [FN-03](cards/FN-03.md) | Qwen3.8-Flash-Next: 1 XTX + 1 MI50 helper + MTP | kept (best measured layout) | yes (+50.6 %, inside +45–70 %) | teacher-forced 100 % / KL 0 (prompt path only); decoded MTP quality untested [M] | 93.31 tok/s (arm e) (MEASURED) |
@@ -301,6 +312,7 @@ DeepSeek's own DSpark).
 | [ME-09](cards/ME-09.md) | Every GPU arm runs with the MI50s at DPM `high` | method | n/a | n/a | — |
 | [ME-10](cards/ME-10.md) | Every benchmarked build is in git, and rebuilds byte for byte | method | n/a | n/a | 9 of 9 builds byte-identical (MEASURED) |
 | [ME-11](cards/ME-11.md) | Builds pinned to spare cores may run during timing runs | method | n/a | n/a | 8.823 / 8.853 (with build) / 8.867 ms a token (REPORTED) |
+| [ME-12](cards/ME-12.md) | An Engram access-trace build that changes nothing, and the SSD's random-read latency | method (trace build not in the published release) | n/a | identical, trace on and off [M] | SSD 4 KiB random: QD1 59 µs p50, QD8 106.8 K IOPS (MEASURED) |
 
 Groups: EB engine bring-up · TP layout and tensor parallel · HX MI50 helpers · DR drafter · FG fusion and graphs ·
 AR all-reduce · CP clocks and power · PF prefill · QA quality · SV serving and builds · HW hardware events ·

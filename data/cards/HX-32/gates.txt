@@ -1,0 +1,35 @@
+# DS4_ECSWAP gates on build 17s: check 0 off == base; check 1 on, cache off; check 2 served audit; check 3 200-prompt churn soak.
+# hand = handovers, chk = copies read back, aud = table audits. Sanitised extract.
+check 0 ID g0-P-d vs build-16 re-validation run ref-P-d [d]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (2040); TK engaged (d);
+check 0 ID g0-P-bt vs build-16 re-validation run ref-P-bt [bt]: PASS | stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | L8 engaged (22440); TK engaged (bt);
+check 0 ID g0-L-32k vs build-16 re-validation run ref-L-32k [32k]: PASS | stdout IDENTICAL | placement (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) (7093 of 15744 in VRAM) | L8 engaged (504); TK engaged (32k);
+PROBE g0-Q-B: rc 0 | swaps after the prompts [8 8 8] | DONE prompt ms [308.6 1594.2 4604.5 17603.8]
+PROBE g0-Q-N: rc 0 | swaps after the prompts [8 8 8] | DONE prompt ms [308.5 1455.9 4560.0 17702.0]
+check 0 Q: PASS (ecswap flag unset == build 17s: probe T / DONE IDENTICAL, swaps [8 8 8])
+g0: PASSED
+check 1 ID g1-P-d vs build-16 re-validation run ref-P-d [d]: PASS | stdout IDENTICAL | placement (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) | L8 engaged (2040); TK engaged (d);
+check 1 ID g1-P-bt vs build-16 re-validation run ref-P-bt [bt]: PASS | stdout IDENTICAL | placement (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) (7131 of 15744 in VRAM) | L8 engaged (22440); TK engaged (bt);
+g1: PASSED
+check 2 run: lines ok | VRAM experts (6826 of 15744 in | ECSWAP so-far lines 71
+check 2 lines: 71 ECSWAP so-far, 71 DD audit so-far, 71 prompt-helper lines, 0 FAILED / MISMATCH lines
+check 2 first: hand 0, freed 0, fb 0, plain 0, chk 0, chkbad 0, aud 1, part 0, afail 0, atmo 0, twice 0, drop 0, tabbad 0, cpu 0, held 2230/2230/2229/2229, free 0, swaps 0, top
+check 2 last:  hand 560, freed 0, fb 0, plain 0, chk 560, chkbad 0, aud 631, part 0, afail 0, atmo 0, twice 0, drop 0, tabbad 0, cpu 0, held 2230/2230/2229/2229, free 0, swaps 560, top
+check 2 DD audit last: requests 145002, picks 2923596, twice 0, VRAM experts in a helper's table now 0, swaps 560, handed 79, device checks 580008, mismatched 0, timeouts 0
+check 2 REPORT prompt helper's unheld experts streamed (cumulative): first 0, last 0
+g2: PASSED
+check 3 run: lines ok | VRAM experts (6826 of 15744 in | ECSWAP so-far lines 200
+check 3 lines: 200 ECSWAP so-far, 200 DD audit so-far, 200 prompt-helper lines, 0 FAILED / MISMATCH lines
+check 3 first: hand 0, freed 0, fb 0, plain 0, chk 0, chkbad 0, aud 1, part 0, afail 0, atmo 0, twice 0, drop 0, tabbad 0, cpu 0, held 2230/2230/2229/2229, free 0, swaps 0, top
+check 3 last:  hand 1592, freed 0, fb 0, plain 0, chk 1592, chkbad 0, aud 1792, part 0, afail 0, atmo 0, twice 0, drop 0, tabbad 0, cpu 0, held 2230/2230/2229/2229, free 0, swaps 1592, top 3:94 x7 0:237 x5 5:174 x5 6:382 x5 0:177 x4
+check 3 DD audit last: requests 135993, picks 2108574, twice 0, VRAM experts in a helper's table now 0, swaps 1592, handed 237, device checks 543972, mismatched 0, timeouts 0
+check 3 REPORT prompt helper's unheld experts streamed (cumulative): first 0, last 0
+check 3 REPORT CPU-lane experts over the 200 lines: [0]; helper-held: ['2230/2230/2229/2229']
+check 3 REPORT handovers a prompt: first 20 [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8] | last 20 [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8] | mean 8.00
+check 3 REPORT the most handed-over experts (layer:expert x count): [3:94 x7 0:237 x5 5:174 x5 6:382 x5 0:177 x4]; plain swaps 0; swaps 1592
+check 3 REPORT 2K first token: prompts 1-20 mean 2.126 s, prompts 181-200 mean 1.761 s (-17.1 %)
+g3: PASSED
+VERDICT ECSWAP check 0: PASS
+VERDICT ECSWAP check 1: PASS
+VERDICT ECSWAP check 2: PASS
+VERDICT ECSWAP check 3: PASS
+VERDICT ECSWAP GATES: PASS (g0 g1 g2 g3; BASE build 17s, NEW 3edf1b7d)

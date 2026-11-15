@@ -1,0 +1,10 @@
+# Engram trace build (build 17 + DS4_ENGRAM_TRACE): identity trace on vs off vs build 17; the pack SSD's random
+# 4 KiB O_DIRECT read latency at queue depth 1 / 8 / 32. Sanitised extract.
+-- d17 rc=0 decode: 1024 tokens in 13501 ms (75.77 tok/s); CPU lane: 0 of 245520 experts; th | (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM)
+-- et-off rc=0 decode: 1024 tokens in 13516 ms (75.69 tok/s); CPU lane: 0 of 245520 experts; th | (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM)
+-- et-on rc=0 decode: 1024 tokens in 13555 ms (75.47 tok/s); CPU lane: 0 of 245520 experts; th | (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM) (7171 of 15744 in VRAM)
+et-on last: EGT t_ms 105222 tokens 814 lookups 39048 hits 27048 reads 12000 pages 12376 straddle 379 sat 0
+SSDLAT QD1: 65707 reads in 4.0 s = 16425 IOPS (67.3 MB/s); latency us p50 59 p90 65 p99 69 p99.9 74 max 129
+SSDLAT QD8: 427232 reads in 4.0 s = 106789 IOPS (437.4 MB/s); latency us p50 70 p90 86 p99 111 p99.9 137 max 3819
+SSDLAT QD32: 338701 reads in 4.0 s = 84633 IOPS (346.7 MB/s); latency us p50 359 p90 935 p99 1662 p99.9 2517 max 5524
+VERDICT TRACEGATE: PASS
