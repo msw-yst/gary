@@ -2386,17 +2386,20 @@ __global__ void __launch_bounds__(512) route_publish_kernel(const float* __restr
         float s = 0.0f;
         for (int r = 0; r < k; ++r) s += sc[pick[r]];
         int cpu = 0;
+        unsigned vm = 0u;   // (DS4_ECOWN: the picks this device holds in VRAM, published with the ids)
         for (int r = 0; r < k; ++r) {
             const float wv = sc[pick[r]] / (s + 1e-20f) * route_scale;
             idx[(size_t) t * kPicks + r] = pick[r];
             w[(size_t) t * kPicks + r] = wv;
             plan_ptr[(size_t) t * kPicks + r] = vram[pick[r]];
             cpu |= vram[pick[r]] == 0ull;
+            vm |= (vram[pick[r]] != 0ull ? 1u : 0u) << r;
             if (req != nullptr) {
                 req->ids[t][r] = pick[r];
                 req->w[t][r] = wv;
             }
         }
+        if (req != nullptr) req->vmask[t] = vm;
         on_cpu = cpu;
     }
     // the token's FFN input to the host only where the CPU lane reads it (a pick of its on the CPU lane): each row
@@ -2506,17 +2509,20 @@ __global__ void __launch_bounds__(512) route_pair_kernel(const RoutePair a) {
             float s = 0.0f;
             for (int r = 0; r < k; ++r) s += sc[pick[r]];
             int cpu = 0;
+            unsigned vm = 0u;   // (DS4_ECOWN: the picks this device holds in VRAM, published with the ids)
             for (int r = 0; r < k; ++r) {
                 const float wv = sc[pick[r]] / (s + 1e-20f) * a.route_scale;
                 a.idx[(size_t) t * kPicks + r] = pick[r];
                 a.w[(size_t) t * kPicks + r] = wv;
                 a.plan_ptr[(size_t) t * kPicks + r] = a.vram[pick[r]];
                 cpu |= a.vram[pick[r]] == 0ull;
+                vm |= (a.vram[pick[r]] != 0ull ? 1u : 0u) << r;
                 if (a.req != nullptr) {
                     a.req->ids[t][r] = pick[r];
                     a.req->w[t][r] = wv;
                 }
             }
+            if (a.req != nullptr) a.req->vmask[t] = vm;
             on_cpu = cpu;
         }
         __syncthreads();
@@ -2686,17 +2692,20 @@ __global__ void __launch_bounds__(512) route_publish_lp_kernel(const float* __re
         float s = 0.0f;
         for (int r = 0; r < k; ++r) s += sc[pick[r]];
         int cpu = 0;
+        unsigned vm = 0u;   // (DS4_ECOWN: the picks this device holds in VRAM, published with the ids)
         for (int r = 0; r < k; ++r) {
             const float wv = sc[pick[r]] / (s + 1e-20f) * route_scale;
             idx[(size_t) t * kPicks + r] = pick[r];
             w[(size_t) t * kPicks + r] = wv;
             plan_ptr[(size_t) t * kPicks + r] = vram[pick[r]];
             cpu |= vram[pick[r]] == 0ull;
+            vm |= (vram[pick[r]] != 0ull ? 1u : 0u) << r;
             if (req != nullptr) {
                 req->ids[t][r] = pick[r];
                 req->w[t][r] = wv;
             }
         }
+        if (req != nullptr) req->vmask[t] = vm;
         on_cpu = cpu;
     }
     __syncthreads();
@@ -3628,6 +3637,178 @@ __global__ void __launch_bounds__(kThreads) fin_multi_sel_kernel(const FinMulti 
         b -= m.rows[2];
     }
     unpack_sel_blk(u, b % nx, b / nx);
+}
+#endif
+#if defined(STRATA_USE_HIP) && !defined(STRATA_METAL) && (!defined(__HIP_DEVICE_COMPILE__) || defined(__gfx1100__))
+// ---------------------------------------------------------------- DS4_BT_FUSE (fusion plan F2; see bt_fin)
+// Each body below is a copy of the kernel it names, operation for operation, with that kernel's blockIdx replaced by the
+// block's index in its part: the same code in the same TU, so the compiler's contraction is that kernel's (no pragma here -
+// one would pin these copies to a mode the originals do not have); the load check (bt_fuse_check) compares the bytes.
+// finish_rows_kernel's body for vector vi; kQ8: then finish_row's int8 rounding of the stored values (q8_quant's ops), each
+// value into its wo_a group's rows (BtFinSeg::q8_per / q8_rows)
+template <bool kQ8>
+__device__ __forceinline__ void bt_finish_rows_vec(float* x, int len, long long stride, const Finish& f, const FinishRows& fr,
+                                                   int vi, int q8_per, int q8_rows) {
+    const int row = vi / f.vpp;
+    float* v = x + (long long) vi * stride;
+    float r[kFinMax];
+    const int nj = (len + kThreads - 1) / kThreads;
+    float ss = 0.0f;
+#pragma unroll
+    for (int j = 0; j < kFinMax; ++j) {
+        if (j >= nj) break;
+        const int e = threadIdx.x + j * kThreads;
+        r[j] = e < len ? v[e] : 0.0f;
+        ss += r[j] * r[j];
+    }
+    if (f.w != nullptr) {
+        const float tot = block_sum(ss);
+        const float inv = rsqrtf(tot / (float) len + f.eps);
+#pragma unroll
+        for (int j = 0; j < kFinMax; ++j) {
+            if (j >= nj) break;
+            const int e = threadIdx.x + j * kThreads;
+            if (e < len) r[j] = r[j] * inv * f.w[e];
+        }
+    }
+    if (f.rd > 0) {
+        const int r0 = len - f.rd;
+        const int pos = fr.pos[row];
+#pragma unroll
+        for (int j = 0; j < kFinMax; ++j) {
+            if (j >= nj) break;
+            const int e = threadIdx.x + j * kThreads;
+            const float other = __shfl_xor_sync(0xffffffffu, r[j], 1);
+            if (e >= r0 && e < len) {
+                const int i = (e - r0) >> 1;
+                const float ang = (float) pos * f.freqs[i];
+                const float c = cosf(ang);
+                const float sn = f.inverse ? -sinf(ang) : sinf(ang);
+                if (((e - r0) & 1) == 0) r[j] = r[j] * c - other * sn;   // re = a c - b s
+                else r[j] = other * sn + r[j] * c;                          // im = a s + b c
+            }
+        }
+    }
+    if (f.quant != 0) {
+        const int g = f.quant == 2 ? 16 : 32;
+#pragma unroll
+        for (int j = 0; j < kFinMax; ++j) {
+            if (j >= nj) break;
+            const int e = threadIdx.x + j * kThreads;
+            float a = e < len ? fabsf(r[j]) : 0.0f;
+            for (int o = g / 2; o > 0; o >>= 1) a = fmaxf(a, __shfl_xor_sync(0xffffffffu, a, o));
+            if (e >= len) continue;
+            if (f.quant == 1) {
+                const float s = pow2_ceil(fmaxf(a, 1e-4f) * (1.0f / 448.0f));
+                r[j] = fp8_rt(fminf(fmaxf(r[j] / s, -448.0f), 448.0f)) * s;
+            } else if (f.quant == 2) {
+                const float s = fp8_rt(fmaxf(a, 6.0f * 0.001953125f) / 6.0f);
+                r[j] = e2m1_rt(fminf(fmaxf(r[j] / s, -6.0f), 6.0f)) * s;
+            } else {
+                const float s = pow2_ceil(fmaxf(a, 6.0f * 1.1754943508222875e-38f) * (1.0f / 6.0f));
+                r[j] = e2m1_rt(fminf(fmaxf(r[j] / s, -6.0f), 6.0f)) * s;
+            }
+        }
+    }
+    uint16_t* d = f.dst != nullptr ? f.dst + ((long long) fr.dst[row] * f.vpp + vi % f.vpp) * f.dst_stride : nullptr;
+#pragma unroll
+    for (int j = 0; j < kFinMax; ++j) {
+        if (j >= nj) break;
+        const int e = threadIdx.x + j * kThreads;
+        if (e >= len) continue;
+        if (d != nullptr) d[e] = f2bf16(r[j]);
+        else v[e] = r[j];
+    }
+    if (kQ8) {   // (finish_row's kQ8 tail; only the int8 row / scale addresses are the GEMV groups')
+        const long long c0 = (long long) (vi % f.vpp) * len;
+#pragma unroll
+        for (int j = 0; j < kFinMax; ++j) {
+            if (j >= nj) break;
+            const int e = threadIdx.x + j * kThreads;
+            float am = e < len ? fabsf(r[j]) : 0.0f;
+#pragma unroll
+            for (int o = 16; o > 0; o >>= 1) am = fmaxf(am, __shfl_xor_sync(0xffffffffu, am, o));
+            if (e >= len) continue;
+            const float sc = am / 127.0f;
+            const long long c = c0 + e, gi = c / q8_per, ci = c - gi * q8_per, qrow = gi * q8_rows + row;
+            f.q8[qrow * q8_per + ci] = (int8_t) (am > 0.0f ? __float2int_rn(r[j] / sc) : 0);
+            if ((threadIdx.x & 31) == 0) f.q8d[qrow * (q8_per / 32) + ci / 32] = sc;
+        }
+    }
+}
+// ring_to_ext_runs_kernel's body for its block (r, k)
+__device__ __forceinline__ void bt_ring_to_ext_blk(const RingRuns& rr, uint16_t* __restrict__ ext, int n, int d, int r, int k) {
+    const long long p = rr.p0[k] - n + r;
+    const uint8_t* row = rr.ring[k] + (size_t) (p >= 0 ? p % n : 0) * kv_row_bytes(kKvFp8, d);
+    uint16_t* dst = ext + ((size_t) rr.e0[k] + r) * d;
+    for (int e = threadIdx.x; e < d; e += blockDim.x)
+        dst[e] = p >= 0 ? f2bf16(e4m3_value(row[e]) * ue8m0_val(row[d + e / 32])) : (uint16_t) 0;
+}
+// ext_to_ring_runs_kernel's body for its block (t, k)
+__device__ __forceinline__ void bt_ext_to_ring_blk(const RingRuns& rr, const uint16_t* __restrict__ ext, int n, int d, int t,
+                                                   int k) {
+    const int T = rr.T[k];
+    if (t >= T) return;
+    if (T - t > n) return;   // overwritten by a later row of the window anyway
+    const size_t rb = kv_row_bytes(kKvFp8, d);
+    uint8_t* row = rr.ring[k] + (size_t) ((rr.p0[k] + t) % n) * rb;
+    uint8_t* backup = rr.bak[k];
+    if (backup != nullptr) {
+        for (size_t i = threadIdx.x; i < rb; i += blockDim.x) backup[(size_t) t * rb + i] = row[i];
+        __syncthreads();
+    }
+    const uint16_t* src = ext + ((size_t) rr.e0[k] + n + t) * d;
+    for (int e0 = 0; e0 < d; e0 += blockDim.x) {   // (d a multiple of 32: a warp's 32 values one group)
+        const int e = e0 + (int) threadIdx.x;
+        const float v = e < d ? bf16f(src[e]) : 0.0f;
+        uint32_t a = __float_as_uint(v) & 0x7fffffffu;   // (the magnitudes' order as bits)
+        for (int o = 16; o > 0; o >>= 1) a = max(a, (uint32_t) __shfl_xor_sync(0xffffffffu, a, o));
+        const int k2 = a == 0u ? 0 : (int) (a >> 23) - 135 + ((a & 0x7fffffu) > 0x600000u ? 1 : 0);
+        if (e >= d) continue;
+        row[e] = (uint8_t) e4m3_code(v, k2);
+        if ((e & 31) == 0) row[d + e / 32] = (uint8_t) (k2 + 127);
+    }
+}
+// unpack_sel_rows_kernel's body for its block (bx, t)
+__device__ __forceinline__ void bt_unpack_rows_blk(const AttnCkv& c, const int* __restrict__ sel, int sel_stride,
+                                                   const AttnRows& ar, int cap, uint16_t* __restrict__ out, int bx, int t) {
+    const int i = bx * kStage + (int) (threadIdx.x >> 4), part = threadIdx.x & 15;
+    if (i >= ar.nsel[t]) return;
+    const size_t r = (size_t) t * cap + i;
+    unpack32((const uint8_t*) c.ckv[t] + (size_t) sel[(size_t) t * sel_stride + i] * kv_row_bytes(kKvFp4, 512), part,
+             (uint4*) (out + r * 512 + part * 32));
+}
+__device__ __forceinline__ void bt_seg_run(const BtFinSeg& o, const FinishRows& fr, int b) {
+    if (o.kind == 0) {   // (fin_op_run's kind 0)
+        if (o.f.q8 != nullptr) finish_row<true>(o.x, o.len, o.stride, o.f, b);
+        else finish_row<false>(o.x, o.len, o.stride, o.f, b);
+    } else if (o.f.q8 != nullptr) {
+        bt_finish_rows_vec<true>(o.x, o.len, o.stride, o.f, fr, b, o.q8_per, o.q8_rows);
+    } else {
+        bt_finish_rows_vec<false>(o.x, o.len, o.stride, o.f, fr, b, 0, 0);
+    }
+}
+// block b: segment 0's rows, segment 1's, the ring part's (rx a run), the unpack's (ux a row) - each part a block-uniform
+// branch (its own __syncthreads / shuffles inside the block), as fin_multi_kernel
+__global__ void __launch_bounds__(kThreads) bt_fin_kernel(const BtFin m) {
+    int b = blockIdx.x;
+    if (b < m.rows[0]) {
+        bt_seg_run(m.seg[0], m.fr, b);
+        return;
+    }
+    b -= m.rows[0];
+    if (b < m.rows[1]) {
+        bt_seg_run(m.seg[1], m.fr, b);
+        return;
+    }
+    b -= m.rows[1];
+    if (b < m.rblocks) {
+        if (m.ring == 2) bt_ring_to_ext_blk(m.rr, m.ext, m.n, m.d, b % m.rx, b / m.rx);
+        else bt_ext_to_ring_blk(m.rr, m.ext, m.n, m.d, b % m.rx, b / m.rx);
+        return;
+    }
+    b -= m.rblocks;
+    if (b < m.ublocks) bt_unpack_rows_blk(m.uc, m.sel, m.sel_stride, m.ua, m.cap, m.out, b % m.ux, b / m.ux);
 }
 #endif
 
@@ -4810,12 +4991,13 @@ bool sparse_attn_rows_ok(int T, int max_run, int sel_stride, const AttnScratch* 
 }
 void sparse_attn_rows(const float* q, const uint16_t* win, const AttnCkv& c, const int* sel, int sel_stride,
                       const AttnRows& a, const float* sink, int heads, int d, int T, float scale, float* out,
-                      cudaStream_t s, bool one, const AttnScratch* scr) {
+                      cudaStream_t s, bool one, const AttnScratch* scr, bool sel_done) {
     if (d != 512 || a.gen != 0 || T < 1 || T > kWin || scr == nullptr || scr->rows == nullptr || T > scr->max_t ||
         sel_stride > scr->cap) {
         std::fprintf(stderr, "ds4 sparse_attn_rows: %d rows (head dim %d, gen %d) not covered\n", T, d, a.gen);
         return;
     }
+    if (!sel_done)   // (DS4_BT_FUSE: else the caller's bt_fin ran this very unpack, same arguments)
     strata_ds4_launch(unpack_sel_rows_kernel, dim3(cdiv(sel_stride, kStage), T), kThreads, 0, s, c, sel, sel_stride, a,
                       scr->cap, scr->rows);
 #if !defined(STRATA_USE_HIP)
@@ -5324,6 +5506,53 @@ bool unpack_sel_ref(const SelOp& u, cudaStream_t s) {
                       u.cap, u.out);
     return true;
 }
+// ---- DS4_BT_FUSE (see ds4_kernels.cuh): each part checked as its own wrapper checks it (finish / finish_multi,
+// finish_rows, ring_to_ext_runs / ext_to_ring_runs, sparse_attn_rows' unpack), then one launch
+bool bt_fin_ok() { return device_is_gfx1100(); }
+bool bt_fin(BtFin& m, cudaStream_t s) {
+    if (!device_is_gfx1100() || m.nseg < 0 || m.nseg > 2) return false;
+    long long total = 0;
+    m.rows[0] = m.rows[1] = 0;
+    for (int i = 0; i < m.nseg; ++i) {
+        const BtFinSeg& o = m.seg[i];
+        if (o.x == nullptr || o.n_vec <= 0 || o.len <= 0 || o.len > kFinMax * kThreads || o.f.pdst != nullptr) return false;
+        if (o.f.q8 != nullptr && (o.f.q8d == nullptr || o.len % 32 != 0 || o.stride != o.len || o.f.dst != nullptr)) return false;
+        if (o.kind == 1) {   // (finish_rows' rules; its int8 rows: whole 32-blocks of whole group rows)
+            if (o.f.vpp < 1 || o.n_vec > kWin * o.f.vpp) return false;
+            if (o.f.q8 != nullptr && (o.q8_per <= 0 || o.q8_per % 32 != 0 || ((long long) o.f.vpp * o.len) % o.q8_per != 0 ||
+                                      o.q8_rows < (o.n_vec + o.f.vpp - 1) / o.f.vpp))
+                return false;
+        } else if (o.kind != 0)
+            return false;
+        m.rows[i] = o.n_vec;
+        total += o.n_vec;
+    }
+    m.rx = m.rblocks = 0;
+    if (m.ring != 0) {
+        if (m.rr.runs < 1 || m.rr.runs > kWin || m.ext == nullptr || m.n <= 0 || m.d <= 0) return false;
+        if (m.ring == 2) {   // (ring_to_ext_runs' grid: (n, runs))
+            m.rx = m.n;
+        } else if (m.ring == 3) {   // (ext_to_ring_runs': (the runs' most rows, runs); d % 32 == 0)
+            if (m.d % 32 != 0) return false;
+            for (int k = 0; k < m.rr.runs; ++k) m.rx = std::max(m.rx, m.rr.T[k]);
+        } else
+            return false;
+        m.rblocks = m.rx * m.rr.runs;
+        total += m.rblocks;
+    }
+    m.ux = m.ublocks = 0;
+    if (m.unpack) {   // (sparse_attn_rows' unpack: grid (cdiv(sel_stride, kStage), T))
+        if (m.ut < 1 || m.ut > kWin || m.sel == nullptr || m.sel_stride < 1 || m.sel_stride > m.cap || m.out == nullptr ||
+            m.ua.gen != 0)
+            return false;
+        m.ux = cdiv(m.sel_stride, kStage);
+        m.ublocks = m.ux * m.ut;
+        total += m.ublocks;
+    }
+    if (total <= 0 || total > (1 << 20)) return false;
+    strata_ds4_launch(bt_fin_kernel, (int) total, kThreads, 0, s, m);
+    return true;
+}
 #else
 bool sparse_attn_sel_op(const void* ckv, const int* sel, int sel_stride, const AttnRows& a, int d, int T, int ckv_fmt,
                         int heads_per_block, const AttnScratch* scr, SelOp& u) {
@@ -5339,7 +5568,22 @@ bool unpack_sel_ref(const SelOp& u, cudaStream_t s) {
     (void) u, (void) s;
     return false;
 }
+bool bt_fin_ok() { return false; }
+bool bt_fin(BtFin& m, cudaStream_t s) {
+    (void) m, (void) s;
+    return false;
+}
 #endif
+// DS4_BT_FUSE's load check reference (see ds4_kernels.cuh): sparse_attn_rows' unpack launch, alone
+bool unpack_sel_rows_ref(const AttnCkv& c, const int* sel, int sel_stride, const AttnRows& a, int T, const AttnScratch* scr,
+                         cudaStream_t s) {
+    if (a.gen != 0 || T < 1 || T > kWin || scr == nullptr || scr->rows == nullptr || T > scr->max_t || sel_stride < 1 ||
+        sel_stride > scr->cap)
+        return false;
+    strata_ds4_launch(unpack_sel_rows_kernel, dim3(cdiv(sel_stride, kStage), T), kThreads, 0, s, c, sel, sel_stride, a,
+                      scr->cap, scr->rows);
+    return true;
+}
 
 // ---- FG-12 (DS4_IXS_DISPATCH=<nmax>, 2026-11-13): the indexer's scores by length.  The c3 bench (ixs_bench,
 // c3b-20261113T162047Z, one XTX, exact in all 88 runs) has index_score_split_kernel (L11B's DS4_IXSCORE_SPLIT, bench only until

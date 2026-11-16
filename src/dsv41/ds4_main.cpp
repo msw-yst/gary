@@ -1865,6 +1865,21 @@ int batch_test(strata::ds4::Model& m, const std::string& files, const std::strin
         std::printf("\n");
         std::fflush(stdout);
     };
+    // DS4_BATCH_TEST_WARM=1 (test only; ECOWN's batch-vs-solo gate with DS4_CACHE_FREEZE=1): prompt 0 read once and
+    // dropped before the references, so the read that fixes the expert placement is none of the compared runs
+    if (std::getenv("DS4_BATCH_TEST_WARM") != nullptr && std::atoi(std::getenv("DS4_BATCH_TEST_WARM")) == 1) {
+        m.reset();
+        const std::vector<int>& ids = prompts[0];
+        for (size_t a = 0; a < ids.size();) {
+            const int T = (int) std::min<size_t>((size_t) unit, ids.size() - a);
+            if (!m.feed(ids.data() + a, T, a + (size_t) T == ids.size() ? 1 : 0, err)) {
+                std::fprintf(stderr, "batch-test: warm read: %s\n", err.c_str());
+                return 1;
+            }
+            a += (size_t) T;
+        }
+        std::fprintf(stderr, "batch-test: DS4_BATCH_TEST_WARM=1: prompt 0 (%zu tokens) read once before the references\n", ids.size());
+    }
     // the references: each prompt alone, windows of one
     std::vector<std::vector<int>> ref((size_t) P);
     double solo_tps = 0;

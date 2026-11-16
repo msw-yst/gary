@@ -1,0 +1,14 @@
+### bin/ds4_iq_helper_bench --tg 16 --groups 1 --reps 50
+device 0: gfx1100 warpSize 32 CUs 48  | types gate/up IQ2_XXS down IQ2_XXS  E 5120 FF 2304 T 1 ne 1
+blob 8.70 MiB (gate+up 5.80 MiB, down 2.90 MiB), pool 40 blobs = 348 MiB
+roofline: read 5.80 MiB with 240 blocks x 256: 83.25 us, 73.1 GB/s
+roofline: read 5.80 MiB with 480 blocks x 256: 29.61 us, 205.4 GB/s
+roofline: read 5.80 MiB with 960 blocks x 256: 25.19 us, 241.5 GB/s
+roofline: read 5.80 MiB with 1920 blocks x 256: 21.71 us, 280.2 GB/s
+roofline: read 348.05 MiB with 240 blocks x 256: 423.75 us, 861.3 GB/s
+roofline: read 348.05 MiB with 480 blocks x 256: 411.17 us, 887.6 GB/s
+roofline: read 348.05 MiB with 960 blocks x 256: 408.92 us, 892.5 GB/s
+roofline: read 348.05 MiB with 1920 blocks x 256: 407.71 us, 895.1 GB/s
+G 1 T 1 ne 1 mode -1 (portable): gate_up   32.29 us ( 188.4 GB/s)  down   27.71 us ( 109.7 GB/s)  sum   60.01 us =  60.01 us/expert  b2b   42.25 us/launch-pair ( 215.9 GB/s)
+ok
+rc 0

@@ -320,7 +320,12 @@ struct AttnCkv {
 bool sparse_attn_rows_ok(int T, int max_run, int sel_stride, const AttnScratch* scr, bool mixed);
 void sparse_attn_rows(const float* q, const uint16_t* win, const AttnCkv& c, const int* sel, int sel_stride,
                       const AttnRows& a, const float* sink, int heads, int d, int T, float scale, float* out,
-                      cudaStream_t s, bool one, const AttnScratch* scr);
+                      cudaStream_t s, bool one, const AttnScratch* scr,
+                      bool sel_done = false);   // (DS4_BT_FUSE: true - bt_fin already ran this call's unpack)
+/// DS4_BT_FUSE's load check reference: sparse_attn_rows' unpack_sel_rows_kernel launch alone, as it launches it (false:
+/// not launched)
+bool unpack_sel_rows_ref(const AttnCkv& c, const int* sel, int sel_stride, const AttnRows& a, int T, const AttnScratch* scr,
+                         cudaStream_t s);
 /// ring_to_ext / ext_to_ring for every run at once: run k has T[k] rows from position p0[k], its ring ring[k], its
 /// window buffer rows e0[k] .. e0[k] + n + T[k] - 1 of `ext`, its backups bak[k] (or null)
 struct RingRuns {
@@ -383,6 +388,7 @@ struct Req {
     int ids[kWin][kPicks];
     float w[kWin][kPicks];
     int ahead[kWin][kAhead];
+    unsigned vmask[kWin];   // DS4_ECOWN: bit i of [t] - pick i of token t was in the publishing device's VRAM (its vram_tab entry not 0)
     float x[kWin][kMaxDim];
 };
 struct Resp {
@@ -607,5 +613,46 @@ bool sparse_attn_sel_op(const void* ckv, const int* sel, int sel_stride, const A
 bool finish_multi_sel(const FinOp* ops, int nops, const SelOp& u, cudaStream_t s);
 /// DS4_ATTN_MERGE=3's load check reference: unpack_sel_kernel launched exactly as sparse_attn launches it (false: not launched)
 bool unpack_sel_ref(const SelOp& u, cudaStream_t s);
+// ---- DS4_BT_FUSE (fusion plan F2 "bt parity"; default off: nothing calls these then).  A batch window's (attn_batch over
+// DS4_MULTI_ATTN's runs) independent launches as one launch, the way DS4_ATTN_MERGE merges a window's: each block runs its
+// part's kernel body for its row - finish_kernel<false[, kQ8]> (finish_row, as fin_multi_kernel runs it), finish_rows_kernel,
+// ring_to_ext_runs_kernel, ext_to_ring_runs_kernel, unpack_sel_rows_kernel - the same per-element code in the same TU (the
+// same contraction as those kernels), so the same bits; the load check compares the bytes.  The parts of one call must not read
+// what another writes.  HIP, gfx1100 code objects only (no gfx906 code); false: nothing launched (the caller's separate launches).
+struct BtFinSeg {
+    // 0 finish (finish_row: f.pos + (v / f.vpp) f.pos_step; f.q8: its int8 rows, finish's shape rules), 1 finish_rows (row v /
+    // f.vpp at fr.pos[row], f.dst: its BF16 to fr.dst[row]; f.q8: the int8 rounding of the stored values in the GEMV groups'
+    // layout below)
+    int kind = 0;
+    float* x = nullptr;
+    int n_vec = 0, len = 0;
+    long long stride = 0;
+    Finish f;
+    // kind 1 with f.q8 (DS4_XK_QO's o finish on T rows): value c = (v % f.vpp) len + e of row v / f.vpp's f.vpp * len, rounded
+    // as q8_quant rounds group c / q8_per's input row: f.q8[((c / q8_per) q8_rows + row) q8_per + c % q8_per] (scales / 32) -
+    // the int8 rows gguf mv makes for wo_a's jobs (q8_per values of q8_rows rows a group, the groups one after another)
+    int q8_per = 0, q8_rows = 0;
+};
+struct BtFin {
+    BtFinSeg seg[2];
+    int nseg = 0;
+    FinishRows fr;              // (kind 1's rows)
+    int ring = 0;               // 0 none, 2 ring_to_ext_runs(rr, ext, n, d), 3 ext_to_ring_runs(rr, ext, n, d)
+    RingRuns rr;
+    uint16_t* ext = nullptr;
+    int n = 0, d = 0;
+    bool unpack = false;        // unpack_sel_rows_kernel's blocks for (uc, sel, sel_stride, ua, cap, out), ut rows
+    AttnCkv uc;
+    const int* sel = nullptr;
+    int sel_stride = 0, cap = 0, ut = 0;
+    AttnRows ua;
+    uint16_t* out = nullptr;
+    // (set by bt_fin: the blocks of each part)
+    int rows[2] = {0, 0}, rx = 0, rblocks = 0, ux = 0, ublocks = 0;
+};
+/// whether this device has bt_fin's kernel (HIP gfx1100)
+bool bt_fin_ok();
+/// m's parts in one launch, each checked as its own wrapper checks it; false: nothing launched
+bool bt_fin(BtFin& m, cudaStream_t s);
 
 }  // namespace strata::ds4

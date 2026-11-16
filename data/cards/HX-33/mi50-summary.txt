@@ -1,0 +1,385 @@
+qbench run 2026-11-16 14:11 UTC - one MI50 (gfx906), HIP ordinal 3 of 8 visible to the host; nothing else running
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 2  think 0 us  HSA_ENABLE_SDMA=(unset)
+device 0: gfx906:sramecc-:xnack- warpSize 64 CUs 60  | types gate/up IQ2_XXS down IQ2_XXS  E 5120 FF 2304 T 1 ne 1
+G 1 T 1 ne 1 mode -1 (g906): gate_up   29.86 us ( 203.7 GB/s)  down   21.56 us ( 141.1 GB/s)  sum   51.42 us =  51.42 us/expert  b2b   41.48 us/launch-pair ( 220.0 GB/s)
+QBENCH device gfx906:sramecc-:xnack- CUs 60 | IQ2_S/IQ2_S E 5120 FF 2304 (of 2304, off 0) | blob 10.81 MiB, 11335680 weight bytes, pool 40 | path tok
+QBENCH device gfx906:sramecc-:xnack- CUs 60 | IQ2_S/IQ2_S E 5120 FF 2304 (of 2304, off 0) | blob 10.81 MiB, 11335680 weight bytes, pool 40 | path win
+QBENCH device gfx906:sramecc-:xnack- CUs 60 | IQ2_XS/IQ2_XS E 5120 FF 2304 (of 2304, off 0) | blob 9.76 MiB, 10229760 weight bytes, pool 40 | path tok
+QBENCH device gfx906:sramecc-:xnack- CUs 60 | IQ2_XS/IQ2_XS E 5120 FF 2304 (of 2304, off 0) | blob 9.76 MiB, 10229760 weight bytes, pool 40 | path win
+QBENCH device gfx906:sramecc-:xnack- CUs 60 | IQ2_XXS/IQ2_XXS E 5120 FF 2304 (of 2304, off 0) | blob 8.70 MiB, 9123840 weight bytes, pool 40 | path tok
+QBENCH device gfx906:sramecc-:xnack- CUs 60 | IQ2_XXS/IQ2_XXS E 5120 FF 2304 (of 2304, off 0) | blob 8.70 MiB, 9123840 weight bytes, pool 40 | path win
+QBENCH device gfx906:sramecc-:xnack- CUs 60 | MXFP4/MXFP4 E 5120 FF 2304 (of 2304, off 0) | blob 17.93 MiB, 18800640 weight bytes, pool 40 | path tok
+QBENCH device gfx906:sramecc-:xnack- CUs 60 | MXFP4/MXFP4 E 5120 FF 2304 (of 2304, off 0) | blob 17.93 MiB, 18800640 weight bytes, pool 40 | path win
+QGGML device ROCm0 (AMD Radeon Graphics) | mode expert iq2_s/iq2_s E 5120 FF 2304 (of 2304) NX 40 NL 40
+QGGML device ROCm0 (AMD Radeon Graphics) | mode expert iq2_xs/iq2_xs E 5120 FF 2304 (of 2304) NX 40 NL 40
+QGGML device ROCm0 (AMD Radeon Graphics) | mode expert iq2_xxs/iq2_xxs E 5120 FF 2304 (of 2304) NX 40 NL 40
+QGGML device ROCm0 (AMD Radeon Graphics) | mode expert mxfp4/mxfp4 E 5120 FF 2304 (of 2304) NX 40 NL 40
+QGGML device ROCm0 (AMD Radeon Graphics) | mode expert q2_K/q3_K E 5120 FF 2304 (of 2304) NX 40 NL 40
+QGGML device ROCm0 (AMD Radeon Graphics) | mode moe1 q2_K/q3_K E 5120 FF 2304 (of 2304) NX 40 NL 40
+QGGML device ROCm0 (AMD Radeon Graphics) | mode moe1 q2_K/q3_K E 5120 FF 512 (of 2304) NX 40 NL 40
+QGGML device ROCm0 (AMD Radeon Graphics) | mode moe1 q2_K/q3_K E 5120 FF 768 (of 2304) NX 40 NL 40
+roofline: read 348.05 MiB with 1920 blocks x 256: 479.25 us, 761.5 GB/s
+roofline: read 348.05 MiB with 240 blocks x 256: 435.31 us, 838.4 GB/s
+roofline: read 348.05 MiB with 480 blocks x 256: 468.70 us, 778.7 GB/s
+roofline: read 348.05 MiB with 960 blocks x 256: 479.54 us, 761.0 GB/s
+roofline: read 5.80 MiB with 1920 blocks x 256: 14.17 us, 429.4 GB/s
+roofline: read 5.80 MiB with 240 blocks x 256: 46.74 us, 130.1 GB/s
+roofline: read 5.80 MiB with 480 blocks x 256: 14.20 us, 428.2 GB/s
+roofline: read 5.80 MiB with 960 blocks x 256: 14.81 us, 410.8 GB/s
+QG dev=AMD Radeon Graphics mode=moe1 tg=q2_K td=q3_K ff=2304 B=1 reps=200 p50_us=48.67 p90_us=48.90 mean_us=48.70 bytes=12810240 GBps_p50=263.2 out_maxabs=4.636e+03 nonfinite=0 nodes=880
+QG dev=AMD Radeon Graphics mode=moe1 tg=q2_K td=q3_K ff=2304 B=1 reps=200 p50_us=29.64 p90_us=29.76 mean_us=29.66 bytes=12810240 GBps_p50=432.2 out_maxabs=4.636e+03 nonfinite=0 nodes=880
+QG dev=AMD Radeon Graphics mode=moe1 tg=q2_K td=q3_K ff=768 B=1 reps=200 p50_us=10.21 p90_us=10.25 mean_us=10.19 bytes=4270080 GBps_p50=418.1 out_maxabs=2.467e+03 nonfinite=0 nodes=880
+QG dev=AMD Radeon Graphics mode=moe1 tg=q2_K td=q3_K ff=512 B=1 reps=200 p50_us=7.03 p90_us=7.07 mean_us=7.01 bytes=2846720 GBps_p50=405.1 out_maxabs=2.849e+03 nonfinite=0 nodes=880
+QG dev=AMD Radeon Graphics mode=expert tg=mxfp4 td=mxfp4 ff=2304 B=1 reps=200 p50_us=57.00 p90_us=58.88 mean_us=57.04 bytes=18800640 GBps_p50=329.8 out_maxabs=8.675e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=mxfp4 td=mxfp4 ff=2304 B=2 reps=200 p50_us=88.10 p90_us=88.22 mean_us=87.17 bytes=18800640 GBps_p50=213.4 out_maxabs=8.989e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=mxfp4 td=mxfp4 ff=2304 B=4 reps=200 p50_us=155.21 p90_us=158.37 mean_us=156.39 bytes=18800640 GBps_p50=121.1 out_maxabs=1.010e+01 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=mxfp4 td=mxfp4 ff=2304 B=8 reps=200 p50_us=305.91 p90_us=306.58 mean_us=305.24 bytes=18800640 GBps_p50=61.5 out_maxabs=1.042e+01 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=q2_K td=q3_K ff=2304 B=1 reps=200 p50_us=67.26 p90_us=68.50 mean_us=67.38 bytes=12810240 GBps_p50=190.4 out_maxabs=3.825e+03 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=q2_K td=q3_K ff=2304 B=2 reps=200 p50_us=91.34 p90_us=94.41 mean_us=91.80 bytes=12810240 GBps_p50=140.2 out_maxabs=6.316e+03 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=q2_K td=q3_K ff=2304 B=4 reps=200 p50_us=149.54 p90_us=151.74 mean_us=149.70 bytes=12810240 GBps_p50=85.7 out_maxabs=6.090e+03 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=q2_K td=q3_K ff=2304 B=8 reps=200 p50_us=534.92 p90_us=535.11 mean_us=535.00 bytes=12810240 GBps_p50=23.9 out_maxabs=5.391e+03 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_s td=iq2_s ff=2304 B=1 reps=200 p50_us=136.37 p90_us=137.58 mean_us=136.62 bytes=11335680 GBps_p50=83.1 out_maxabs=5.559e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_s td=iq2_s ff=2304 B=2 reps=200 p50_us=223.01 p90_us=223.57 mean_us=222.81 bytes=11335680 GBps_p50=50.8 out_maxabs=6.046e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_s td=iq2_s ff=2304 B=4 reps=200 p50_us=422.58 p90_us=424.66 mean_us=423.15 bytes=11335680 GBps_p50=26.8 out_maxabs=6.693e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_s td=iq2_s ff=2304 B=8 reps=200 p50_us=312.99 p90_us=314.30 mean_us=313.09 bytes=11335680 GBps_p50=36.2 out_maxabs=8.068e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xs td=iq2_xs ff=2304 B=1 reps=200 p50_us=60.97 p90_us=61.04 mean_us=60.70 bytes=10229760 GBps_p50=167.8 out_maxabs=6.643e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xs td=iq2_xs ff=2304 B=2 reps=200 p50_us=84.92 p90_us=85.01 mean_us=84.44 bytes=10229760 GBps_p50=120.5 out_maxabs=6.560e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xs td=iq2_xs ff=2304 B=4 reps=200 p50_us=130.20 p90_us=130.38 mean_us=128.94 bytes=10229760 GBps_p50=78.6 out_maxabs=7.772e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xs td=iq2_xs ff=2304 B=8 reps=200 p50_us=232.92 p90_us=234.06 mean_us=232.67 bytes=10229760 GBps_p50=43.9 out_maxabs=7.608e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xxs td=iq2_xxs ff=2304 B=1 reps=200 p50_us=67.72 p90_us=68.80 mean_us=67.89 bytes=9123840 GBps_p50=134.7 out_maxabs=7.580e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xxs td=iq2_xxs ff=2304 B=2 reps=200 p50_us=84.01 p90_us=85.40 mean_us=83.88 bytes=9123840 GBps_p50=108.6 out_maxabs=7.846e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xxs td=iq2_xxs ff=2304 B=4 reps=200 p50_us=119.59 p90_us=123.04 mean_us=120.10 bytes=9123840 GBps_p50=76.3 out_maxabs=7.983e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xxs td=iq2_xxs ff=2304 B=8 reps=200 p50_us=213.84 p90_us=216.21 mean_us=214.15 bytes=9123840 GBps_p50=42.7 out_maxabs=8.681e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=moe1 tg=q2_K td=q3_K ff=2304 B=1 reps=200 p50_us=52.70 p90_us=52.95 mean_us=52.73 bytes=12810240 GBps_p50=243.1 out_maxabs=4.634e+03 nonfinite=0 nodes=880
+QG dev=AMD Radeon Graphics mode=expert tg=mxfp4 td=mxfp4 ff=2304 B=1 reps=200 p50_us=61.09 p90_us=61.21 mean_us=60.54 bytes=18800640 GBps_p50=307.8 out_maxabs=8.675e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=mxfp4 td=mxfp4 ff=2304 B=2 reps=200 p50_us=88.32 p90_us=89.62 mean_us=88.17 bytes=18800640 GBps_p50=212.9 out_maxabs=8.989e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=mxfp4 td=mxfp4 ff=2304 B=4 reps=200 p50_us=153.69 p90_us=156.92 mean_us=154.88 bytes=18800640 GBps_p50=122.3 out_maxabs=1.010e+01 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=mxfp4 td=mxfp4 ff=2304 B=8 reps=200 p50_us=293.76 p90_us=294.42 mean_us=292.95 bytes=18800640 GBps_p50=64.0 out_maxabs=1.042e+01 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=q2_K td=q3_K ff=2304 B=1 reps=200 p50_us=60.55 p90_us=61.18 mean_us=60.28 bytes=12810240 GBps_p50=211.6 out_maxabs=3.825e+03 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=q2_K td=q3_K ff=2304 B=2 reps=200 p50_us=89.32 p90_us=90.84 mean_us=89.47 bytes=12810240 GBps_p50=143.4 out_maxabs=6.316e+03 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=q2_K td=q3_K ff=2304 B=4 reps=200 p50_us=162.16 p90_us=163.75 mean_us=162.51 bytes=12810240 GBps_p50=79.0 out_maxabs=6.090e+03 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=q2_K td=q3_K ff=2304 B=8 reps=200 p50_us=204.37 p90_us=204.93 mean_us=204.34 bytes=12810240 GBps_p50=62.7 out_maxabs=5.336e+03 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_s td=iq2_s ff=2304 B=1 reps=200 p50_us=93.31 p90_us=93.51 mean_us=92.57 bytes=11335680 GBps_p50=121.5 out_maxabs=5.559e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_s td=iq2_s ff=2304 B=2 reps=200 p50_us=157.01 p90_us=160.38 mean_us=158.29 bytes=11335680 GBps_p50=72.2 out_maxabs=6.046e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_s td=iq2_s ff=2304 B=4 reps=200 p50_us=301.20 p90_us=304.40 mean_us=301.81 bytes=11335680 GBps_p50=37.6 out_maxabs=6.693e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_s td=iq2_s ff=2304 B=8 reps=200 p50_us=255.47 p90_us=256.03 mean_us=255.45 bytes=11335680 GBps_p50=44.4 out_maxabs=8.068e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xs td=iq2_xs ff=2304 B=1 reps=200 p50_us=83.06 p90_us=84.50 mean_us=82.91 bytes=10229760 GBps_p50=123.2 out_maxabs=6.642e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xs td=iq2_xs ff=2304 B=2 reps=200 p50_us=144.06 p90_us=144.20 mean_us=143.34 bytes=10229760 GBps_p50=71.0 out_maxabs=6.560e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xs td=iq2_xs ff=2304 B=4 reps=200 p50_us=269.07 p90_us=269.20 mean_us=268.52 bytes=10229760 GBps_p50=38.0 out_maxabs=7.770e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xs td=iq2_xs ff=2304 B=8 reps=200 p50_us=240.65 p90_us=241.10 mean_us=240.57 bytes=10229760 GBps_p50=42.5 out_maxabs=7.609e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xxs td=iq2_xxs ff=2304 B=1 reps=200 p50_us=79.95 p90_us=83.17 mean_us=80.48 bytes=9123840 GBps_p50=114.1 out_maxabs=7.580e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xxs td=iq2_xxs ff=2304 B=2 reps=200 p50_us=134.55 p90_us=134.63 mean_us=134.20 bytes=9123840 GBps_p50=67.8 out_maxabs=7.846e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xxs td=iq2_xxs ff=2304 B=4 reps=200 p50_us=251.91 p90_us=252.03 mean_us=251.93 bytes=9123840 GBps_p50=36.2 out_maxabs=7.986e+00 nonfinite=0 nodes=160
+QG dev=AMD Radeon Graphics mode=expert tg=iq2_xxs td=iq2_xxs ff=2304 B=8 reps=200 p50_us=224.63 p90_us=225.35 mean_us=224.53 bytes=9123840 GBps_p50=40.6 out_maxabs=8.678e+00 nonfinite=0 nodes=160
+QB arch=gfx906:sramecc-:xnack- tg=MXFP4 td=MXFP4 ff=2304 off=0 path=win B=1 reps=300 busy_p50_us=91.84 busy_p90_us=97.60 busy_mean_us=97.80 GBps_busy=204.7 p50_us=86.72 p90_us=90.24 mean_us=87.37 bytes=18800640 GBps_p50=216.8 maxabs=7.9250e-02 maxref=6.0873e+00 rel_max=1.3019e-02 rel_rms=1.1868e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=MXFP4 td=MXFP4 ff=2304 off=0 path=win B=2 reps=300 busy_p50_us=124.32 busy_p90_us=125.12 busy_mean_us=121.04 GBps_busy=151.2 p50_us=114.88 p90_us=117.92 mean_us=114.33 bytes=18800640 GBps_p50=163.7 maxabs=8.7217e-02 maxref=6.5389e+00 rel_max=1.3338e-02 rel_rms=1.2072e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=MXFP4 td=MXFP4 ff=2304 off=0 path=win B=4 reps=300 busy_p50_us=157.44 busy_p90_us=170.08 busy_mean_us=162.60 GBps_busy=119.4 p50_us=156.00 p90_us=157.76 mean_us=154.98 bytes=18800640 GBps_p50=120.5 maxabs=8.7217e-02 maxref=8.2317e+00 rel_max=1.0595e-02 rel_rms=1.1788e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=MXFP4 td=MXFP4 ff=2304 off=0 path=win B=8 reps=300 busy_p50_us=251.68 busy_p90_us=273.76 busy_mean_us=255.76 GBps_busy=74.7 p50_us=251.20 p90_us=252.00 mean_us=248.27 bytes=18800640 GBps_p50=74.8 maxabs=8.7217e-02 maxref=8.2317e+00 rel_max=1.0595e-02 rel_rms=1.1641e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=MXFP4 td=MXFP4 ff=2304 off=0 path=tok B=1 reps=300 busy_p50_us=95.52 busy_p90_us=96.16 busy_mean_us=93.41 GBps_busy=196.8 p50_us=85.12 p90_us=88.80 mean_us=86.17 bytes=18800640 GBps_p50=220.9 maxabs=7.9250e-02 maxref=6.0873e+00 rel_max=1.3019e-02 rel_rms=1.1868e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_S td=IQ2_S ff=2304 off=0 path=win B=1 reps=300 busy_p50_us=62.72 busy_p90_us=63.20 busy_mean_us=62.72 GBps_busy=180.7 p50_us=62.88 p90_us=63.84 mean_us=63.16 bytes=11335680 GBps_p50=180.3 maxabs=8.1587e-02 maxref=7.4072e+00 rel_max=1.1015e-02 rel_rms=1.1390e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_S td=IQ2_S ff=2304 off=0 path=win B=2 reps=300 busy_p50_us=85.28 busy_p90_us=90.56 busy_mean_us=86.34 GBps_busy=132.9 p50_us=83.04 p90_us=85.12 mean_us=83.29 bytes=11335680 GBps_p50=136.5 maxabs=9.5890e-02 maxref=8.0052e+00 rel_max=1.1978e-02 rel_rms=1.1275e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_S td=IQ2_S ff=2304 off=0 path=win B=4 reps=300 busy_p50_us=114.08 busy_p90_us=123.36 busy_mean_us=117.17 GBps_busy=99.4 p50_us=109.12 p90_us=113.76 mean_us=110.98 bytes=11335680 GBps_p50=103.9 maxabs=9.5890e-02 maxref=8.0052e+00 rel_max=1.1978e-02 rel_rms=1.1523e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_S td=IQ2_S ff=2304 off=0 path=win B=8 reps=300 busy_p50_us=188.16 busy_p90_us=204.48 busy_mean_us=192.04 GBps_busy=60.2 p50_us=186.24 p90_us=188.64 mean_us=184.94 bytes=11335680 GBps_p50=60.9 maxabs=9.5890e-02 maxref=8.0052e+00 rel_max=1.1978e-02 rel_rms=1.1723e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_S td=IQ2_S ff=2304 off=0 path=tok B=1 reps=300 busy_p50_us=60.80 busy_p90_us=62.72 busy_mean_us=61.23 GBps_busy=186.4 p50_us=60.80 p90_us=61.60 mean_us=61.09 bytes=11335680 GBps_p50=186.4 maxabs=8.1587e-02 maxref=7.4072e+00 rel_max=1.1015e-02 rel_rms=1.1390e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XS td=IQ2_XS ff=2304 off=0 path=win B=1 reps=300 busy_p50_us=58.72 busy_p90_us=59.20 busy_mean_us=58.79 GBps_busy=174.2 p50_us=59.20 p90_us=59.84 mean_us=63.74 bytes=10229760 GBps_p50=172.8 maxabs=7.9415e-02 maxref=7.6855e+00 rel_max=1.0333e-02 rel_rms=1.1177e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XS td=IQ2_XS ff=2304 off=0 path=win B=2 reps=300 busy_p50_us=77.92 busy_p90_us=83.52 busy_mean_us=79.31 GBps_busy=131.3 p50_us=75.20 p90_us=76.00 mean_us=75.80 bytes=10229760 GBps_p50=136.0 maxabs=8.1000e-02 maxref=7.6855e+00 rel_max=1.0539e-02 rel_rms=1.1403e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XS td=IQ2_XS ff=2304 off=0 path=win B=4 reps=300 busy_p50_us=107.84 busy_p90_us=116.48 busy_mean_us=111.07 GBps_busy=94.9 p50_us=103.20 p90_us=107.36 mean_us=104.63 bytes=10229760 GBps_p50=99.1 maxabs=9.1036e-02 maxref=7.6855e+00 rel_max=1.1845e-02 rel_rms=1.1708e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XS td=IQ2_XS ff=2304 off=0 path=win B=8 reps=300 busy_p50_us=185.92 busy_p90_us=201.92 busy_mean_us=189.19 GBps_busy=55.0 p50_us=178.24 p90_us=186.08 mean_us=181.19 bytes=10229760 GBps_p50=57.4 maxabs=9.3482e-02 maxref=7.7719e+00 rel_max=1.2028e-02 rel_rms=1.1833e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XS td=IQ2_XS ff=2304 off=0 path=tok B=1 reps=300 busy_p50_us=57.92 busy_p90_us=58.24 busy_mean_us=57.96 GBps_busy=176.6 p50_us=58.24 p90_us=59.04 mean_us=58.40 bytes=10229760 GBps_p50=175.7 maxabs=7.9415e-02 maxref=7.6855e+00 rel_max=1.0333e-02 rel_rms=1.1177e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XXS td=IQ2_XXS ff=2304 off=0 path=win B=1 reps=300 busy_p50_us=57.12 busy_p90_us=57.92 busy_mean_us=57.26 GBps_busy=159.7 p50_us=57.28 p90_us=58.40 mean_us=57.59 bytes=9123840 GBps_p50=159.3 maxabs=7.2296e-02 maxref=5.8890e+00 rel_max=1.2277e-02 rel_rms=1.1702e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XXS td=IQ2_XXS ff=2304 off=0 path=win B=2 reps=300 busy_p50_us=75.36 busy_p90_us=81.12 busy_mean_us=76.73 GBps_busy=121.1 p50_us=72.96 p90_us=75.68 mean_us=73.82 bytes=9123840 GBps_p50=125.1 maxabs=7.2296e-02 maxref=5.8890e+00 rel_max=1.2277e-02 rel_rms=1.2096e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XXS td=IQ2_XXS ff=2304 off=0 path=win B=4 reps=300 busy_p50_us=108.00 busy_p90_us=116.96 busy_mean_us=110.36 GBps_busy=84.5 p50_us=103.36 p90_us=107.68 mean_us=104.65 bytes=9123840 GBps_p50=88.3 maxabs=7.3436e-02 maxref=7.2655e+00 rel_max=1.0107e-02 rel_rms=1.1851e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XXS td=IQ2_XXS ff=2304 off=0 path=win B=8 reps=300 busy_p50_us=181.12 busy_p90_us=197.28 busy_mean_us=184.38 GBps_busy=50.4 p50_us=173.76 p90_us=181.92 mean_us=180.77 bytes=9123840 GBps_p50=52.5 maxabs=7.9348e-02 maxref=7.7660e+00 rel_max=1.0217e-02 rel_rms=1.1750e-02 nonfinite=0 launch_errors=0
+QB arch=gfx906:sramecc-:xnack- tg=IQ2_XXS td=IQ2_XXS ff=2304 off=0 path=tok B=1 reps=300 busy_p50_us=55.84 busy_p90_us=57.60 busy_mean_us=56.16 GBps_busy=163.4 p50_us=56.00 p90_us=56.80 mean_us=56.20 bytes=9123840 GBps_p50=162.9 maxabs=7.2296e-02 maxref=5.8890e+00 rel_max=1.2277e-02 rel_rms=1.1702e-02 nonfinite=0 launch_errors=0
+KT ours-xxs-0-tok-1 calls=100 gpu_us_per_call=51.56 kernels_per_call=5.00 span_us_per_call=59.16 busy
+KT      40.40 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.17 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-0-win-1 calls=100 gpu_us_per_call=52.53 kernels_per_call=5.00 span_us_per_call=60.24 busy
+KT      41.25 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.27 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-0-win-2 calls=100 gpu_us_per_call=67.96 kernels_per_call=5.00 span_us_per_call=75.59 busy
+KT      56.52 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.44 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-0-win-4 calls=100 gpu_us_per_call=98.20 kernels_per_call=5.00 span_us_per_call=105.94 busy
+KT      86.49 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.72 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-0-win-8 calls=100 gpu_us_per_call=170.50 kernels_per_call=5.00 span_us_per_call=178.58 busy
+KT     156.53 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      13.97 us/call  x3.00  strata::ds4::gguf::
+KT lcpp-xxs-0-exp-1 calls=2200 gpu_us_per_call=79.64 kernels_per_call=4.00
+KT      71.74 us/call  x2.00  void mul_mat_vec_q<
+KT       7.90 us/call  x2.00  quantize_q8_1
+KT lcpp-xxs-0-exp-2 calls=2200 gpu_us_per_call=132.94 kernels_per_call=4.00
+KT     125.03 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       7.91 us/call  x2.00  quantize_q8_1
+KT lcpp-xxs-0-exp-4 calls=2200 gpu_us_per_call=250.67 kernels_per_call=4.00
+KT     242.56 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       8.11 us/call  x2.00  quantize_q8_1
+KT lcpp-xxs-0-exp-8 calls=2200 gpu_us_per_call=228.40 kernels_per_call=10.00
+KT     202.55 us/call  x3.00  void mul_mat_q<
+KT      11.26 us/call  x3.00  void mm_ids_helper<0>
+KT      10.83 us/call  x3.00  void quantize_mmq_q8_1<
+KT       3.76 us/call  x1.00  void swiglu_clamp_kernel<float>
+KT cv-xxs-0-exp-1 calls=2200 gpu_us_per_call=70.16 kernels_per_call=4.00
+KT      62.82 us/call  x2.00  void moe_coal_iq<
+KT       7.34 us/call  x2.00  moe_vec_quantize_gather
+KT cv-xxs-0-exp-2 calls=2200 gpu_us_per_call=82.80 kernels_per_call=4.00
+KT      75.26 us/call  x2.00  void moe_coal_iq<
+KT       7.54 us/call  x2.00  moe_vec_quantize_gather
+KT cv-xxs-0-exp-4 calls=2200 gpu_us_per_call=118.78 kernels_per_call=4.00
+KT     110.86 us/call  x2.00  void moe_coal_iq<
+KT       7.92 us/call  x2.00  moe_vec_quantize_gather
+KT cv-xxs-0-exp-8 calls=2200 gpu_us_per_call=210.72 kernels_per_call=4.00
+KT     202.47 us/call  x2.00  void moe_coal_iq<
+KT       8.26 us/call  x2.00  moe_vec_quantize_gather
+KT ours-xs-0-tok-1 calls=100 gpu_us_per_call=53.11 kernels_per_call=5.00 span_us_per_call=60.69 busy
+KT      41.95 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.16 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-0-win-1 calls=100 gpu_us_per_call=54.18 kernels_per_call=5.00 span_us_per_call=61.74 busy
+KT      42.69 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.49 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-0-win-2 calls=100 gpu_us_per_call=70.81 kernels_per_call=5.00 span_us_per_call=78.38 busy
+KT      58.87 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.94 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-0-win-4 calls=100 gpu_us_per_call=98.22 kernels_per_call=5.00 span_us_per_call=105.84 busy
+KT      86.46 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.76 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-0-win-8 calls=100 gpu_us_per_call=174.40 kernels_per_call=5.00 span_us_per_call=182.53 busy
+KT     160.08 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      14.32 us/call  x3.00  strata::ds4::gguf::
+KT lcpp-xs-0-exp-1 calls=2200 gpu_us_per_call=81.11 kernels_per_call=4.00
+KT      73.19 us/call  x2.00  void mul_mat_vec_q<
+KT       7.92 us/call  x2.00  quantize_q8_1
+KT lcpp-xs-0-exp-2 calls=2200 gpu_us_per_call=142.39 kernels_per_call=4.00
+KT     134.48 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       7.91 us/call  x2.00  quantize_q8_1
+KT lcpp-xs-0-exp-4 calls=2200 gpu_us_per_call=267.24 kernels_per_call=4.00
+KT     258.65 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       8.59 us/call  x2.00  quantize_q8_1
+KT lcpp-xs-0-exp-8 calls=2200 gpu_us_per_call=243.91 kernels_per_call=10.00
+KT     217.96 us/call  x3.00  void mul_mat_q<
+KT      11.29 us/call  x3.00  void mm_ids_helper<0>
+KT      10.89 us/call  x3.00  void quantize_mmq_q8_1<
+KT       3.76 us/call  x1.00  void swiglu_clamp_kernel<float>
+KT cv-xs-0-exp-1 calls=2200 gpu_us_per_call=62.29 kernels_per_call=4.00
+KT      27.83 us/call  x1.00  void moe_coal_iq_flat<
+KT      26.49 us/call  x1.00  void moe_coal_iq<
+KT       7.97 us/call  x2.00  moe_vec_quantize_gather
+KT cv-xs-0-exp-2 calls=2200 gpu_us_per_call=83.73 kernels_per_call=4.00
+KT      44.48 us/call  x1.00  void moe_coal_iq_flat<
+KT      31.45 us/call  x1.00  void moe_coal_iq<
+KT       7.80 us/call  x2.00  moe_vec_quantize_gather
+KT cv-xs-0-exp-4 calls=2200 gpu_us_per_call=126.74 kernels_per_call=4.00
+KT     118.78 us/call  x2.00  void moe_coal_iq<
+KT       7.96 us/call  x2.00  moe_vec_quantize_gather
+KT cv-xs-0-exp-8 calls=2200 gpu_us_per_call=228.80 kernels_per_call=4.00
+KT     220.51 us/call  x2.00  void moe_coal_iq<
+KT       8.29 us/call  x2.00  moe_vec_quantize_gather
+KT ours-s-0-tok-1 calls=100 gpu_us_per_call=56.23 kernels_per_call=5.00 span_us_per_call=63.80 busy
+KT      45.07 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.17 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-0-win-1 calls=100 gpu_us_per_call=57.98 kernels_per_call=5.00 span_us_per_call=65.55 busy
+KT      46.20 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.78 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-0-win-2 calls=100 gpu_us_per_call=76.99 kernels_per_call=5.00 span_us_per_call=84.59 busy
+KT      65.54 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.44 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-0-win-4 calls=100 gpu_us_per_call=104.25 kernels_per_call=5.00 span_us_per_call=111.96 busy
+KT      92.34 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.91 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-0-win-8 calls=100 gpu_us_per_call=175.31 kernels_per_call=5.00 span_us_per_call=183.44 busy
+KT     160.95 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      14.35 us/call  x3.00  strata::ds4::gguf::
+KT lcpp-s-0-exp-1 calls=2200 gpu_us_per_call=91.05 kernels_per_call=4.00
+KT      82.54 us/call  x2.00  void mul_mat_vec_q<
+KT       8.51 us/call  x2.00  quantize_q8_1
+KT lcpp-s-0-exp-2 calls=2200 gpu_us_per_call=157.26 kernels_per_call=4.00
+KT     148.74 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       8.52 us/call  x2.00  quantize_q8_1
+KT lcpp-s-0-exp-4 calls=2200 gpu_us_per_call=299.31 kernels_per_call=4.00
+KT     291.12 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       8.18 us/call  x2.00  quantize_q8_1
+KT lcpp-s-0-exp-8 calls=2200 gpu_us_per_call=257.02 kernels_per_call=10.00
+KT     230.76 us/call  x3.00  void mul_mat_q<
+KT      11.42 us/call  x3.00  void mm_ids_helper<0>
+KT      11.08 us/call  x3.00  void quantize_mmq_q8_1<
+KT       3.76 us/call  x1.00  void swiglu_clamp_kernel<float>
+KT cv-s-0-exp-1 calls=2200 gpu_us_per_call=134.11 kernels_per_call=3.02
+KT     130.14 us/call  x2.00  void mul_mat_vec_q<
+KT       3.97 us/call  x1.02  quantize_q8_1
+KT cv-s-0-exp-2 calls=2200 gpu_us_per_call=220.07 kernels_per_call=3.02
+KT     215.96 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       4.11 us/call  x1.02  quantize_q8_1
+KT cv-s-0-exp-4 calls=2200 gpu_us_per_call=419.57 kernels_per_call=3.02
+KT     414.88 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       4.69 us/call  x1.02  quantize_q8_1
+KT cv-s-0-exp-8 calls=2200 gpu_us_per_call=317.84 kernels_per_call=13.00
+KT     280.06 us/call  x3.00  void mul_mat_q<
+KT      11.90 us/call  x3.00  void mm_ids_helper<0>
+KT      11.05 us/call  x3.00  void quantize_mmq_q8_1<
+KT      11.05 us/call  x3.00  mmq_build_tile_map
+KT       3.78 us/call  x1.00  void swiglu_clamp_kernel<float>
+KT ours-mx-0-tok-1 calls=100 gpu_us_per_call=80.79 kernels_per_call=5.00 span_us_per_call=88.30 busy
+KT      69.49 us/call  x2.00  void strata::ds4::gguf::
+KT      11.30 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-0-win-1 calls=100 gpu_us_per_call=82.17 kernels_per_call=5.00 span_us_per_call=89.69 busy
+KT      70.90 us/call  x2.00  void strata::ds4::gguf::
+KT      11.27 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-0-win-2 calls=100 gpu_us_per_call=107.13 kernels_per_call=5.00 span_us_per_call=114.69 busy
+KT      94.83 us/call  x2.00  void strata::ds4::gguf::
+KT      12.30 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-0-win-4 calls=100 gpu_us_per_call=146.64 kernels_per_call=5.00 span_us_per_call=154.34 busy
+KT     134.60 us/call  x2.00  void strata::ds4::gguf::
+KT      12.04 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-0-win-8 calls=100 gpu_us_per_call=244.95 kernels_per_call=5.00 span_us_per_call=252.87 busy
+KT     230.12 us/call  x2.00  void strata::ds4::gguf::
+KT      14.84 us/call  x3.00  strata::ds4::gguf::
+KT lcpp-mx-0-exp-1 calls=2200 gpu_us_per_call=58.45 kernels_per_call=4.00
+KT      50.16 us/call  x2.00  void mul_mat_vec_q<
+KT       8.29 us/call  x2.00  quantize_q8_1
+KT lcpp-mx-0-exp-2 calls=2200 gpu_us_per_call=86.00 kernels_per_call=4.00
+KT      77.59 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       8.40 us/call  x2.00  quantize_q8_1
+KT lcpp-mx-0-exp-4 calls=2200 gpu_us_per_call=151.96 kernels_per_call=4.00
+KT     142.81 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       9.15 us/call  x2.00  quantize_q8_1
+KT lcpp-mx-0-exp-8 calls=2200 gpu_us_per_call=288.36 kernels_per_call=4.00
+KT     279.64 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       8.72 us/call  x2.00  quantize_q8_1
+KT cv-mx-0-exp-1 calls=2200 gpu_us_per_call=54.22 kernels_per_call=3.02
+KT      50.03 us/call  x2.00  void mul_mat_vec_q<
+KT       4.20 us/call  x1.02  quantize_q8_1
+KT cv-mx-0-exp-2 calls=2200 gpu_us_per_call=84.22 kernels_per_call=3.02
+KT      79.86 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       4.36 us/call  x1.02  quantize_q8_1
+KT cv-mx-0-exp-4 calls=2200 gpu_us_per_call=152.43 kernels_per_call=3.02
+KT     148.01 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       4.42 us/call  x1.02  quantize_q8_1
+KT cv-mx-0-exp-8 calls=2200 gpu_us_per_call=299.77 kernels_per_call=3.02
+KT     295.35 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       4.42 us/call  x1.02  quantize_q8_1
+KT lcpp-q2q3-0-exp-1 calls=2200 gpu_us_per_call=58.03 kernels_per_call=4.00
+KT      50.14 us/call  x2.00  void mul_mat_vec_q<
+KT       7.89 us/call  x2.00  quantize_q8_1
+KT cv-q2q3-0-exp-1 calls=2200 gpu_us_per_call=66.75 kernels_per_call=5.03
+KT      31.14 us/call  x1.00  void mul_mat_vec_q<
+KT      24.19 us/call  x1.00  void moe_rowlane_q3k<1, false>
+KT       3.79 us/call  x1.00  moe_vec_tile_map
+KT       3.79 us/call  x1.00  void mm_ids_helper<0>
+KT       3.77 us/call  x1.00  moe_vec_quantize_gather_s16
+KT       0.06 us/call  x0.03  quantize_q8_1
+KT lcpp-q2q3-0-exp-2 calls=2200 gpu_us_per_call=86.85 kernels_per_call=4.00
+KT      78.75 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       8.10 us/call  x2.00  quantize_q8_1
+KT cv-q2q3-0-exp-2 calls=2200 gpu_us_per_call=90.27 kernels_per_call=5.03
+KT      50.19 us/call  x1.00  void mul_mat_vec_q_moe<
+KT      28.12 us/call  x1.00  void moe_rowlane_q3k<1, false>
+KT       3.97 us/call  x1.00  moe_vec_tile_map
+KT       3.97 us/call  x1.00  void mm_ids_helper<0>
+KT       3.94 us/call  x1.00  moe_vec_quantize_gather_s16
+KT       0.07 us/call  x0.03  quantize_q8_1
+KT lcpp-q2q3-0-exp-4 calls=2200 gpu_us_per_call=159.50 kernels_per_call=4.00
+KT     151.21 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       8.29 us/call  x2.00  quantize_q8_1
+KT cv-q2q3-0-exp-4 calls=2200 gpu_us_per_call=145.91 kernels_per_call=5.03
+KT      97.76 us/call  x1.00  void mul_mat_vec_q_moe<
+KT      35.69 us/call  x1.00  void moe_rowlane_q3k<1, false>
+KT       4.15 us/call  x1.00  moe_vec_tile_map
+KT       4.13 us/call  x1.00  void mm_ids_helper<0>
+KT       4.11 us/call  x1.00  moe_vec_quantize_gather_s16
+KT       0.08 us/call  x0.03  quantize_q8_1
+KT lcpp-q2q3-0-exp-8 calls=2200 gpu_us_per_call=206.89 kernels_per_call=10.00
+KT     180.10 us/call  x3.00  void mul_mat_q<
+KT      11.90 us/call  x3.00  void mm_ids_helper<0>
+KT      11.18 us/call  x3.00  void quantize_mmq_q8_1<
+KT       3.71 us/call  x1.00  void swiglu_clamp_kernel<float>
+KT cv-q2q3-0-exp-8 calls=2200 gpu_us_per_call=537.74 kernels_per_call=13.00
+KT     401.57 us/call  x2.00  void moe_rowlane_q2k<8, false, 1>
+KT      97.02 us/call  x1.00  void moe_rowlane_q3k<8, false>
+KT      11.98 us/call  x3.00  void mm_ids_helper<0>
+KT      11.25 us/call  x3.00  moe_vec_tile_map
+KT      11.12 us/call  x3.00  moe_vec_quantize_gather_s16
+KT       4.79 us/call  x1.00  void swiglu_clamp_kernel<float>
+KT lcpp-moe1-2304-moe1-1 calls=15400 gpu_us_per_call=52.48 kernels_per_call=1.29
+KT      49.39 us/call  x0.57  void mul_mat_vec_q<
+KT       2.47 us/call  x0.57  quantize_q8_1
+KT       0.62 us/call  x0.14  moe_weighted_reduction_f32
+KT cv-moe1-2304-moe1-1 calls=15400 gpu_us_per_call=29.09 kernels_per_call=0.29
+KT      15.86 us/call  x0.14  void moe1_down_q3k<7>
+KT      13.23 us/call  x0.14  void moe1_gateup_q2k<3, 3>
+KT cv-moe1-768-moe1-1 calls=15400 gpu_us_per_call=9.57 kernels_per_call=0.29
+KT       4.81 us/call  x0.14  void moe1_gateup_q2k<3, 3>
+KT       4.76 us/call  x0.14  void moe1_down3_q3k<7, 3, 3, 32, 192>
+KT cv-moe1-512-moe1-1 calls=15400 gpu_us_per_call=6.46 kernels_per_call=0.29
+KT       3.33 us/call  x0.14  void moe1_gateup_q2k<3, 2>
+KT       3.12 us/call  x0.14  void moe1_down3_q3k<7, 2, 2, 32, 128>
+KT cv-moe1off-2304-moe1-1 calls=15400 gpu_us_per_call=48.48 kernels_per_call=1.57
+KT      30.02 us/call  x0.29  void mul_mat_vec_q<
+KT       9.66 us/call  x0.14  void moe_rowlane_q3k<1, false>
+KT       4.42 us/call  x0.14  void gemv1_q2k<5, false, true, 1>
+KT       1.22 us/call  x0.29  quantize_q8_1
+KT       0.69 us/call  x0.14  void mm_ids_helper<6>
+KT       0.62 us/call  x0.14  moe_vec_quantize_gather_s16
+KT       0.62 us/call  x0.14  moe_vec_tile_map
+KT       0.61 us/call  x0.14  void moe_weighted_reduction_f32_vec4<6>
+## agents.txt
+      4   Name:                    gfx1100                            
+      4   Name:                    gfx906                             
+## out.txt
+step rt done
+## parts.txt
+### 14:19:15 bin/ds4_helper_rt_bench --dev 0 --experts 1 --T 1 --reps 2000
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  104.7 mean  119.3 p90  161.3 us | issue  19.7 | wait mean   99.6 p50   85.4
+rc 0
+### 14:19:21 bin/ds4_helper_rt_bench --dev 0 --experts 1 --T 1 --reps 2000 --ablate nokern
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate nokern : round trip p50   39.4 mean   41.4 p90   40.2 us | issue   8.8 | wait mean   32.6 p50   30.4
+rc 0
+### 14:19:26 bin/ds4_helper_rt_bench --dev 0 --experts 1 --T 1 --reps 2000 --empty
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  104.1 mean  117.5 p90  161.0 us | issue  19.7 | wait mean   97.8 p50   85.0
+rc 0
+### 14:19:31 bin/ds4_helper_rt_bench --dev 0 --experts 1 --T 1 --reps 2000 --idle-us 800
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  136.5 mean  152.2 p90  191.5 us | issue  21.6 | wait mean  130.6 p50  115.3
+rc 0
+### 14:19:38 bin/ds4_helper_rt_bench --dev 0 --experts 2 --T 1 --reps 2000
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 2  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  164.4 mean  170.7 p90  172.9 us | issue  19.0 | wait mean  151.8 p50  145.8
+rc 0
+## rc.txt
+rc=0
+## sweep.txt
+### 14:19:05 bin/ds4_helper_rt_bench --dev 0 --sweep 1 --experts 1 --T 1
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+base (engine today)          in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  104.6 mean  119.8 p90  161.4 us | issue  20.0 | wait mean   99.8 p50   85.0
+base + timing events         in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  116.4 mean  153.0 p90  172.8 us | issue  27.8 | wait mean  125.2 p50   89.9 | GPU: in-a 12.3 in-b 23.3 kernels 63.1 out 41.2  BITWISE
+event only (floor)           in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50    7.8 mean    8.9 p90   11.8 us | issue   3.8 | wait mean    5.2 p50    5.3
+ablate plan H2D              in copy2  out d2h wait sync  graph 0 ablate noplan : round trip p50   89.2 mean  106.2 p90  146.4 us | issue  17.2 | wait mean   89.0 p50   72.8
+ablate x H2D                 in copy2  out d2h wait sync  graph 0 ablate nox    : round trip p50  127.9 mean  139.6 p90  160.9 us | issue  16.5 | wait mean  123.1 p50  112.3
+ablate out D2H               in copy2  out d2h wait sync  graph 0 ablate noout  : round trip p50  132.5 mean  142.9 p90  163.4 us | issue  16.8 | wait mean  126.1 p50  116.3
+ablate kernels               in copy2  out d2h wait sync  graph 0 ablate nokern : round trip p50   40.0 mean   42.8 p90   40.7 us | issue   9.4 | wait mean   33.5 p50   30.5
+no SDMA, no kernels          in kfetch out zc  wait sync  graph 0 ablate nokern : round trip p50   15.1 mean   15.3 p90   15.7 us | issue   3.8 | wait mean   11.5 p50   11.7
+(a) query spin               in copy2  out d2h wait query graph 0 ablate none   : round trip p50  103.6 mean  119.9 p90  161.2 us | issue  20.7 | wait mean   99.2 p50   83.8  BITWISE
+(a) flag spin                in copy2  out d2h wait flag  graph 0 ablate none   : round trip p50  103.6 mean  118.9 p90  161.3 us | issue  21.0 | wait mean   97.9 p50   83.1  BITWISE
+(b) one packed H2D           in copy1  out d2h wait sync  graph 0 ablate none   : round trip p50   88.3 mean  103.2 p90  145.7 us | issue  17.5 | wait mean   85.7 p50   71.3  BITWISE
+(b) one packed H2D + ev      in copy1  out d2h wait sync  graph 0 ablate none   : round trip p50  155.9 mean  165.5 p90  162.2 us | issue  27.3 | wait mean  138.2 p50  130.3 | GPU: in-a 28.3 in-b 4.5 kernels 61.9 out 57.6  BITWISE
+(b) kernel fetch             in kfetch out d2h wait sync  graph 0 ablate none   : round trip p50  127.8 mean  139.0 p90  160.8 us | issue  16.6 | wait mean  122.3 p50  112.0  BITWISE
+(b) zero-copy in             in zc     out d2h wait sync  graph 0 ablate none   : round trip p50  127.7 mean  139.2 p90  160.8 us | issue  14.9 | wait mean  124.3 p50  113.6  BITWISE
+(c) zero-copy out            in copy2  out zc  wait sync  graph 0 ablate none   : round trip p50  132.5 mean  143.2 p90  163.8 us | issue  17.2 | wait mean  126.0 p50  115.8  BITWISE
+(d) graph                    in copy2  out d2h wait sync  graph 1 ablate none   : round trip p50   76.9 mean   78.8 p90   83.4 us | issue   5.8 | wait mean   73.0 p50   71.3  BITWISE
+(e) no SDMA: kfetch+zc       in kfetch out zc  wait sync  graph 0 ablate none   : round trip p50   73.8 mean   74.6 p90   80.1 us | issue  13.3 | wait mean   61.3 p50   61.0  BITWISE
+(e) kfetch+zc+query          in kfetch out zc  wait query graph 0 ablate none   : round trip p50   73.3 mean   74.1 p90   79.6 us | issue  13.3 | wait mean   60.8 p50   60.2  BITWISE
+(e) kfetch+zc+flag           in kfetch out zc  wait flag  graph 0 ablate none   : round trip p50   71.9 mean   73.0 p90   78.7 us | issue  13.6 | wait mean   59.4 p50   58.8  BITWISE
+(e) zc+zc+flag               in zc     out zc  wait flag  graph 0 ablate none   : round trip p50   77.9 mean   78.4 p90   80.7 us | issue  11.7 | wait mean   66.8 p50   67.0  BITWISE
+(e) kfetch+zc+flag+graph     in kfetch out zc  wait flag  graph 1 ablate none   : round trip p50   68.9 mean   69.7 p90   75.0 us | issue   6.7 | wait mean   63.0 p50   62.3  BITWISE
+copy1+zc+query               in copy1  out zc  wait query graph 0 ablate none   : round trip p50   84.7 mean  102.7 p90  133.3 us | issue  14.1 | wait mean   88.6 p50   71.3  BITWISE
+rc 0

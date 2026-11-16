@@ -1,0 +1,60 @@
+## agents.txt
+      4   Name:                    gfx1100                            
+      4   Name:                    gfx906                             
+## out.txt
+step rt done
+## parts.txt
+### 14:19:15 bin/ds4_helper_rt_bench --dev 0 --experts 1 --T 1 --reps 2000
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  104.7 mean  119.3 p90  161.3 us | issue  19.7 | wait mean   99.6 p50   85.4
+rc 0
+### 14:19:21 bin/ds4_helper_rt_bench --dev 0 --experts 1 --T 1 --reps 2000 --ablate nokern
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate nokern : round trip p50   39.4 mean   41.4 p90   40.2 us | issue   8.8 | wait mean   32.6 p50   30.4
+rc 0
+### 14:19:26 bin/ds4_helper_rt_bench --dev 0 --experts 1 --T 1 --reps 2000 --empty
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  104.1 mean  117.5 p90  161.0 us | issue  19.7 | wait mean   97.8 p50   85.0
+rc 0
+### 14:19:31 bin/ds4_helper_rt_bench --dev 0 --experts 1 --T 1 --reps 2000 --idle-us 800
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  136.5 mean  152.2 p90  191.5 us | issue  21.6 | wait mean  130.6 p50  115.3
+rc 0
+### 14:19:38 bin/ds4_helper_rt_bench --dev 0 --experts 2 --T 1 --reps 2000
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 2  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+single                       in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  164.4 mean  170.7 p90  172.9 us | issue  19.0 | wait mean  151.8 p50  145.8
+rc 0
+## rc.txt
+rc=0
+## sweep.txt
+### 14:19:05 bin/ds4_helper_rt_bench --dev 0 --sweep 1 --experts 1 --T 1
+device 0: gfx906:sramecc-:xnack-  sched auto  T 1  experts/request 1  think 0 us  HSA_ENABLE_SDMA=(unset)
+40 layers x 6 experts = 2.17 GiB of blobs
+base (engine today)          in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  104.6 mean  119.8 p90  161.4 us | issue  20.0 | wait mean   99.8 p50   85.0
+base + timing events         in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50  116.4 mean  153.0 p90  172.8 us | issue  27.8 | wait mean  125.2 p50   89.9 | GPU: in-a 12.3 in-b 23.3 kernels 63.1 out 41.2  BITWISE
+event only (floor)           in copy2  out d2h wait sync  graph 0 ablate none   : round trip p50    7.8 mean    8.9 p90   11.8 us | issue   3.8 | wait mean    5.2 p50    5.3
+ablate plan H2D              in copy2  out d2h wait sync  graph 0 ablate noplan : round trip p50   89.2 mean  106.2 p90  146.4 us | issue  17.2 | wait mean   89.0 p50   72.8
+ablate x H2D                 in copy2  out d2h wait sync  graph 0 ablate nox    : round trip p50  127.9 mean  139.6 p90  160.9 us | issue  16.5 | wait mean  123.1 p50  112.3
+ablate out D2H               in copy2  out d2h wait sync  graph 0 ablate noout  : round trip p50  132.5 mean  142.9 p90  163.4 us | issue  16.8 | wait mean  126.1 p50  116.3
+ablate kernels               in copy2  out d2h wait sync  graph 0 ablate nokern : round trip p50   40.0 mean   42.8 p90   40.7 us | issue   9.4 | wait mean   33.5 p50   30.5
+no SDMA, no kernels          in kfetch out zc  wait sync  graph 0 ablate nokern : round trip p50   15.1 mean   15.3 p90   15.7 us | issue   3.8 | wait mean   11.5 p50   11.7
+(a) query spin               in copy2  out d2h wait query graph 0 ablate none   : round trip p50  103.6 mean  119.9 p90  161.2 us | issue  20.7 | wait mean   99.2 p50   83.8  BITWISE
+(a) flag spin                in copy2  out d2h wait flag  graph 0 ablate none   : round trip p50  103.6 mean  118.9 p90  161.3 us | issue  21.0 | wait mean   97.9 p50   83.1  BITWISE
+(b) one packed H2D           in copy1  out d2h wait sync  graph 0 ablate none   : round trip p50   88.3 mean  103.2 p90  145.7 us | issue  17.5 | wait mean   85.7 p50   71.3  BITWISE
+(b) one packed H2D + ev      in copy1  out d2h wait sync  graph 0 ablate none   : round trip p50  155.9 mean  165.5 p90  162.2 us | issue  27.3 | wait mean  138.2 p50  130.3 | GPU: in-a 28.3 in-b 4.5 kernels 61.9 out 57.6  BITWISE
+(b) kernel fetch             in kfetch out d2h wait sync  graph 0 ablate none   : round trip p50  127.8 mean  139.0 p90  160.8 us | issue  16.6 | wait mean  122.3 p50  112.0  BITWISE
+(b) zero-copy in             in zc     out d2h wait sync  graph 0 ablate none   : round trip p50  127.7 mean  139.2 p90  160.8 us | issue  14.9 | wait mean  124.3 p50  113.6  BITWISE
+(c) zero-copy out            in copy2  out zc  wait sync  graph 0 ablate none   : round trip p50  132.5 mean  143.2 p90  163.8 us | issue  17.2 | wait mean  126.0 p50  115.8  BITWISE
+(d) graph                    in copy2  out d2h wait sync  graph 1 ablate none   : round trip p50   76.9 mean   78.8 p90   83.4 us | issue   5.8 | wait mean   73.0 p50   71.3  BITWISE
+(e) no SDMA: kfetch+zc       in kfetch out zc  wait sync  graph 0 ablate none   : round trip p50   73.8 mean   74.6 p90   80.1 us | issue  13.3 | wait mean   61.3 p50   61.0  BITWISE
+(e) kfetch+zc+query          in kfetch out zc  wait query graph 0 ablate none   : round trip p50   73.3 mean   74.1 p90   79.6 us | issue  13.3 | wait mean   60.8 p50   60.2  BITWISE
+(e) kfetch+zc+flag           in kfetch out zc  wait flag  graph 0 ablate none   : round trip p50   71.9 mean   73.0 p90   78.7 us | issue  13.6 | wait mean   59.4 p50   58.8  BITWISE
+(e) zc+zc+flag               in zc     out zc  wait flag  graph 0 ablate none   : round trip p50   77.9 mean   78.4 p90   80.7 us | issue  11.7 | wait mean   66.8 p50   67.0  BITWISE
+(e) kfetch+zc+flag+graph     in kfetch out zc  wait flag  graph 1 ablate none   : round trip p50   68.9 mean   69.7 p90   75.0 us | issue   6.7 | wait mean   63.0 p50   62.3  BITWISE
+copy1+zc+query               in copy1  out zc  wait query graph 0 ablate none   : round trip p50   84.7 mean  102.7 p90  133.3 us | issue  14.1 | wait mean   88.6 p50   71.3  BITWISE
+rc 0

@@ -185,6 +185,8 @@ struct DdHead {
     const Req* req_base = nullptr;
     int8_t* q8 = nullptr;                      // device: the stream's xq (row t at t * n_embd)
     float* q8d = nullptr;                      //         and xd (row t at t * n_embd / 32)
+    int vm = 0;                                // DS4_ECOWN: a pick whose bit is set in req->vmask[t] (the lead holds it in
+                                               // VRAM at publish: a cache promotion) is the lead's, not taken here
 };
 constexpr int kFoldRing = 256;   // (DS4_HW_FOLD: windows in flight on one helper are a handful; the lane's count wraps here)
 
@@ -274,7 +276,8 @@ __global__ void __launch_bounds__(256) helper_dd_head_kernel(const DdHead a) {
         const int t = j / kPicks, i = j % kPicks;
         if (t < a.T && i < a.k) {
             const int e = *(const volatile int*) &req->ids[t][i];
-            if (e >= 0 && e < a.n_exp && a.own[e] != 0ull) tok[t] = 1;
+            const bool lead_has = a.vm && ((*(const volatile unsigned*) &req->vmask[t] >> i) & 1u);   // (DS4_ECOWN)
+            if (e >= 0 && e < a.n_exp && a.own[e] != 0ull && !lead_has) tok[t] = 1;
         }
     }
     __syncthreads();
@@ -307,7 +310,8 @@ __global__ void __launch_bounds__(256) helper_dd_head_kernel(const DdHead a) {
         const int t = j / kPicks, i = j % kPicks;
         if (go && t < a.T && i < a.k) {
             const int e = *(const volatile int*) &req->ids[t][i];
-            if (e >= 0 && e < a.n_exp) {
+            const bool lead_has = a.vm && ((*(const volatile unsigned*) &req->vmask[t] >> i) & 1u);   // (DS4_ECOWN)
+            if (e >= 0 && e < a.n_exp && !lead_has) {
                 const unsigned long long p = a.own[e];
                 if (p != 0ull) {
                     P->plan_ptr[j] = p;
@@ -639,6 +643,7 @@ struct Helper::Impl {
     int dd_nexp = 0;
     unsigned long long dd_delay = 0;  // DS4_HELPER_DD_DELAY_US in wall-clock ticks
     bool dd_skip = false;             // DS4_HELPER_DD_SKIP=1: the lead skips this helper where it has no pick (see dd_owns)
+    bool dd_vm = false;               // DS4_ECOWN=1: the heads leave out the picks the lead's request marks as in its VRAM
     std::vector<uint8_t> dd_has;      // [li * dd_nexp + e]: d_own's entry is not 0 (the host's copy, for the lead's owner table)
     unsigned dd_seq = 0;              // the armed window's request (0: none)
     int dd_li = -1, dd_T = 0;
@@ -1483,6 +1488,7 @@ struct Helper::Impl {
         const char* du = std::getenv("DS4_HELPER_DD_DELAY_US");
         dd_delay = du != nullptr && std::atof(du) > 0 ? (unsigned long long) (std::atof(du) / 1000.0 * khz) : 0ull;
         dd_skip = std::getenv("DS4_HELPER_DD_SKIP") != nullptr && std::atoi(std::getenv("DS4_HELPER_DD_SKIP")) == 1;
+        dd_vm = std::getenv("DS4_ECOWN") != nullptr && std::atoi(std::getenv("DS4_ECOWN")) == 1;   // DS4_ECOWN (the model's own rule)
         dd_ff = std::getenv("DS4_LP_FLAGFUSE") != nullptr && std::atoi(std::getenv("DS4_LP_FLAGFUSE")) == 1;
         if (dd_ff && (cudaMalloc((void**) &d_ddw, sizeof(unsigned long long)) != cudaSuccess ||
                       cudaMalloc((void**) &d_ddc, sizeof(unsigned)) != cudaSuccess ||
@@ -1498,6 +1504,8 @@ struct Helper::Impl {
         dd = true;
         std::fprintf(stderr, "ds4 helper: device %d device-direct windows on (DS4_HELPER_DD; %lld experts in its table%s%s)\n", dev, (long long) n,
                      dd_delay ? ", DS4_HELPER_DD_DELAY_US set" : "", dd_skip ? ", DS4_HELPER_DD_SKIP: empty rows not written" : "");
+        if (dd_vm)
+            std::fprintf(stderr, "ds4 helper: device %d DS4_ECOWN=1: a pick the lead's request marks as in its VRAM is the lead's, not planned here\n", dev);
         return true;
 #else
         (void) reqs; (void) take;
@@ -1645,6 +1653,7 @@ struct Helper::Impl {
             a.has = h_dd_dev->has;
             a.delay = dd_delay;
             a.skip = dd_skip ? 1 : 0;
+            a.vm = dd_vm ? 1 : 0;   // (DS4_ECOWN)
             a.want_out = (dd_ff || folded) && body ? d_ddw : nullptr;   // (DS4_LP_FLAGFUSE / DS4_HW_FOLD: the flag's value)
             if (folded) {
                 a.req = nullptr;

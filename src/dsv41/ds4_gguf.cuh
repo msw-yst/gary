@@ -76,9 +76,12 @@ struct PreQ8 {
     int k = 0;
     int rows = 1;
     // (xtxkern DS4_XK_QO) nslice > 1: nslice inputs slice values apart (x + i slice, q + i slice, d + i slice / 32; one
-    // row each, slice % 32 == 0) - wo_a's groups reading the heads' one rounded vector
+    // row each, slice % 32 == 0) - wo_a's groups reading the heads' one rounded vector.  (DS4_BT_FUSE) with rows > 1:
+    // input i is rows rows xcs values apart (the jobs' xf_cs), its rounding q + i slice rows, d + i (slice / 32) rows - each
+    // input's [rows][k] as mv makes it, the inputs one after another (rows 1: the layout above)
     int nslice = 1;
     size_t slice = 0;
+    size_t xcs = 0;
 };
 bool mv(const x3::MvJob* jobs, int n, cudaStream_t s, const PreQ8* pre);
 /// xtxkern DS4_XK_QA: a Q5_K (kFmtGG) matrix's rows as bytes - w its first row, ld bytes a row; false: another format
@@ -128,6 +131,7 @@ struct DdJoinArgs {
     int il = 0, kexp = 0;
     float* part = nullptr;   // dd_join_k's outputs
     int* flag = nullptr;
+    const unsigned* vmask = nullptr;   // DS4_ECOWN (null: off): the request's Req::vmask - a set bit's pick needs no helper
 };
 bool moe_join_combine(const x3::MoeArgs& a, const DdJoinArgs& j, const float* sh_out, float* out, cudaStream_t s);
 bool win_join_combine(const x3::WinArgs& a, const DdJoinArgs& j, cudaStream_t s);

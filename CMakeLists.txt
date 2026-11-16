@@ -1046,11 +1046,12 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
       # (docs/dsv41/cards/HX-04.md): the helper's expert kernels alone at decode shapes (us / expert,
       # GB/s, and an A/B bitwise check of the gfx906 token kernels against the portable ones on one device)
       set_source_files_properties(tests/dsv41/iq_helper_bench.cpp PROPERTIES LANGUAGE ${_ds4_test_lang})
-      add_executable(ds4_iq_helper_bench tests/dsv41/iq_helper_bench.cpp src/dsv41/ds4_iq.cu src/dsv41/ds4_iq_cpu.cpp
-                     src/dsv41/ds4_gg_cpu.cpp src/dsv41/ds4_tq.cu src/dsv41/ds4_tq_cpu.cpp)
+      # (QBENCH: + ds4_gguf.cu, so --pool-file times gg::win_experts / the token path on real experts, MXFP4 included)
+      add_executable(ds4_iq_helper_bench tests/dsv41/iq_helper_bench.cpp src/dsv41/ds4_gguf.cu src/dsv41/ds4_iq.cu src/dsv41/ds4_iq_cpu.cpp
+                     src/dsv41/ds4_gguf_cpu.cpp src/dsv41/ds4_gg_cpu.cpp src/dsv41/ds4_tq.cu src/dsv41/ds4_tq_cpu.cpp)
       target_include_directories(ds4_iq_helper_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${_strata_gpu_include_directories}
                                  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml ${CMAKE_CURRENT_SOURCE_DIR}/src/kernels/cpu)
-      target_link_libraries(ds4_iq_helper_bench PRIVATE strata_kernels_cpu ${_strata_gpu_runtime_target} Threads::Threads)
+      target_link_libraries(ds4_iq_helper_bench PRIVATE strata_dsv41_kernels strata_kernels_cpu ${_strata_gpu_runtime_target} Threads::Threads)
       target_compile_definitions(ds4_iq_helper_bench PRIVATE STRATA_DSV41_TQ_CPU=1)
       if(STRATA_ENABLE_HIP)
         target_compile_options(ds4_iq_helper_bench PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")

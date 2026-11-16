@@ -32,6 +32,17 @@ The ported pull requests are credited in the source files that carry them, with 
 hyper-connection, route and SwiGLU fusions and the uneven split), tctiger (the multi-part copies) and mrsirg97 (the BF16
 router), as in Project Maya's history. Source files carrying ported code say so in a header or comment line.
 
+## Benchmark references (release 3)
+
+The expert-kernel benchmark in `tools/qbench/` and the validation in `validation/` compare this fork with two other MIT
+projects, each built unmodified from its own sources. No code from either is included in this repository;
+`tools/qbench/qb_ggml.cpp` calls ggml's public API.
+
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) and ggml, by the ggml authors (MIT): the reference engine, at
+  b11870 (74bca395).
+- [castagna-veloce](https://github.com/benpeterson40/castagna-veloce), by benpeterson40, a fork of llama.cpp (MIT, copyright the ggml authors): gfx906 MoE kernels,
+  including its fused Q2_K/Q3_K expert kernel, at `main` 3483d4627.
+
 ## Acknowledgements
 
 Thanks first to Niko1221 and the Strata contributors, whose engine all of this builds on, and to Peasant Smith and the

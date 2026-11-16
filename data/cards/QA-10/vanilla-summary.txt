@@ -1,0 +1,42 @@
+== arm V vs L
+TF V 01 (bin0, 2014 ids): KL 0.00253 (max 0.0380), top-1 248/256, first divergence 18, KL before it 0.00418
+TF V 02 (bin0, 3131 ids): KL 0.00424 (max 0.0297), top-1 250/256, first divergence 20, KL before it 0.00373
+TF V 03 (bin0, 3349 ids): KL 0.00353 (max 0.0316), top-1 251/256, first divergence 115, KL before it 0.00333
+TF V 11 (bin1, 8437 ids): KL 0.00482 (max 0.1354), top-1 248/256, first divergence 6, KL before it 0.00513
+TF V 12 (bin1, 9364 ids): KL 0.00432 (max 0.0422), top-1 248/256, first divergence 32, KL before it 0.00570
+TF V 13 (bin1, 10099 ids): KL 0.00251 (max 0.0317), top-1 108/110, first divergence 50, KL before it 0.00460
+TF V 21 (bin2, 26288 ids): KL 0.00580 (max 0.0728), top-1 245/256, first divergence 73, KL before it 0.00517
+TF V 22 (bin2, 26407 ids): KL 0.00574 (max 0.0843), top-1 247/256, first divergence 18, KL before it 0.00797
+TF V 23 (bin2, 27361 ids): KL 0.00340 (max 0.0343), top-1 157/163, first divergence 40, KL before it 0.00530
+TF V 32 (bin3, 43123 ids): KL 0.00595 (max 0.0878), top-1 251/256, first divergence 37, KL before it 0.00920
+TF V 33 (bin3, 49746 ids): KL 0.00144 (max 0.0194), top-1 81/81, first divergence 81, KL before it 0.00144
+TF V 34 (bin3, 49962 ids): KL 0.00544 (max 0.0355), top-1 244/256, first divergence 2, KL before it 0.01414
+ARM V TF: e = 0.00414 nats (mean of 12 prompts), top-1 agreement 0.9699 (2578/2658)
+  band bin0: KL 0.00343 over 3 prompts
+  band bin1: KL 0.00389 over 3 prompts
+  band bin2: KL 0.00498 over 3 prompts
+  band bin3: KL 0.00428 over 3 prompts
+  class prose: KL 0.00444, top-1 0.9699 over 2658 positions
+ARM V FREE: 40 prompts; first divergence median 21 (min 2), identical to L in full: 0; shared prefix 0.131 of L's tokens
+== arm P1 vs L
+TF P1 01 (bin0, 2014 ids): KL 0.00195 (max 0.0313), top-1 251/256, first divergence 18, KL before it 0.00296
+TF P1 02 (bin0, 3131 ids): KL 0.00541 (max 0.0687), top-1 243/256, first divergence 0, KL before it -
+TF P1 03 (bin0, 3349 ids): KL 0.00353 (max 0.0307), top-1 250/256, first divergence 16, KL before it 0.00731
+TF P1 11 (bin1, 8437 ids): KL 0.00345 (max 0.0488), top-1 248/256, first divergence 6, KL before it 0.00490
+TF P1 12 (bin1, 9364 ids): KL 0.00489 (max 0.0469), top-1 248/256, first divergence 6, KL before it 0.00276
+TF P1 13 (bin1, 10099 ids): KL 0.00285 (max 0.0497), top-1 108/110, first divergence 12, KL before it 0.00857
+TF P1 21 (bin2, 26288 ids): KL 0.00563 (max 0.0434), top-1 240/256, first divergence 17, KL before it 0.00994
+TF P1 22 (bin2, 26407 ids): KL 0.00489 (max 0.0595), top-1 248/256, first divergence 18, KL before it 0.00993
+TF P1 23 (bin2, 27361 ids): KL 0.00433 (max 0.1136), top-1 159/163, first divergence 43, KL before it 0.00527
+TF P1 32 (bin3, 43123 ids): KL 0.00628 (max 0.1612), top-1 247/256, first divergence 36, KL before it 0.01225
+TF P1 33 (bin3, 49746 ids): KL 0.00140 (max 0.0384), top-1 79/81, first divergence 2, KL before it 0.00143
+TF P1 34 (bin3, 49962 ids): KL 0.00547 (max 0.0474), top-1 244/256, first divergence 2, KL before it 0.01030
+ARM P1 TF: e = 0.00417 nats (mean of 12 prompts), top-1 agreement 0.9650 (2565/2658)
+  band bin0: KL 0.00363 over 3 prompts
+  band bin1: KL 0.00373 over 3 prompts
+  band bin2: KL 0.00495 over 3 prompts
+  band bin3: KL 0.00438 over 3 prompts
+  class prose: KL 0.00442, top-1 0.9650 over 2658 positions
+ARM P1 FREE: 40 prompts; first divergence median 18 (min 2), identical to L in full: 0; shared prefix 0.119 of L's tokens
+VERDICT ENGINE (build 17 vs upstream v0.2.9, both 1 XTX + RAM): PASS (e_P1 - e_V = +0.00003 nats vs floor 0.00200; top-1 P1 - V = -0.0049 vs floor 0.0050)
+VERDICT DEPLOY: NO DATA (arm D / P1 not run yet: D runs on the serving machine later)

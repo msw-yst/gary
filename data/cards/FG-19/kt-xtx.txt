@@ -1,0 +1,239 @@
+     76 0
+kt/ours-mx-0-tok-1/kt_kernel_trace.csv
+kt/ours-s-0-win-8/kt_kernel_trace.csv
+kt/ours-mx-576-tok-1/kt_kernel_trace.csv
+KT ours-xxs-0-tok-1 calls=221 gpu_us_per_call=50.68 kernels_per_call=5.00
+KT      40.59 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.08 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-0-win-1 calls=221 gpu_us_per_call=51.14 kernels_per_call=5.00
+KT      41.01 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.13 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-0-win-2 calls=221 gpu_us_per_call=63.96 kernels_per_call=5.00
+KT      52.43 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.53 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-0-win-4 calls=221 gpu_us_per_call=75.58 kernels_per_call=5.00
+KT      65.06 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.52 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-0-win-8 calls=221 gpu_us_per_call=113.99 kernels_per_call=5.00
+KT     101.51 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      12.48 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-768-tok-1 calls=221 gpu_us_per_call=35.22 kernels_per_call=5.00
+KT      24.74 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.47 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-768-win-1 calls=221 gpu_us_per_call=36.45 kernels_per_call=5.00
+KT      25.63 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.81 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-768-win-2 calls=221 gpu_us_per_call=45.72 kernels_per_call=5.00
+KT      34.78 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.94 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-768-win-4 calls=221 gpu_us_per_call=57.72 kernels_per_call=5.00
+KT      46.64 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.08 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-768-win-8 calls=221 gpu_us_per_call=80.20 kernels_per_call=5.00
+KT      68.80 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.40 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-512-tok-1 calls=221 gpu_us_per_call=31.17 kernels_per_call=5.00
+KT      22.81 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.37 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-512-win-1 calls=221 gpu_us_per_call=31.85 kernels_per_call=5.00
+KT      23.17 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.68 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-512-win-2 calls=221 gpu_us_per_call=32.04 kernels_per_call=5.00
+KT      23.36 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.68 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-512-win-4 calls=221 gpu_us_per_call=40.26 kernels_per_call=5.00
+KT      31.42 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.84 us/call  x3.00  strata::ds4::gguf::
+KT ours-xxs-512-win-8 calls=221 gpu_us_per_call=55.57 kernels_per_call=5.00
+KT      46.65 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.92 us/call  x3.00  strata::ds4::gguf::
+KT lcpp-xxs-0-exp-1 calls=2200 gpu_us_per_call=32.53 kernels_per_call=4.00
+KT      29.71 us/call  x2.00  void mul_mat_vec_q<
+KT       2.81 us/call  x2.00  quantize_q8_1
+KT lcpp-xxs-0-exp-2 calls=2200 gpu_us_per_call=52.87 kernels_per_call=4.00
+KT      49.90 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       2.97 us/call  x2.00  quantize_q8_1
+KT lcpp-xxs-0-exp-4 calls=2200 gpu_us_per_call=86.00 kernels_per_call=4.00
+KT      82.88 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       3.12 us/call  x2.00  quantize_q8_1
+KT lcpp-xxs-0-exp-8 calls=2200 gpu_us_per_call=139.61 kernels_per_call=10.00
+KT     127.20 us/call  x3.00  void mul_mat_q<
+KT       6.72 us/call  x3.00  void mm_ids_helper<0>
+KT       4.43 us/call  x3.00  void quantize_mmq_q8_1<
+KT       1.26 us/call  x1.00  void swiglu_clamp_kernel<float>
+KT ours-xs-0-tok-1 calls=221 gpu_us_per_call=52.71 kernels_per_call=5.00
+KT      42.82 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       9.90 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-0-win-1 calls=221 gpu_us_per_call=53.89 kernels_per_call=5.00
+KT      43.64 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.24 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-0-win-2 calls=221 gpu_us_per_call=66.14 kernels_per_call=5.00
+KT      54.66 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.48 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-0-win-4 calls=221 gpu_us_per_call=77.70 kernels_per_call=5.00
+KT      67.17 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.53 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-0-win-8 calls=221 gpu_us_per_call=111.42 kernels_per_call=5.00
+KT      99.81 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.61 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-768-tok-1 calls=221 gpu_us_per_call=37.10 kernels_per_call=5.00
+KT      26.67 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.43 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-768-win-1 calls=221 gpu_us_per_call=38.22 kernels_per_call=5.00
+KT      27.43 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.79 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-768-win-2 calls=221 gpu_us_per_call=47.21 kernels_per_call=5.00
+KT      36.20 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.01 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-768-win-4 calls=221 gpu_us_per_call=59.65 kernels_per_call=5.00
+KT      48.52 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.12 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-768-win-8 calls=221 gpu_us_per_call=82.39 kernels_per_call=5.00
+KT      71.05 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.33 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-512-tok-1 calls=221 gpu_us_per_call=32.44 kernels_per_call=5.00
+KT      24.06 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.38 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-512-win-1 calls=221 gpu_us_per_call=32.71 kernels_per_call=5.00
+KT      24.06 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.65 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-512-win-2 calls=221 gpu_us_per_call=33.13 kernels_per_call=5.00
+KT      24.52 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.61 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-512-win-4 calls=221 gpu_us_per_call=41.62 kernels_per_call=5.00
+KT      32.94 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.68 us/call  x3.00  strata::ds4::gguf::
+KT ours-xs-512-win-8 calls=221 gpu_us_per_call=55.86 kernels_per_call=5.00
+KT      46.89 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.97 us/call  x3.00  strata::ds4::gguf::
+KT lcpp-xs-0-exp-1 calls=2200 gpu_us_per_call=33.76 kernels_per_call=4.00
+KT      30.94 us/call  x2.00  void mul_mat_vec_q<
+KT       2.82 us/call  x2.00  quantize_q8_1
+KT lcpp-xs-0-exp-2 calls=2200 gpu_us_per_call=51.27 kernels_per_call=4.00
+KT      48.49 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       2.78 us/call  x2.00  quantize_q8_1
+KT lcpp-xs-0-exp-4 calls=2200 gpu_us_per_call=88.53 kernels_per_call=4.00
+KT      85.42 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       3.12 us/call  x2.00  quantize_q8_1
+KT lcpp-xs-0-exp-8 calls=2200 gpu_us_per_call=197.14 kernels_per_call=10.00
+KT     184.69 us/call  x3.00  void mul_mat_q<
+KT       6.58 us/call  x3.00  void mm_ids_helper<0>
+KT       4.50 us/call  x3.00  void quantize_mmq_q8_1<
+KT       1.36 us/call  x1.00  void swiglu_clamp_kernel<float>
+KT ours-s-0-tok-1 calls=221 gpu_us_per_call=54.73 kernels_per_call=5.00
+KT      44.91 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       9.81 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-0-win-1 calls=221 gpu_us_per_call=56.94 kernels_per_call=5.00
+KT      46.82 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.11 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-0-win-2 calls=221 gpu_us_per_call=67.37 kernels_per_call=5.00
+KT      57.13 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.24 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-0-win-4 calls=221 gpu_us_per_call=81.17 kernels_per_call=5.00
+KT      69.71 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.46 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-0-win-8 calls=221 gpu_us_per_call=118.98 kernels_per_call=5.00
+KT     106.68 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      12.30 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-768-tok-1 calls=221 gpu_us_per_call=39.91 kernels_per_call=5.00
+KT      29.45 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.47 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-768-win-1 calls=221 gpu_us_per_call=40.98 kernels_per_call=5.00
+KT      30.23 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.75 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-768-win-2 calls=221 gpu_us_per_call=49.63 kernels_per_call=5.00
+KT      38.76 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.87 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-768-win-4 calls=221 gpu_us_per_call=62.32 kernels_per_call=5.00
+KT      51.30 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.02 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-768-win-8 calls=221 gpu_us_per_call=84.57 kernels_per_call=5.00
+KT      73.24 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.32 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-512-tok-1 calls=221 gpu_us_per_call=32.54 kernels_per_call=5.00
+KT      24.17 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.36 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-512-win-1 calls=221 gpu_us_per_call=33.05 kernels_per_call=5.00
+KT      24.46 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.58 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-512-win-2 calls=221 gpu_us_per_call=36.74 kernels_per_call=5.00
+KT      28.03 us/call  x2.00  void strata::ds4::gguf::iq::
+KT       8.71 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-512-win-4 calls=221 gpu_us_per_call=58.19 kernels_per_call=5.00
+KT      47.21 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      10.98 us/call  x3.00  strata::ds4::gguf::
+KT ours-s-512-win-8 calls=221 gpu_us_per_call=78.93 kernels_per_call=5.00
+KT      67.76 us/call  x2.00  void strata::ds4::gguf::iq::
+KT      11.17 us/call  x3.00  strata::ds4::gguf::
+KT lcpp-s-0-exp-1 calls=2200 gpu_us_per_call=35.55 kernels_per_call=4.00
+KT      32.74 us/call  x2.00  void mul_mat_vec_q<
+KT       2.81 us/call  x2.00  quantize_q8_1
+KT lcpp-s-0-exp-2 calls=2200 gpu_us_per_call=55.72 kernels_per_call=4.00
+KT      52.92 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       2.80 us/call  x2.00  quantize_q8_1
+KT lcpp-s-0-exp-4 calls=2200 gpu_us_per_call=96.13 kernels_per_call=4.00
+KT      93.09 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       3.04 us/call  x2.00  quantize_q8_1
+KT lcpp-s-0-exp-8 calls=2200 gpu_us_per_call=199.97 kernels_per_call=10.00
+KT     187.45 us/call  x3.00  void mul_mat_q<
+KT       6.58 us/call  x3.00  void mm_ids_helper<0>
+KT       4.54 us/call  x3.00  void quantize_mmq_q8_1<
+KT       1.40 us/call  x1.00  void swiglu_clamp_kernel<float>
+KT ours-mx-0-tok-1 calls=221 gpu_us_per_call=76.74 kernels_per_call=5.00
+KT      67.14 us/call  x2.00  void strata::ds4::gguf::
+KT       9.60 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-0-win-1 calls=221 gpu_us_per_call=79.10 kernels_per_call=5.00
+KT      68.65 us/call  x2.00  void strata::ds4::gguf::
+KT      10.45 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-0-win-2 calls=221 gpu_us_per_call=89.23 kernels_per_call=5.00
+KT      78.55 us/call  x2.00  void strata::ds4::gguf::
+KT      10.69 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-0-win-4 calls=221 gpu_us_per_call=113.10 kernels_per_call=5.00
+KT     101.93 us/call  x2.00  void strata::ds4::gguf::
+KT      11.17 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-0-win-8 calls=221 gpu_us_per_call=157.97 kernels_per_call=5.00
+KT     146.56 us/call  x2.00  void strata::ds4::gguf::
+KT      11.41 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-576-tok-1 calls=221 gpu_us_per_call=40.32 kernels_per_call=5.00
+KT      31.10 us/call  x2.00  void strata::ds4::gguf::
+KT       9.22 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-576-win-1 calls=221 gpu_us_per_call=42.35 kernels_per_call=5.00
+KT      32.81 us/call  x2.00  void strata::ds4::gguf::
+KT       9.53 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-576-win-2 calls=221 gpu_us_per_call=49.35 kernels_per_call=5.00
+KT      39.79 us/call  x2.00  void strata::ds4::gguf::
+KT       9.55 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-576-win-4 calls=221 gpu_us_per_call=63.87 kernels_per_call=5.00
+KT      54.12 us/call  x2.00  void strata::ds4::gguf::
+KT       9.75 us/call  x3.00  strata::ds4::gguf::
+KT ours-mx-576-win-8 calls=221 gpu_us_per_call=90.10 kernels_per_call=5.00
+KT      80.37 us/call  x2.00  void strata::ds4::gguf::
+KT       9.73 us/call  x3.00  strata::ds4::gguf::
+KT lcpp-mx-0-exp-1 calls=2200 gpu_us_per_call=30.82 kernels_per_call=4.00
+KT      27.88 us/call  x2.00  void mul_mat_vec_q<
+KT       2.94 us/call  x2.00  quantize_q8_1
+KT lcpp-mx-0-exp-2 calls=2200 gpu_us_per_call=36.47 kernels_per_call=4.00
+KT      33.67 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       2.79 us/call  x2.00  quantize_q8_1
+KT lcpp-mx-0-exp-4 calls=2200 gpu_us_per_call=54.11 kernels_per_call=4.00
+KT      51.21 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       2.90 us/call  x2.00  quantize_q8_1
+KT lcpp-mx-0-exp-8 calls=2200 gpu_us_per_call=96.12 kernels_per_call=4.00
+KT      93.00 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       3.12 us/call  x2.00  quantize_q8_1
+KT lcpp-q2q3-0-exp-1 calls=2200 gpu_us_per_call=26.11 kernels_per_call=4.00
+KT      23.28 us/call  x2.00  void mul_mat_vec_q<
+KT       2.83 us/call  x2.00  quantize_q8_1
+KT lcpp-q2q3-0-exp-2 calls=2200 gpu_us_per_call=34.45 kernels_per_call=4.00
+KT      31.65 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       2.80 us/call  x2.00  quantize_q8_1
+KT lcpp-q2q3-0-exp-4 calls=2200 gpu_us_per_call=55.27 kernels_per_call=4.00
+KT      52.30 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       2.97 us/call  x2.00  quantize_q8_1
+KT lcpp-q2q3-0-exp-8 calls=2200 gpu_us_per_call=99.49 kernels_per_call=4.00
+KT      96.13 us/call  x2.00  void mul_mat_vec_q_moe<
+KT       3.36 us/call  x2.00  quantize_q8_1
+KT lcpp-moe1-0-moe1-1 calls=15400 gpu_us_per_call=18.37 kernels_per_call=1.29
+KT      17.29 us/call  x0.57  void mul_mat_vec_q<
+KT       0.80 us/call  x0.57  quantize_q8_1
+KT       0.28 us/call  x0.14  moe_weighted_reduction_f32

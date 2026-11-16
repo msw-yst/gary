@@ -698,7 +698,8 @@ __global__ void __launch_bounds__(256) dd_join_comb_kernel(const CombArgs c, con
         const int tt = threadIdx.x / 8, i = threadIdx.x % 8;
         if (i < j.kexp) {
             const int e = j.ridx[(size_t) tt * 8 + i];
-            if (e >= 0 && e < j.nexp) {
+            const bool lead_has = j.vmask != nullptr && ((((const volatile unsigned*) j.vmask)[tt] >> i) & 1u);   // (DS4_ECOWN)
+            if (e >= 0 && e < j.nexp && !lead_has) {
                 const int o = j.own[(size_t) j.il * (size_t) j.nexp + (size_t) e];
                 if (o >= 0) atomicOr(&need, 1u << o);
             }
@@ -1318,8 +1319,8 @@ bool mv(const x3::MvJob* jobs, int n, cudaStream_t s, const PreQ8* pre) {
     // (xtxkern DS4_XK_QO: or slice i of nslice; -1 not given, else the slice - its q / d below)
     auto given_at = [pre](const x3::MvJob& q, const x3::Mat& m) -> int {
         if (pre == nullptr || pre->q == nullptr || pre->d == nullptr || m.k != pre->k) return -1;
-        if (pre->nslice > 1) {
-            if (q.ncol != 1 || pre->slice % 32 != 0) return -1;
+        if (pre->nslice > 1) {   // (DS4_BT_FUSE: rows > 1 too - each slice rows rows xcs apart; rows 1 as before)
+            if (q.ncol != pre->rows || (pre->rows > 1 && q.xf_cs != pre->xcs) || pre->slice % 32 != 0) return -1;
             for (int i = 0; i < pre->nslice; ++i)
                 if (q.xf == pre->x + (size_t) i * pre->slice) return i;
             return -1;
@@ -1327,11 +1328,11 @@ bool mv(const x3::MvJob* jobs, int n, cudaStream_t s, const PreQ8* pre) {
         return q.xf == pre->x && q.ncol == pre->rows && (q.ncol == 1 || q.xf_cs == (size_t) m.k) ? 0 : -1;
     };
     auto given = [&given_at](const x3::MvJob& q, const x3::Mat& m) { return given_at(q, m) >= 0; };
-    auto given_q = [pre, &given_at](const x3::MvJob& q, const x3::Mat& m) {
-        return pre->q + (size_t) given_at(q, m) * pre->slice;
+    auto given_q = [pre, &given_at](const x3::MvJob& q, const x3::Mat& m) {   // (slice i's rows: rows 1 - i slice, as before)
+        return pre->q + (size_t) given_at(q, m) * pre->slice * (size_t) pre->rows;
     };
     auto given_d = [pre, &given_at](const x3::MvJob& q, const x3::Mat& m) {
-        return pre->d + (size_t) given_at(q, m) * (pre->slice / 32);
+        return pre->d + (size_t) given_at(q, m) * (pre->slice / 32) * (size_t) pre->rows;
     };
 #if defined(STRATA_METAL)
     if (ds4_dbg("DS4_MV_LOG")) {   // how the engine batches its matvec jobs (one call = one quantiser dispatch)

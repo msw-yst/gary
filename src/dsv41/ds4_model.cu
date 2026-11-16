@@ -794,6 +794,9 @@ struct DdJoin {
     const int8_t* own;
     int nexp;
     unsigned long long* cnt;   // device [2]: helper waits skipped, helper waits in all (block (0, 0)'s thread 0)
+    // DS4_ECOWN=1 (null: off): the request's Req::vmask (host-mapped, the lead's routing wrote it before its publish) - a
+    // pick whose bit is set is the lead's (in its VRAM), the heads leave it out, so it makes no helper needed here
+    const unsigned* vmask;
 };
 // (one launch: every block's thread 0 first waits for the lane's answer and every helper's seq - the lead's stream has ~15 us between
 //  kernels, so the wait, the helpers' wait and the join are one kernel, as many launches as the lane path's wait_seq; float4 a thread)
@@ -813,7 +816,8 @@ __global__ void dd_join_k(const DdJoin j, const unsigned* rseq, unsigned want, c
         const int tt = threadIdx.x / kPicks, i = threadIdx.x % kPicks;
         if (i < kexp) {
             const int e = ridx[(size_t) tt * kPicks + i];
-            if (e >= 0 && e < j.nexp) {
+            const bool lead_has = j.vmask != nullptr && ((((const volatile unsigned*) j.vmask)[tt] >> i) & 1u);   // (DS4_ECOWN)
+            if (e >= 0 && e < j.nexp && !lead_has) {
                 const int o = j.own[(size_t) il * (size_t) j.nexp + (size_t) e];
                 if (o >= 0) atomicOr(&need, 1u << o);
             }
@@ -861,6 +865,35 @@ __global__ void dd_join_k(const DdJoin j, const unsigned* rseq, unsigned want, c
     if (r < D) *(float4*) &part[(size_t) t * D + r] = v;
     if (blockIdx.x == 0 && threadIdx.x == 0) flag[t] = f ? 1 : 0;
 }
+#if defined(STRATA_USE_HIP)
+// DS4_ECOWN with DS4_DD_AUDIT=1 (audit runs only): on every device of a device-direct layer, right after its routing and
+// before anything rewrites its plan (zc_stage), thread 0 waits (up to tmo wall-clock ticks) for the lead's request to carry
+// want, then counts this device's plan entries whose in-VRAM state (plan_ptr not 0) differs from the lead's Req::vmask bit:
+// a member that holds a pick in VRAM the lead marked as not (or the other way) would compute its slice of an expert a helper
+// also computes (or neither would).  cnt (host-mapped, this device's own): [0] checks, [1] mismatched picks, [2] timeouts
+__global__ void ecown_chk_k(const Req* req, unsigned want, const unsigned long long* plan, int T, int k, unsigned long long* cnt,
+                            unsigned long long tmo) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    const unsigned long long t0 = (unsigned long long) wall_clock64();
+    while (*(const volatile unsigned*) &req->seq != want) {
+        if ((unsigned long long) wall_clock64() - t0 > tmo) {
+            *(volatile unsigned long long*) &cnt[2] = cnt[2] + 1ull;
+            __threadfence_system();
+            return;
+        }
+        __builtin_amdgcn_s_sleep(1);
+    }
+    __threadfence_system();
+    unsigned long long bad = 0;
+    for (int t = 0; t < T; ++t) {
+        const unsigned vm = *(const volatile unsigned*) &req->vmask[t];
+        for (int i = 0; i < k; ++i) bad += (plan[(size_t) t * kPicks + i] != 0ull) != (((vm >> i) & 1u) != 0u);
+    }
+    *(volatile unsigned long long*) &cnt[0] = cnt[0] + 1ull;
+    *(volatile unsigned long long*) &cnt[1] = cnt[1] + bad;
+    __threadfence_system();
+}
+#endif
 
 // DS4_PF_HELPER: a helper's weighted sums (out row map[t], fine-grained host memory) added into a member's MoE partial
 // acc[t] (grid (D / 4 / 256 rounded up, T)); a token without a pick of that helper's (map -1) is left alone
@@ -1523,6 +1556,18 @@ struct Model::Impl {
     std::vector<int8_t*> dd_own;                 // by device index: [L.size() * nexp] (HelperSet::dd_owner_table)
     std::vector<unsigned long long*> dd_cnt;     // by device index: [2] skipped, in all
     int64_t dd_req_n = 0, dd_cpu_n = 0;   // (lane: requests served device-direct; helper picks answered on the CPU instead)
+    // DS4_DD_AUDIT=1 (with DD; default unset / 0: off; host counters and stderr lines only - no output change): the lane
+    // counts, for every request it serves device-direct, the picks that are BOTH in VRAM (l.slot >= 0: the device's vram_tab
+    // computes them) AND in an armed helper's device-direct owner table (d_own, fixed at dd_open: its head plans every pick of
+    // req->ids its table owns, and the lead's join adds that row) - i.e. picks computed twice and summed.  Also those of them on
+    // a token with no CPU-lane pick (route_publish then leaves req->x unwritten: the helper's row is from a stale x).  A line
+    // a prompt read ("so far") and helper_report's line; the state count scans every layer for VRAM experts still in a table.
+    bool dd_audit = false;
+    int dd_aud_nexp = 0;
+    std::vector<int8_t> dd_aud_own;   // [li * dd_aud_nexp + e]: the helper whose device table has e (-1 none) - dd_owner_table
+    std::atomic<long long> dd_aud_req{0}, dd_aud_picks{0}, dd_aud_dbl{0}, dd_aud_dreq{0}, dd_aud_stale{0}, dd_aud_unarmed{0},
+        dd_aud_wq{0};                  // (wq: the double picks' route weights, x 1e6)
+    std::unique_ptr<std::atomic<long long>[]> dd_aud_layer;   // [L.size()]: double picks by layer
     // DS4_PF_HELPER=<rows> (docs/dsv41/cards/PF-11.md; default unset = off; NOT bit-identical, quality-gated): a prompt chunk
     // of up to <rows> rows has the CPU-lane experts of each layer whose CPU-lane experts the helpers all hold (pfh_layer_ok)
     // computed on the helpers instead of streamed to every member.  The lead reads the chunk's x / routing back, the helpers
@@ -1589,6 +1634,38 @@ struct Model::Impl {
     bool dd_at(int il, int T) const {
         return dd_live && il >= 1 && il < g.nl && il < (int) L.size() && !L[(size_t) il].mtp && T >= 1 && T <= dd_maxt;
     }
+    // DS4_DD_AUDIT: the counters as one line (the compute thread's: l.slot is its own between windows)
+    std::string dd_audit_line() const {
+        long long now = 0;   // (VRAM experts still in a helper's owner table: the promotions DD never heard of)
+        std::string lay;
+        for (size_t li = 0; li < L.size(); ++li) {
+            for (int e = 0; e < L[li].n_exp && e < dd_aud_nexp; ++e)
+                now += dd_aud_own[li * (size_t) dd_aud_nexp + (size_t) e] >= 0 && L[li].slot[(size_t) e] >= 0;
+            const long long n = dd_aud_layer ? dd_aud_layer[li].load(std::memory_order_relaxed) : 0;
+            if (n > 0) lay += (lay.empty() ? "" : " ") + std::to_string(li) + ":" + std::to_string(n);
+        }
+        std::string ecl;   // DS4_ECOWN
+        if (ecown) {
+            unsigned long long ck = 0, bad = 0, tmo = 0;
+            for (size_t di = 0; ec_chk != nullptr && di < ec_tmo.size(); ++di) {
+                ck += ((const volatile unsigned long long*) ec_chk)[di * 4];
+                bad += ((const volatile unsigned long long*) ec_chk)[di * 4 + 1];
+                tmo += ((const volatile unsigned long long*) ec_chk)[di * 4 + 2];
+            }
+            char e[384];
+            std::snprintf(e, sizeof e, "; DS4_ECOWN: %lld picks handed to the lead (in its VRAM), %lld zero-copy staged, %lld lane/lead table "
+                          "differences; device checks %llu, mismatched picks %llu, timeouts %llu",
+                          ec_handed.load(), ec_zc.load(), ec_disagree.load(), ck, bad, tmo);
+            ecl = e;
+        }
+        char b[512];
+        std::snprintf(b, sizeof b, "%lld device-direct requests, %lld picks; %lld picks computed twice (VRAM + a helper's table) in %lld requests, "
+                      "%lld of them on a token with no CPU-lane pick (stale x), route weight %.3f in all; %lld skipped (helper not armed); "
+                      "VRAM experts in a helper's table now %lld; swaps %lld; by layer [",
+                      dd_aud_req.load(), dd_aud_picks.load(), dd_aud_dbl.load(), dd_aud_dreq.load(), dd_aud_stale.load(),
+                      (double) dd_aud_wq.load() / 1e6, dd_aud_unarmed.load(), now, (long long) st.swaps);
+        return std::string(b) + lay + "]" + ecl;
+    }
     // the one rule the lane (which defers request li) and the device (which adds layer il - 1's rows at il) both apply
     bool defer_at(int il, int T) const {
         return helper_defer && dresps != nullptr && hlp.enabled() && il >= 0 && il < g.nl - 1 && il < (int) L.size() &&
@@ -1627,6 +1704,19 @@ struct Model::Impl {
     // its own compressed rows (kv_src with a group done: that row is written later).  The same code a block: the same bits
     int attn_merge = 0;
     std::atomic<bool> am3_warned{false};   // (DS4_ATTN_MERGE=3: the "arguments differ" line, once)
+    // DS4_BT_FUSE=1 (fusion plan F2 "bt parity", docs/dsv41/cards/FG-16.md item 2; default off: the batch path as before).
+    // A batch window's attention (attn_batch: DS4_BATCH_DECODE's steps, the server's PAR >= 2) takes the solo path's launch
+    // fusions that are set: DS4_AR_POST's all-reduce with hc_post folded (ar_then_post); DS4_ATTN_MERGE's two merged launches
+    // over DS4_MULTI_ATTN's runs - {q's norm [+ int8], the runs' rings into the shared buffer, the KV rows' finish} after the
+    // input GEMVs, {q's RoPE at each row's position, the runs' new rows into their rings [+ backups]} after wq_b, and with =3
+    // the rows' unpack of their selected compressed rows in the second where it is final there (no indexer of the layer's
+    // own, no run completing a compressed row of its own); DS4_XK_QO's o finish rounding wo_a's int8 input for the T rows
+    // (bt_fin_kernel's int8 rows in mv's layout, gguf PreQ8 rows > 1).  The per-run path (DS4_MULTI_ATTN refused) keeps its
+    // launches but the all-reduce's.  Every block runs its kernel's code: each row's bytes the unfused batch path's (load
+    // check bt_fuse_check at 2 and kWin rows).  HIP gfx1100 layer devices
+    int bt_fuse = 0;
+    std::atomic<bool> btf_warned{false};   // (the "arguments differ" line, once)
+    std::atomic<unsigned> btf_seen{0};     // (bits: the parts that have engaged - a line the first time each does)
     // DS4_ROUTE_FUSE=1 (Maya #511, MAYA_DS4_ROUTE_FUSE): a decoded token's (T 1) router stage on a group's lead, with one
     // layer of lookahead (DS4_AHEAD 1, the default) and a next layer to guess: this layer's gate and the next layer's
     // lookahead gate in one launch (gemv_f32_pair), the routing and the guesses in another (route_pair), the publish as
@@ -1770,6 +1860,40 @@ struct Model::Impl {
     // tables (fixed at load) still list the promoted ones (see helper_dd's note: "it never swaps in a helper's expert")
     const bool ec_fix = std::getenv("DS4_EC_FIX") != nullptr && std::atoi(std::getenv("DS4_EC_FIX")) == 1;
     int64_t ec_left = 0;   // (DS4_EC_FIX: helper-held cache hits left out of the swaps, the process's)
+    // DS4_ECOWN=1 (default unset / 0: off - build 16 as it was): the swaps as before (a helper-held expert may be promoted
+    // into VRAM), and each such pick is computed exactly once - by the lead.  The routing that publishes a request also
+    // publishes, per token, which of its picks the publishing device holds in VRAM (Req::vmask, from the same vram_tab read
+    // as its plan); the helpers' device-direct heads leave a marked pick out of their plan, and the lead's join does not wait
+    // for a helper whose picks are all marked.  Refused with DS4_EC_FIX=1 (two answers to one question).
+    const bool ecown = std::getenv("DS4_ECOWN") != nullptr && std::atoi(std::getenv("DS4_ECOWN")) == 1;
+    std::atomic<long long> ec_handed{0}, ec_disagree{0}, ec_zc{0};   // (DS4_DD_AUDIT under ECOWN: the lane's counts)
+    // DS4_CACHE_DET=1 / DS4_CACHE_FREEZE=<n> (TEST ONLY, default unset / 0: off - the cache as it was; for ECOWN's batch-vs-
+    // solo gate, where a placement that lands on a timer could differ between two runs for that reason alone).  DET: each tick
+    // first waits until every queued move has finished and lands them all (not just the ones ready), and the prompt's settle
+    // runs rounds (up to 64) instead of DS4_SETTLE_MS; the idle settle is off.  FREEZE=n: after the n-th prompt read's settle
+    // every queued move is waited for and landed, then no move is queued again (the placement fixed for the process's rest).
+    const bool c_det = std::getenv("DS4_CACHE_DET") != nullptr && std::atoi(std::getenv("DS4_CACHE_DET")) == 1;
+    const int c_freeze = std::getenv("DS4_CACHE_FREEZE") != nullptr ? std::max(0, std::atoi(std::getenv("DS4_CACHE_FREEZE"))) : 0;
+    int c_reads = 0;          // (prompt reads settled so far)
+    bool c_frozen = false;
+    // (DET / FREEZE: block until the movers have finished every queued move - each always reports back, failed or not)
+    void cache_drain() {
+        const double t0 = now_ms();
+        for (;;) {
+            {
+                std::lock_guard<std::mutex> lk(sw_mu);
+                if ((int) sw_ready.size() >= sw_inflight && (int) ram_ready.size() >= ram_inflight) return;
+            }
+            if (now_ms() - t0 > 120000.0) {
+                std::fprintf(stderr, "ds4: DS4_CACHE_DET: moves still in flight after 120 s (%d VRAM, %d RAM): landing what is ready\n",
+                             sw_inflight, ram_inflight);
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+        }
+    }
+    unsigned long long* ec_chk = nullptr;     // (DS4_DD_AUDIT under ECOWN: host-mapped [devices x 4], ecown_chk_k's counters)
+    std::vector<unsigned long long> ec_tmo;   // (by device index: ecown_chk_k's timeout, wall-clock ticks)
     // the RAM tier (a GGUF's in-place experts, as GLM's: the hottest in VRAM, the next hottest here, the coldest in the
     // files): RAM slots of one expert blob each, filled at load with the hottest experts VRAM does not hold, so the
     // CPU lane reads them from RAM; between windows (cache_tick) a hotter expert from the files takes the place of the
@@ -3572,6 +3696,37 @@ struct Model::Impl {
                              xk_qa ? " DS4_XK_QA=1: wo_a's GEMV rounds wo_b's input;" : "");
             }
         }
+        {   // DS4_BT_FUSE (fusion plan F2; after DS4_AR_POST / DS4_ATTN_MERGE / DS4_XK_QO, which it applies to the batch path)
+            bool bfs = false;
+            bt_fuse = fuse_env("DS4_BT_FUSE", 1, bfs, err);
+            if (bt_fuse < 0) return false;
+            if (bt_fuse > 0) {
+                bool gfx1100 = wave32;   // (bt_fin_kernel exists only in the gfx1100 code object)
+#if defined(STRATA_USE_HIP)
+                for (const Dev& d : devs) {
+                    cudaDeviceProp p{};
+                    if (cudaGetDeviceProperties(&p, d.id) != cudaSuccess || std::strncmp(p.gcnArchName, "gfx1100", 7) != 0)
+                        gfx1100 = false;
+                }
+                (void) cudaGetLastError();
+#else
+                gfx1100 = false;
+#endif
+                if (!gfx1100) {
+                    err = "DS4_BT_FUSE: not on this build's devices (gfx1100 layer devices only)";
+                    return false;
+                }
+                std::fprintf(stderr, "ds4: DS4_BT_FUSE=1: a batch window's attention takes the solo fusions that are set:%s%s%s%s "
+                                     "(batch windows only - DS4_BATCH_DECODE; checked at load)\n",
+                             ar_post > 0 ? " DS4_AR_POST's folded all-reduce;" : "",
+                             attn_merge > 0 ? " DS4_ATTN_MERGE's two merged launches over the DS4_MULTI_ATTN runs;" : "",
+                             attn_merge > 2 ? " =3's unpack in the second;" : "",
+                             xk_qo ? " DS4_XK_QO's o finish rounding wo_a's input;" : "");
+                if (ar_post <= 0 && attn_merge <= 0 && !xk_qo)
+                    std::fprintf(stderr, "ds4: DS4_BT_FUSE=1: none of DS4_AR_POST / DS4_ATTN_MERGE / DS4_XK_QO is set - nothing "
+                                         "to apply, the batch path as before\n");
+            }
+        }
         topk_mb_batch = fuse_env("DS4_TOPK_MB_BATCH", 1, topk_mb_batch_set, err);   // (FG-11)
         if (topk_mb_batch < 0) return false;
         if (topk_mb_batch > 0 && topk_mb <= 0) {
@@ -3625,6 +3780,10 @@ struct Model::Impl {
             ran = true;
             if (!attn_merge_check(err, 1) || (attn_merge > 1 && !attn_merge_check(err, kWin))) return false;
             if (attn_merge > 2 && (!attn_merge3_check(err, 1) || !attn_merge3_check(err, kAttnScratchT))) return false;
+        }
+        if (bt_fuse > 0 && (attn_merge > 0 || xk_qo)) {   // (DS4_BT_FUSE; its AR_POST part is ar_post_check's, above)
+            ran = true;
+            if (!bt_fuse_check(err, 2) || !bt_fuse_check(err, kWin)) return false;
         }
         if (topk_mb > 0) {   // (FG-10)
             ran = true;
@@ -4847,6 +5006,10 @@ struct Model::Impl {
             ahead_for.assign(L.size(), 0);
             if (const char* v = std::getenv("DS4_TP_CHECK"); v != nullptr && std::strcmp(v, "1") == 0 && !tp_check(err))
                 return false;   // (tp4: DS4_TP_CHECK=1, at load - no request yet)
+            if (ecown && ec_fix) {   // DS4_ECOWN
+                err = "DS4_ECOWN=1 and DS4_EC_FIX=1 together: one of them (ECOWN lets the cache promote helper-held experts, EC_FIX forbids it)";
+                return false;
+            }
             if (helper_dd && hlp.enabled() && !dd_setup(err)) return false;   // DS4_HELPER_DD (before the lane starts)
             if (helper::pf_helper_rows() > 0 && !pfh_setup(err)) return false;   // DS4_PF_HELPER (before the lane starts)
             const int core = !cores.empty() && !cores[0].empty() ? cores[0][0] : -1;
@@ -4877,6 +5040,18 @@ struct Model::Impl {
                          (size_t) hlp.size(), o.expert_cache ? "" : "; no expert cache here: nothing to do");
         else if (std::getenv("DS4_EC_FIX") != nullptr && std::atoi(std::getenv("DS4_EC_FIX")) != 0)
             std::fprintf(stderr, "ds4: DS4_EC_FIX=%s is not 1: off (the swaps as before)\n", std::getenv("DS4_EC_FIX"));
+        if (ecown)   // DS4_ECOWN (see ecown)
+            std::fprintf(stderr, "ds4: DS4_ECOWN=1: a helper-held expert the cache swaps into VRAM is computed by the lead only (the request's "
+                                 "in-VRAM marks; %s%s)\n", dd_live ? "device-direct helpers live" : "no device-direct helpers here: nothing to do",
+                         o.expert_cache ? "" : "; no expert cache here");
+        else if (std::getenv("DS4_ECOWN") != nullptr && std::atoi(std::getenv("DS4_ECOWN")) != 0)
+            std::fprintf(stderr, "ds4: DS4_ECOWN=%s is not 1: off (build 16 as it was)\n", std::getenv("DS4_ECOWN"));
+        if (c_det || c_freeze > 0)   // DS4_CACHE_DET / DS4_CACHE_FREEZE (test only)
+            std::fprintf(stderr, "ds4: TEST MODE%s%s%s\n", c_det ? " DS4_CACHE_DET=1 (every queued move landed at each tick; settle by rounds)" : "",
+                         c_freeze > 0 ? " DS4_CACHE_FREEZE (placement fixed after prompt read " : "",
+                         c_freeze > 0 ? (std::to_string(c_freeze) + ")").c_str() : "");
+        if (!dd_audit && std::getenv("DS4_DD_AUDIT") != nullptr && std::atoi(std::getenv("DS4_DD_AUDIT")) != 0)   // DS4_DD_AUDIT
+            std::fprintf(stderr, "ds4: DS4_DD_AUDIT=%s is off (it needs =1 and device-direct helpers live)\n", std::getenv("DS4_DD_AUDIT"));
         for (Dev& d : devs) {
             cudaSetDevice(d.id);
             CK(cudaStreamSynchronize(d.st));
@@ -7183,6 +7358,7 @@ struct Model::Impl {
         a.kexp = l.k_exp;
         a.part = dd_part[(size_t) l.dev];
         a.flag = dd_flag[(size_t) l.dev];
+        a.vmask = ecown ? (const unsigned*) reqs[slot].vmask : nullptr;   // DS4_ECOWN (the lead's request)
         (void) T;
         return a;
     }
@@ -7255,6 +7431,48 @@ struct Model::Impl {
         dd_live = true;
         std::fprintf(stderr, "helper: DS4_HELPER_DD: trunk layers 1 .. %d device-direct on %zu helpers (windows of up to %d rows)\n", g.nl - 1,
                      hlp.size(), dd_maxt);
+        if (std::getenv("DS4_DD_AUDIT") != nullptr && std::atoi(std::getenv("DS4_DD_AUDIT")) == 1) {   // DS4_DD_AUDIT (see dd_audit)
+            int nexp = 0;
+            for (const Layer& x : L) nexp = std::max(nexp, x.n_exp);
+            dd_aud_own = hlp.dd_owner_table((int) L.size(), nexp);
+            dd_aud_nexp = nexp;
+            dd_aud_layer.reset(new std::atomic<long long>[L.size()]);
+            for (size_t li = 0; li < L.size(); ++li) dd_aud_layer[li].store(0);
+            int64_t owned = 0, both = 0;
+            for (size_t li = 0; li < L.size(); ++li)
+                for (int e = 0; e < L[li].n_exp; ++e) {
+                    const int8_t o = dd_aud_own[li * (size_t) nexp + (size_t) e];
+                    owned += o >= 0;
+                    both += o >= 0 && L[li].slot[(size_t) e] >= 0;
+                }
+            dd_audit = true;
+            std::fprintf(stderr, "ds4: DS4_DD_AUDIT=1: counting device-direct picks computed twice (VRAM and a helper's owner table): %lld "
+                                 "experts in the tables, %lld of them in VRAM at load\n", (long long) owned, (long long) both);
+            if (ecown) {   // DS4_ECOWN: every device's plan checked against the lead's marks (ecown_chk_k), 2 s a wait at most
+                void* m = nullptr;
+                if (hipHostMalloc(&m, devs.size() * 4 * sizeof(unsigned long long),
+                                  hipHostMallocCoherent | hipHostMallocMapped | hipHostMallocPortable) != hipSuccess) {
+                    (void) cudaGetLastError();
+                    err = "DS4_ECOWN + DS4_DD_AUDIT: host-mapped check counters";
+                    return false;
+                }
+                std::memset(m, 0, devs.size() * 4 * sizeof(unsigned long long));
+                ec_tmo.assign(devs.size(), 0ull);
+                for (size_t di = 0; di < devs.size(); ++di) {
+                    int khz = 0;
+                    if (hipDeviceGetAttribute(&khz, hipDeviceAttributeWallClockRate, devs[di].id) != hipSuccess || khz <= 0) {
+                        (void) cudaGetLastError();
+                        (void) hipHostFree(m);
+                        err = "DS4_ECOWN + DS4_DD_AUDIT: the wall clock rate of device " + std::to_string(devs[di].id);
+                        return false;
+                    }
+                    ec_tmo[di] = (unsigned long long) khz * 2000ull;
+                }
+                ec_chk = (unsigned long long*) m;
+                std::fprintf(stderr, "ds4: DS4_ECOWN + DS4_DD_AUDIT=1: every device's plan checked against the lead's in-VRAM marks on each "
+                                     "device-direct layer (%zu devices)\n", devs.size());
+            }
+        }
 #endif
         return true;
     }
@@ -10240,11 +10458,24 @@ struct Model::Impl {
     // back about 5 s (the plan's own table: prompt + 256 tokens, 27.2 s at 6,000 ms, 23.9 s at 800, 23.4 s at 0).
     void cache_settle() {
         if (!o.expert_cache || cache_ths.empty()) return;
+        struct FreezeAtEnd {   // DS4_CACHE_FREEZE (test only): after the n-th read's settle, every queued move landed, then none
+            Impl* p;
+            ~FreezeAtEnd() {
+                if (p->c_freeze <= 0 || p->c_frozen || ++p->c_reads < p->c_freeze) return;
+                p->cache_drain();
+                p->cache_tick_swaps(0);   // (lands them; queues the last round's picks too - then those)
+                p->cache_drain();
+                p->c_frozen = true;
+                p->cache_tick_swaps(0);
+                std::fprintf(stderr, "ds4: DS4_CACHE_FREEZE=%d: the expert placement fixed after prompt read %d (%lld swaps; %d VRAM / %d RAM "
+                                     "moves still in flight)\n", p->c_freeze, p->c_reads, (long long) p->st.swaps, p->sw_inflight, p->ram_inflight);
+            }
+        } freeze_at_end{this};
         static const double budget = env_f("DS4_SETTLE_MS", 800.0f);
-        if (budget <= 0.0) return;
+        if (budget <= 0.0 && !c_det) return;
         const double t0 = now_ms();
         const int64_t s0 = st.swaps;
-        while (now_ms() - t0 < budget) {
+        for (int round = 0; c_det ? round < 64 : now_ms() - t0 < budget; ++round) {   // (DS4_CACHE_DET: rounds, not ms)
             for (Layer& l : L) {
                 if (l.mtp || l.spare_vram < 0 || l.swap_pending) continue;
                 l.cpu_hits.clear();
@@ -10290,7 +10521,7 @@ struct Model::Impl {
     // swap of ~9 MB, a millisecond or two) because cancel is tested between rounds, and cache_tick_swaps is the same call the
     // prompt path makes, so the state it leaves is the state a decode window already handles.
     void cache_settle_idle(const std::atomic<bool>& cancel) {
-        if (!o.expert_cache || cache_ths.empty()) return;
+        if (!o.expert_cache || cache_ths.empty() || c_det || c_frozen) return;   // (DS4_CACHE_DET / FREEZE: no timed rounds)
         static const double budget = env_f("DS4_SETTLE_IDLE_MS", 6000.0f);
         const double t0 = now_ms();
         const int64_t s0 = st.swaps;
@@ -10339,6 +10570,7 @@ struct Model::Impl {
         std::vector<RamSwap>& rready = ram_ready_tick;
         ready.clear();
         rready.clear();
+        if (c_det && (sw_inflight > 0 || ram_inflight > 0)) cache_drain();   // DS4_CACHE_DET (test only)
         {
             std::lock_guard<std::mutex> lk(sw_mu);
             ready.swap(sw_ready);
@@ -10422,6 +10654,10 @@ struct Model::Impl {
             decay_tokens = 0;
             for (Layer& l : L)
                 for (float& h : l.heat) h *= c_decay;
+        }
+        if (c_frozen) {   // DS4_CACHE_FREEZE (test only): nothing queued any more
+            for (Layer& l : L) l.cpu_hits.clear();
+            return;
         }
         bool queued = false, rqueued = false;
         for (Layer& l : L) {
@@ -10645,6 +10881,80 @@ struct Model::Impl {
                 const bool ddr = hon && dd_at(li, T);   // DS4_HELPER_DD: this request's helper rows are joined on the device
                 const auto issue_helpers = [&]() {
                     if (ddr) {   // (the helpers armed for it read it themselves; one that is not: the host answers it, its picks the CPU's)
+                        if (dd_audit) {   // DS4_DD_AUDIT (before dd_check: the armed state the heads see; reads only)
+                            long long np = 0, nd = 0, ns = 0, nu = 0, wq = 0;
+                            if (ecown) {   // DS4_ECOWN: the lead's own marks (Req::vmask) decide, not the lane's l.slot
+                                long long nh = 0, nx = 0, nz = 0;
+                                for (int t = 0; t < T; ++t) {
+                                    const unsigned vm = r.vmask[t];
+                                    bool on_cpu = false;   // (route_publish's rule, from the marks: a pick not in VRAM)
+                                    for (int i = 0; i < l.k_exp; ++i) on_cpu = on_cpu || ((vm >> i) & 1u) == 0u;
+                                    int td = 0;
+                                    for (int i = 0; i < l.k_exp; ++i) {
+                                        const int e = r.ids[t][i];
+                                        if (e < 0 || e >= l.n_exp) continue;
+                                        ++np;
+                                        const bool vb = ((vm >> i) & 1u) != 0u;
+                                        if (vb != (l.slot[(size_t) e] >= 0)) ++nx;   // (the lane's table and the lead's marks differ)
+                                        const int o = dd_aud_own[(size_t) li * (size_t) dd_aud_nexp + (size_t) e];
+                                        if (o < 0) continue;
+                                        if (!hlp.at((size_t) o).dd_armed(next, li, T)) {
+                                            ++nu;
+                                            continue;
+                                        }
+                                        if (vb) {   // (the lead's: the head leaves it out)
+                                            ++nh;
+                                            continue;
+                                        }
+                                        // (the helper's - and the lead's too only if its plan entry is not 0 after all: the store's
+                                        //  zero-copy staging of a T = 1 request's off-VRAM pick)
+                                        if (T == 1 && !l.zc.empty() && l.zc[(size_t) e]) {
+                                            ++nz;
+                                            ++td;
+                                            wq += std::llround((double) r.w[t][i] * 1e6);
+                                        }
+                                    }
+                                    nd += td;
+                                    if (td > 0 && !on_cpu) ns += td;
+                                }
+                                if (nh > 0) ec_handed.fetch_add(nh, std::memory_order_relaxed);
+                                if (nx > 0) ec_disagree.fetch_add(nx, std::memory_order_relaxed);
+                                if (nz > 0) ec_zc.fetch_add(nz, std::memory_order_relaxed);
+                            } else
+                            for (int t = 0; t < T; ++t) {
+                                bool on_cpu = false;   // (route_publish's rule: x written only for a token with a non-VRAM pick)
+                                int td = 0;
+                                for (int i = 0; i < l.k_exp; ++i) {
+                                    const int e = r.ids[t][i];
+                                    if (e < 0 || e >= l.n_exp) continue;
+                                    ++np;
+                                    if (l.slot[(size_t) e] < 0) {
+                                        on_cpu = true;
+                                        continue;
+                                    }
+                                    const int o = dd_aud_own[(size_t) li * (size_t) dd_aud_nexp + (size_t) e];
+                                    if (o < 0) continue;
+                                    if (!hlp.at((size_t) o).dd_armed(next, li, T)) {   // (its host answer has no rows: not joined twice)
+                                        ++nu;
+                                        continue;
+                                    }
+                                    ++td;
+                                    wq += std::llround((double) r.w[t][i] * 1e6);
+                                }
+                                nd += td;
+                                if (td > 0 && !on_cpu) ns += td;
+                            }
+                            dd_aud_req.fetch_add(1, std::memory_order_relaxed);
+                            dd_aud_picks.fetch_add(np, std::memory_order_relaxed);
+                            if (nd > 0) {
+                                dd_aud_dreq.fetch_add(1, std::memory_order_relaxed);
+                                dd_aud_dbl.fetch_add(nd, std::memory_order_relaxed);
+                                dd_aud_stale.fetch_add(ns, std::memory_order_relaxed);
+                                dd_aud_wq.fetch_add(wq, std::memory_order_relaxed);
+                                dd_aud_layer[(size_t) li].fetch_add(nd, std::memory_order_relaxed);
+                            }
+                            if (nu > 0) dd_aud_unarmed.fetch_add(nu, std::memory_order_relaxed);
+                        }
                         rej.clear();
                         if (hlp.dd_check(next, li, T, hpicks, rej) > 0) {
                             static std::atomic<int> said{0};
@@ -12795,6 +13105,303 @@ struct Model::Impl {
             }
             std::fprintf(stderr, "ds4: CUDA%d DS4_ATTN_MERGE=3 check (%d rows): the folded unpack (%s): q, ext, the ring, the "
                                  "scratch rows byte for byte, every guard intact\n", d.id, T, what.c_str());
+        }
+        return true;
+    }
+    // DS4_BT_FUSE's check (fusion plan F2), every device with layers (its first and last trunk member layer with heads -
+    // their norms, wo_a and head counts), a batch window of T rows (2: two sequences of one row; kWin: eight sequences of 1 to
+    // 4 rows) laid out by ma_plan as attn_batch_multi's runs, at positions from 2 to past the window (rows before position 0
+    // too); random q low-rank / q / KV / o rows, rings of valid FP8 rows, random packed compressed rows (two caches) and
+    // selections (one query with every slot, one with none).  Set 0: attn_batch's unfused launches, in its order - q's norm
+    // [+ int8], q's RoPE (finish_rows), the rings into the shared buffer, the KV rows' finish, the new rows into the rings
+    // [+ backups], sparse_attn_rows' unpack (=3), the o finish (finish_rows) and gguf mv's own rounding of each wo_a group's
+    // T rows (q8_round), then wo_a's GEMVs rounding their own (XK_QO).  Set 1: bt_fin's launches as attn_batch makes them, and
+    // wo_a's GEMVs reading the finish's int8 rows (PreQ8 rows T).  Every byte equal (q, q's int8, the shared buffer, the
+    // rings, the backups, the scratch rows, o, its int8 rows and scales, wo_a's outputs), every guard intact.  The parts the
+    // flags apply: DS4_ATTN_MERGE the two merged launches (=3 with the unpack), DS4_XK_QO the o finish and wo_a.  A refused
+    // launch is a failure (the flag asked for it)
+    bool bt_fuse_check(std::string& err, int T) {
+        constexpr size_t kGuard = 64;
+        uint32_t st = 0x2545f491u ^ (uint32_t) (T * 6271);
+        auto rnd = [&]() {
+            st = st * 1664525u + 1013904223u;
+            return (float) (int) (st % 2001u - 1000u) / 250.0f;
+        };
+        auto rndu = [&]() {
+            st = st * 1664525u + 1013904223u;
+            return st >> 8;
+        };
+        const int HD = g.hd, QL = g.q_lora, W = g.win, S = (int) topk_stride(), NR = 4096;
+        const size_t rbr = kv_row_bytes(kKvFp8, HD), rb4 = kv_row_bytes(kKvFp4, 512);
+        const bool mrg = attn_merge > 0, unp = attn_merge > 2, oq = xk_qo != 0;
+        static const int kLen16[8] = {1, 3, 1, 4, 2, 1, 3, 1};   // (kWin rows: runs of 1 .. 4, each <= kAttnScratchT)
+        static const int kLen2[2] = {1, 1};
+        const int* lens = T == 2 ? kLen2 : kLen16;
+        const int nrun = T == 2 ? 2 : 8;
+        {
+            int sum = 0;
+            for (int k = 0; k < nrun; ++k) sum += lens[k];
+            if (HD != 512 || rbr % 4 != 0 || rb4 % 4 != 0 || sum != T || T > kWin || W < 1) {
+                err = "DS4_BT_FUSE check: head dim " + std::to_string(HD) + " / rows " + std::to_string(T) + " not covered";
+                return false;
+            }
+        }
+        for (size_t di = 0; di < devs.size(); ++di) {
+            Dev& d = devs[di];
+            std::vector<const Layer*> ls;
+            for (const Layer& l0 : L)
+                if (!l0.mtp)
+                    for (int mm = 0; mm < l0.nm; ++mm)
+                        if (member(l0, mm).dev == (int) di && member(l0, mm).ahn > 0) ls.push_back(&member(l0, mm));
+            if (ls.empty()) continue;
+            if (ls.size() > 2) ls = {ls.front(), ls.back()};
+            if (cudaSetDevice(d.id) != cudaSuccess) {
+                (void) cudaGetLastError();
+                err = "DS4_BT_FUSE check on CUDA" + std::to_string(d.id) + ": cudaSetDevice failed";
+                return false;
+            }
+            int runs = 0;
+            for (const Layer* lp : ls)
+                for (int v = 0; v < 2; ++v) {   // (v 1: q's int8 rows and the rings' backups too)
+                    const Layer& l = *lp;
+                    const int NHL = l.ahn, HQ = NHL * HD, OG = l.ogn;
+                    const bool q8 = v == 1, bak = v == 1;
+                    const bool ofit = oq && OG > 0 && HQ % OG == 0 && (HQ / OG) % 32 == 0;
+                    const int per = ofit ? HQ / OG : 0;
+                    const float* freqs = l.ratio ? d.freqs_comp : d.freqs_win;
+                    // the window: run k sequence k, its rows, its position
+                    int rseq[kWin];
+                    int64_t rpos[kWin];
+                    const long long p0s[8] = {5, 1000 + l.il, 37, 2, 300, (long long) W + 1, 64, 7};
+                    for (int k = 0, t = 0; k < nrun; ++k)
+                        for (int i = 0; i < lens[k]; ++i, ++t) {
+                            rseq[t] = k;
+                            rpos[t] = p0s[k] + i;
+                        }
+                    MaPlan mp;
+                    if (!ma_plan(rseq, rpos, T, W, false, mp) || mp.nrun != nrun) {
+                        err = "DS4_BT_FUSE check: the window's plan";
+                        return false;
+                    }
+                    // a set: 0 qr | 1 qr int8 | 2 qr scales | 3 q | 4 the shared buffer | 5 kvr | 6 rings | 7 backups | 8 ckv |
+                    // 9 sel | 10 scratch rows | 11 o | 12 o int8 | 13 o scales | 14 wo_a's outputs
+                    const size_t rb[15] = {(size_t) T * QL * 4, (size_t) T * QL, (size_t) T * QL / 32 * 4, (size_t) T * HQ * 4,
+                                           (size_t) mp.rows * HD * 2, (size_t) T * HD * 4, (size_t) nrun * W * rbr, (size_t) T * rbr,
+                                           (size_t) NR * rb4, (size_t) T * S * 4, (size_t) T * S * 512 * 2, (size_t) T * HQ * 4,
+                                           (size_t) T * HQ, (size_t) T * HQ / 32 * 4, (size_t) T * OG * g.o_lora * 4};
+                    size_t at[15], set_bytes = 0;
+                    std::vector<std::pair<size_t, size_t>> regions;
+                    for (int r = 0; r < 15; ++r) {
+                        at[r] = set_bytes + kGuard;
+                        set_bytes = (at[r] + rb[r] + 255) / 256 * 256;
+                        regions.push_back({at[r], rb[r]});
+                    }
+                    set_bytes += kGuard;
+                    // inputs, as floats / bytes: qr | q | kvr | o | rings | ckv | sel
+                    const size_t iqr = 0, iq = iqr + rb[0] / 4, ikv = iq + rb[3] / 4, io = ikv + rb[5] / 4, iring = io + rb[11] / 4,
+                                 ickv = iring + rb[6] / 4, isel = ickv + rb[8] / 4, in_n = isel + rb[9] / 4;
+                    std::vector<float> hin(in_n);
+                    for (size_t i = 0; i < iring; ++i) hin[i] = rnd();
+                    {
+                        std::vector<uint8_t> ring(rb[6]);
+                        for (size_t r = 0; r < (size_t) nrun * W; ++r) {
+                            uint8_t* row = ring.data() + r * rbr;
+                            for (int e = 0; e < HD; ++e) row[e] = (uint8_t) ((rndu() % 0x7e) | ((rndu() & 1u) << 7));   // (no NaN code)
+                            for (int b = 0; b < HD / 32; ++b) row[HD + b] = (uint8_t) (120 + rndu() % 15);
+                        }
+                        std::memcpy(hin.data() + iring, ring.data(), rb[6]);
+                        std::vector<uint8_t> ckv(rb[8]);
+                        for (int r = 0; r < NR; ++r) {
+                            uint8_t* row = ckv.data() + (size_t) r * rb4;
+                            for (int e = 0; e < 256; ++e) row[e] = (uint8_t) rndu();                                    // (E2M1 codes)
+                            for (int b = 0; b < 32; ++b) row[256 + b] = (uint8_t) ((rndu() % 0x7e) | ((rndu() & 1u) << 7));   // (E4M3)
+                        }
+                        std::memcpy(hin.data() + ickv, ckv.data(), rb[8]);
+                        std::vector<int> sel((size_t) T * S);
+                        for (auto& x : sel) x = (int) (rndu() % (uint32_t) (NR / 2));   // (each of the two caches' rows)
+                        std::memcpy(hin.data() + isel, sel.data(), rb[9]);
+                    }
+                    AttnRows ua;   // (the unpack's rows: attn_batch_multi's window rows, random selection counts)
+                    for (int t = 0; t < T; ++t) {
+                        ua.win0[t] = mp.win0[t];
+                        ua.nwin[t] = mp.nwin[t];
+                        ua.nsel[t] = t == 0 ? S : (t == 1 ? 0 : (int) (rndu() % (uint32_t) (S + 1)));
+                    }
+                    auto enqueue = [&](float* in, uint8_t* s0, uint8_t* s1) {
+                        uint8_t* set[2] = {s0, s1};
+                        const uint8_t* ib = (const uint8_t*) in;
+                        bool ok = true;
+                        for (int b = 0; b < 2; ++b)
+                            ok = ok && cudaMemcpyAsync(set[b] + at[0], ib + iqr * 4, rb[0], cudaMemcpyDeviceToDevice, d.st) == cudaSuccess &&
+                                 cudaMemcpyAsync(set[b] + at[3], ib + iq * 4, rb[3], cudaMemcpyDeviceToDevice, d.st) == cudaSuccess &&
+                                 cudaMemcpyAsync(set[b] + at[5], ib + ikv * 4, rb[5], cudaMemcpyDeviceToDevice, d.st) == cudaSuccess &&
+                                 cudaMemcpyAsync(set[b] + at[11], ib + io * 4, rb[11], cudaMemcpyDeviceToDevice, d.st) == cudaSuccess &&
+                                 cudaMemcpyAsync(set[b] + at[6], ib + iring * 4, rb[6], cudaMemcpyDeviceToDevice, d.st) == cudaSuccess &&
+                                 cudaMemcpyAsync(set[b] + at[8], ib + ickv * 4, rb[8], cudaMemcpyDeviceToDevice, d.st) == cudaSuccess &&
+                                 cudaMemcpyAsync(set[b] + at[9], ib + isel * 4, rb[9], cudaMemcpyDeviceToDevice, d.st) == cudaSuccess;
+                        auto F = [&](int b, int r) { return (float*) (set[b] + at[r]); };
+                        auto E = [&](int b) { return (uint16_t*) (set[b] + at[4]); };
+                        Finish fq[2], fk[2], fr, fo;
+                        RingRuns rr[2];
+                        AttnCkv ck[2];
+                        AttnScratch sc[2];
+                        for (int b = 0; b < 2; ++b) {
+                            fq[b].w = l.q_norm;
+                            fq[b].eps = g.eps;
+                            if (q8) {
+                                fq[b].q8 = (int8_t*) (set[b] + at[1]);
+                                fq[b].q8d = F(b, 2);
+                            }
+                            fk[b].w = l.kv_norm;
+                            fk[b].eps = g.eps;
+                            fk[b].rd = g.rd;
+                            fk[b].freqs = freqs;
+                            fk[b].quant = 1;
+                            fk[b].dst = E(b);
+                            fk[b].dst_stride = HD;
+                            rr[b].runs = mp.nrun;
+                            for (int k = 0; k < mp.nrun; ++k) {
+                                const MaRun& u = mp.run[k];
+                                rr[b].ring[k] = set[b] + at[6] + (size_t) k * W * rbr;
+                                rr[b].bak[k] = bak ? set[b] + at[7] + (size_t) u.r0 * rbr : nullptr;
+                                rr[b].p0[k] = (long long) u.p0;
+                                rr[b].e0[k] = u.e0;
+                                rr[b].T[k] = u.n;
+                                for (int i = 0; i < u.n; ++i) ck[b].ckv[u.r0 + i] = set[b] + at[8] + (size_t) (k % 2) * (NR / 2) * rb4;
+                            }
+                            sc[b].rows = (uint16_t*) (set[b] + at[10]);
+                            sc[b].max_t = kWin;
+                            sc[b].cap = S;
+                        }
+                        fr.rd = g.rd;
+                        fr.vpp = NHL;
+                        fr.freqs = freqs;
+                        fo.rd = g.rd;
+                        fo.vpp = NHL;
+                        fo.freqs = freqs;
+                        fo.inverse = 1;
+                        fo.quant = 1;
+                        FinishRows fp, fkr;
+                        for (int t = 0; t < T; ++t) {
+                            fp.pos[t] = mp.pos[t];
+                            fkr.pos[t] = mp.pos[t];
+                            fkr.dst[t] = mp.dst[t];
+                        }
+                        std::string e2;
+                        x3::MvJob j[2][16];
+                        for (int b = 0; b < 2 && ofit; ++b)
+                            for (int gi = 0; gi < OG; ++gi)
+                                j[b][gi] = job(l.wo_a[gi], F(b, 11) + (size_t) gi * per, F(b, 14) + (size_t) gi * g.o_lora, T, HQ,
+                                               (size_t) OG * g.o_lora);
+                        // set 0: attn_batch's unfused launches, in its order
+                        if (mrg) {
+                            finish(F(0, 0), T, QL, QL, fq[0], d.st);
+                            ok = ok && finish_rows(F(0, 3), T * NHL, HD, HD, fr, fp, d.st);
+                            ring_to_ext_runs(rr[0], E(0), W, HD, d.st);
+                            ok = ok && finish_rows(F(0, 5), T, HD, HD, fk[0], fkr, d.st);
+                            ext_to_ring_runs(rr[0], E(0), W, HD, d.st);
+                        }
+                        if (unp) ok = ok && unpack_sel_rows_ref(ck[0], (const int*) (set[0] + at[9]), S, ua, T, &sc[0], d.st);
+                        if (ofit) {
+                            ok = ok && finish_rows(F(0, 11), T * NHL, HD, HD, fo, fp, d.st);
+                            for (int gi = 0; gi < OG; ++gi)
+                                for (int t = 0; t < T; ++t)
+                                    gg::q8_round(F(0, 11) + (size_t) t * HQ + (size_t) gi * per, 1, per,
+                                                 (int8_t*) (set[0] + at[12]) + ((size_t) gi * T + t) * per,
+                                                 F(0, 13) + ((size_t) gi * T + t) * (per / 32), d.st);
+                            ok = ok && mv_n(d, j[0], OG, e2);
+                        }
+                        // set 1: bt_fin's launches, as attn_batch makes them
+                        if (mrg) {
+                            BtFin m1, m2;
+                            m1.seg[0].kind = 0;
+                            m1.seg[0].x = F(1, 0);
+                            m1.seg[0].n_vec = T;
+                            m1.seg[0].len = QL;
+                            m1.seg[0].stride = QL;
+                            m1.seg[0].f = fq[1];
+                            m1.seg[1].kind = 1;
+                            m1.seg[1].x = F(1, 5);
+                            m1.seg[1].n_vec = T;
+                            m1.seg[1].len = HD;
+                            m1.seg[1].stride = HD;
+                            m1.seg[1].f = fk[1];
+                            m1.nseg = 2;
+                            m1.fr = fkr;
+                            m1.ring = 2;
+                            m1.rr = rr[1];
+                            m1.ext = E(1);
+                            m1.n = W;
+                            m1.d = HD;
+                            m2.seg[0].kind = 1;
+                            m2.seg[0].x = F(1, 3);
+                            m2.seg[0].n_vec = T * NHL;
+                            m2.seg[0].len = HD;
+                            m2.seg[0].stride = HD;
+                            m2.seg[0].f = fr;
+                            m2.nseg = 1;
+                            m2.fr = fp;
+                            m2.ring = 3;
+                            m2.rr = rr[1];
+                            m2.ext = E(1);
+                            m2.n = W;
+                            m2.d = HD;
+                            if (unp) {
+                                m2.unpack = true;
+                                m2.uc = ck[1];
+                                m2.sel = (const int*) (set[1] + at[9]);
+                                m2.sel_stride = S;
+                                m2.cap = S;
+                                m2.out = sc[1].rows;
+                                m2.ut = T;
+                                m2.ua = ua;
+                            }
+                            ok = ok && bt_fin(m1, d.st) && bt_fin(m2, d.st);
+                        }
+                        if (ofit) {
+                            BtFin mo;
+                            mo.seg[0].kind = 1;
+                            mo.seg[0].x = F(1, 11);
+                            mo.seg[0].n_vec = T * NHL;
+                            mo.seg[0].len = HD;
+                            mo.seg[0].stride = HD;
+                            mo.seg[0].f = fo;
+                            mo.seg[0].f.q8 = (int8_t*) (set[1] + at[12]);
+                            mo.seg[0].f.q8d = F(1, 13);
+                            mo.seg[0].q8_per = per;
+                            mo.seg[0].q8_rows = T;
+                            mo.nseg = 1;
+                            mo.fr = fp;
+                            gg::PreQ8 po;
+                            po.x = F(1, 11);
+                            po.q = (const int8_t*) (set[1] + at[12]);
+                            po.d = F(1, 13);
+                            po.k = per;
+                            po.rows = T;
+                            po.nslice = OG;
+                            po.slice = (size_t) per;
+                            po.xcs = (size_t) HQ;
+                            ok = ok && bt_fin(mo, d.st) && mv_n(d, j[1], OG, e2, &po);
+                        }
+                        return ok;
+                    };
+                    std::string why;
+                    const std::string what = "layer " + std::to_string(l.il) + ", " + std::to_string(T) + " rows in " +
+                                             std::to_string(nrun) + " runs" + (q8 ? ", q's int8, the rings' backups" : "") +
+                                             (mrg ? ", the merged launches" : "") + (unp ? " with the unpack" : "") +
+                                             (ofit ? ", the o finish's int8 rows and wo_a (" + std::to_string(OG) + " groups)" : "");
+                    if (!mrg && !ofit) continue;   // (XK_QO on a layer whose heads do not split into 32-blocks of groups: never fused)
+                    if (!trim_run(d, what, hin, set_bytes, regions, enqueue, why)) {
+                        err = "DS4_BT_FUSE check on CUDA" + std::to_string(d.id) + ": " + why;
+                        std::fprintf(stderr, "ds4: CUDA%d DS4_BT_FUSE check FAILED: %s\n", d.id, why.c_str());
+                        return false;
+                    }
+                    ++runs;
+                    if (v == 1)
+                        std::fprintf(stderr, "ds4: CUDA%d DS4_BT_FUSE check (%d rows): %s - byte for byte, every guard intact\n",
+                                     d.id, T, what.c_str());
+                }
+            std::fprintf(stderr, "ds4: CUDA%d DS4_BT_FUSE check (%d rows): %d runs passed\n", d.id, T, runs);
         }
         return true;
     }
@@ -15052,6 +15659,18 @@ struct Model::Impl {
                 std::fprintf(stderr, "ds4: DS4_EC_FIX=1: so far %lld helper-held cache hits left out of the swaps, %lld swaps\n",
                              (long long) ec_left, (long long) st.swaps);
         }
+        if (dd_audit)   // DS4_DD_AUDIT (before this read's own tick: "so far"; every prompt read, whatever the stats flags)
+            std::fprintf(stderr, "ds4: DS4_DD_AUDIT=1: so far %s\n", dd_audit_line().c_str());
+        if (dd_audit && ecown) {   // DS4_ECOWN: a pick computed twice, a member's plan off the lead's marks or a check timed out
+            unsigned long long bad = 0, tmo = 0;
+            for (size_t di = 0; ec_chk != nullptr && di < ec_tmo.size(); ++di) {
+                bad += ((const volatile unsigned long long*) ec_chk)[di * 4 + 1];
+                tmo += ((const volatile unsigned long long*) ec_chk)[di * 4 + 2];
+            }
+            if (dd_aud_dbl.load() > 0 || bad > 0 || tmo > 0)
+                std::fprintf(stderr, "ds4: DS4_ECOWN check FAILED: %lld picks computed twice, %llu mismatched picks, %llu timeouts so far\n",
+                             dd_aud_dbl.load(), bad, tmo);
+        }
         if (pm.on && run.T.size() == 1) {   // (the picks' spread for pick_path: the CPU-lane experts this run picked)
             bool tp = false;
             for (const Layer& l : L) tp = tp || l.nm > 1;
@@ -16236,6 +16855,11 @@ struct Model::Impl {
                           d.plan_ptr, lead ? reqs + slot : nullptr, sq, s, l.gate_bias_vl, l.mtp ? 0u : wp.vl, na[0],
                           na[1]);
             }
+#if defined(STRATA_USE_HIP)
+            if (ec_chk != nullptr && dd_at(l.il, T))   // DS4_ECOWN + DS4_DD_AUDIT: this device's plan against the lead's marks
+                strata_ds4_launch(ecown_chk_k, 1, 64, 0, s, (const Req*) (reqs + slot), sq, (const unsigned long long*) d.plan_ptr, T,
+                                  l.k_exp, ec_chk + (size_t) l.dev * 4, ec_tmo[(size_t) l.dev]);
+#endif
             {
                 x3::MvJob js[2] = {job(l.s1, d.x, d.sg, T, D, FF), job(l.s3, d.x, d.su, T, D, FF)};
                 if (!mv_n(d, js, 2, err, sx8)) return false;
@@ -16294,7 +16918,8 @@ struct Model::Impl {
                     lpj = gg::moe_join_combine(ma, ja, d.sh_out, d.moe_out, s);
                 }
                 if (ddl && !lpj) {   // (the lane's answer, the helpers' seq words and the join: one launch)
-                    const DdJoin& dj = dd_j[(size_t) l.dev];
+                    DdJoin dj = dd_j[(size_t) l.dev];
+                    dj.vmask = ecown ? (const unsigned*) reqs[slot].vmask : nullptr;   // DS4_ECOWN
                     strata_ds4_launch(dd_join_k, dim3((unsigned) ((D / 4 + 255) / 256), 1u), 256, 0, s, dj, (const unsigned*) &resps[slot].seq, sq,
                                       (const float*) &resps[slot].part[0][0], (const int*) resps[slot].cpu, dd_part[(size_t) l.dev], dd_flag[(size_t) l.dev], D,
                                       (const int*) d.ridx, l.il, l.k_exp);
@@ -16352,7 +16977,8 @@ struct Model::Impl {
                 bool lpj = false;   // DS4_LP_JOINCOMB (win_combine's arguments, the join's part)
                 if (ddl && lp_joincomb) lpj = gg::win_join_combine(wa, lp_join_args(l, slot, sq, T), s);
                 if (ddl && !lpj) {
-                    const DdJoin& dj = dd_j[(size_t) l.dev];
+                    DdJoin dj = dd_j[(size_t) l.dev];
+                    dj.vmask = ecown ? (const unsigned*) reqs[slot].vmask : nullptr;   // DS4_ECOWN
                     strata_ds4_launch(dd_join_k, dim3((unsigned) ((D / 4 + 255) / 256), (unsigned) T), 256, 0, s, dj, (const unsigned*) &resps[slot].seq, sq,
                                       (const float*) &resps[slot].part[0][0], (const int*) resps[slot].cpu, dd_part[(size_t) l.dev], dd_flag[(size_t) l.dev], D,
                                       (const int*) d.ridx, l.il, l.k_exp);
@@ -16957,12 +17583,10 @@ struct Model::Impl {
     // rings' new rows (and their backups); then each run's selection (bt_run_sel, a run at a time as before); then one
     // sparse attention over all the rows and one inverse RoPE.  Each row's kernels and values are the per-run path's;
     // only which launch computes it, and where in VRAM its window rows sit, differ
-    bool attn_batch_multi(Layer& l, Dev& d, size_t li, int mi, int T, const WinPlan& wp, std::string& err) {
-        cudaStream_t s = d.st;
-        const int HD = g.hd, NHL = l.ahn, ts = (int) topk_stride();
-        const float* freqs = l.ratio ? d.freqs_comp : d.freqs_win;
+    // (the runs' rings, their blocks of d.mext and their backups, for member mi of trunk layer li - attn_batch_multi's, and
+    // DS4_BT_FUSE's merged launches')
+    void bt_runs(const Layer& l, size_t li, int mi, RingRuns& rr) {
         const MaPlan& mp = bt_mplan;
-        RingRuns rr;
         rr.runs = mp.nrun;
         for (int k = 0; k < mp.nrun; ++k) {
             const MaRun& u = mp.run[k];
@@ -16972,6 +17596,51 @@ struct Model::Impl {
             rr.e0[k] = u.e0;
             rr.T[k] = u.n;
         }
+    }
+    // DS4_BT_FUSE: what attn_batch's merged launches did already, for attn_batch_multi (null there: the unfused path)
+    struct BtPre {
+        bool kv = false;           // the rings into d.mext, the KV rows' finish, the new rows into the rings (and backups)
+        bool sel = false;          // the rows' unpack (sel d.topk, the scratch d.mscr) with exactly nsel / ck
+        int nsel[kWin] = {};
+        AttnCkv ck;
+        int8_t* oq = nullptr;      // non-null: the o finish to round wo_a's int8 input too (T rows a group, groups apart)
+        float* od = nullptr;
+        int per = 0;               // (wo_a's group: its input values a row)
+        bool oq_done = false;      // (attn_batch_multi: the o finish made them)
+    };
+    // (DS4_BT_FUSE with DS4_ATTN_MERGE=3) whether the selections and compressed rows layer l's sparse attention reads in
+    // this batch window are final before bt_run_sel - no indexer of its own (ix_src: bt_run_sel makes the top-k), no run
+    // completing a compressed row of its own (kv_src with a group done: bt_run_sel writes it) - and then each row's nsel and
+    // cache as bt_run_sel gives them (attn_batch_multi compares)
+    bool bt_sel_final(const Layer& l, const WinPlan& wp, BtPre& bp) {
+        if (l.ix_src) return false;
+        const MaPlan& mp = bt_mplan;
+        for (int k = 0; k < mp.nrun; ++k) {
+            const MaRun& u = mp.run[k];
+            const void* c = nullptr;
+            int R = 0;
+            if (l.ratio > 0) {
+                R = l.ratio;
+                const int ng = (int) std::max<int64_t>(0, (u.p0 + u.n) / R - u.p0 / R);
+                if (l.kv_src && ng > 0) return false;
+                c = banks[(size_t) u.seq].ckv[(size_t) l.src][(size_t) l.dev];
+            }
+            for (int i = 0; i < u.n; ++i) {
+                bp.nsel[u.r0 + i] = R > 0 && (int) ((u.p0 + i + 1) / R) > 0 ? wp.topk[l.il][u.r0 + i] : 0;
+                bp.ck.ckv[u.r0 + i] = c;
+            }
+        }
+        return true;
+    }
+    bool attn_batch_multi(Layer& l, Dev& d, size_t li, int mi, int T, const WinPlan& wp, std::string& err,
+                          BtPre* bp = nullptr) {
+        cudaStream_t s = d.st;
+        const int HD = g.hd, NHL = l.ahn, ts = (int) topk_stride();
+        const float* freqs = l.ratio ? d.freqs_comp : d.freqs_win;
+        const MaPlan& mp = bt_mplan;
+        RingRuns rr;
+        bt_runs(l, li, mi, rr);
+        if (bp == nullptr || !bp->kv) {   // (DS4_BT_FUSE: else attn_batch's merged launches did these three)
         ring_to_ext_runs(rr, d.mext, g.win, HD, s);
         Finish fk;
         fk.w = l.kv_norm;
@@ -16992,6 +17661,7 @@ struct Model::Impl {
         }
         // (a verify window: each run's replaced ring rows to l.ring_bak at its rows, as the per-run path puts them)
         ext_to_ring_runs(rr, d.mext, g.win, HD, s);
+        }
         AttnRows ar;
         AttnCkv ck;
         bool one = true;
@@ -17008,8 +17678,16 @@ struct Model::Impl {
             one = one && u.n == 1;
         }
         if (NHL == 0) return true;
+        bool seld = false;   // (DS4_BT_FUSE: the folded unpack had exactly these arguments, else it runs again here)
+        if (bp != nullptr && bp->sel) {
+            seld = true;
+            for (int t = 0; t < T && seld; ++t) seld = ar.nsel[t] == bp->nsel[t] && ck.ckv[t] == bp->ck.ckv[t];
+            if (!seld && !btf_warned.exchange(true))
+                std::fprintf(stderr, "ds4: DS4_BT_FUSE: layer %d: the folded unpack's arguments differ from sparse_attn_rows' - "
+                                     "unpacked again (correct, slower; please report)\n", l.il);
+        }
         sparse_attn_rows(d.q, d.mext, ck, d.topk, ts, ar, l.sink, NHL, HD, T, 1.0f / std::sqrt((float) HD), d.o, s, one,
-                         &d.mscr);
+                         &d.mscr, seld);
         Finish fo;
         fo.rd = g.rd;
         fo.vpp = NHL;
@@ -17018,7 +17696,23 @@ struct Model::Impl {
         fo.quant = 1;
         FinishRows fp;
         for (int t = 0; t < T; ++t) fp.pos[t] = mp.pos[t];
-        if (!finish_rows(d.o, T * NHL, HD, HD, fo, fp, s)) {
+        if (bp != nullptr && bp->oq != nullptr) {   // (DS4_BT_FUSE + DS4_XK_QO: finish_rows' launch, its int8 rows too)
+            BtFin m;
+            m.seg[0].kind = 1;
+            m.seg[0].x = d.o;
+            m.seg[0].n_vec = T * NHL;
+            m.seg[0].len = HD;
+            m.seg[0].stride = HD;
+            m.seg[0].f = fo;
+            m.seg[0].f.q8 = bp->oq;
+            m.seg[0].f.q8d = bp->od;
+            m.seg[0].q8_per = bp->per;
+            m.seg[0].q8_rows = T;
+            m.nseg = 1;
+            m.fr = fp;
+            bp->oq_done = bt_fin(m, s);
+        }
+        if (!(bp != nullptr && bp->oq_done) && !finish_rows(d.o, T * NHL, HD, HD, fo, fp, s)) {
             err = "DS4_MULTI_ATTN: the output's finish refused";
             return false;
         }
@@ -17077,11 +17771,57 @@ struct Model::Impl {
         fq.eps = g.eps;
         gg::PreQ8 qrp;   // (DS4_DECODE_TRIM bit 2: q's norm rounds wq_b's int8 input where it makes it)
         const bool qr8 = NHL > 0 && trim_q(d, l, T, fq, qrp);
-        finish(d.qr, T, g.q_lora, g.q_lora, fq, s);
+        // DS4_BT_FUSE (fusion plan F2) with DS4_ATTN_MERGE: over DS4_MULTI_ATTN's runs, {q's norm [+ int8], the runs'
+        // rings into d.mext, the KV rows' finish} in one launch here - each writes its own buffer (qr / its int8, each run's
+        // ring rows of its block, each run's own rows of its block) and reads only the input GEMVs' rows and the rings - then
+        // {q's RoPE, the runs' new rows into their rings [+ backups]} (=3: and the rows' unpack) after wq_b below.  The order
+        // the unfused path runs these in is q's norm, q's RoPE, then attn_batch_multi's three; none of them reads what another
+        // writes except e2r after the KV finish (second launch after the first)
+        BtPre bp;
+        RingRuns brr;
+        const bool btm = bt_fuse > 0 && multi && attn_merge > 0 && !l.mtp && dump_s == nullptr && dump_l == nullptr;
+        if (btm) {
+            const MaPlan& mp = bt_mplan;
+            bt_runs(l, li, mi, brr);
+            BtFin m1;
+            m1.seg[0].kind = 0;
+            m1.seg[0].x = d.qr;
+            m1.seg[0].n_vec = T;
+            m1.seg[0].len = g.q_lora;
+            m1.seg[0].stride = g.q_lora;
+            m1.seg[0].f = fq;
+            Finish fk;   // (attn_batch_multi's)
+            fk.w = l.kv_norm;
+            fk.eps = g.eps;
+            fk.rd = g.rd;
+            fk.freqs = freqs;
+            fk.quant = 1;
+            fk.dst = d.mext;
+            fk.dst_stride = HD;
+            m1.seg[1].kind = 1;
+            m1.seg[1].x = d.kvr;
+            m1.seg[1].n_vec = T;
+            m1.seg[1].len = HD;
+            m1.seg[1].stride = HD;
+            m1.seg[1].f = fk;
+            m1.nseg = 2;
+            for (int t = 0; t < T; ++t) {
+                m1.fr.pos[t] = mp.pos[t];
+                m1.fr.dst[t] = mp.dst[t];
+            }
+            m1.ring = 2;
+            m1.rr = brr;
+            m1.ext = d.mext;
+            m1.n = g.win;
+            m1.d = HD;
+            bp.kv = bt_fin(m1, s);
+        }
+        if (!bp.kv) finish(d.qr, T, g.q_lora, g.q_lora, fq, s);
         if (NHL > 0) {
             x3::MvJob jb = job(l.a3 ? l.a3_qd : l.wq_b, d.qr, d.q, T, g.q_lora, HQ);
             if (!mv_n(d, &jb, 1, err, qr8 ? &qrp : nullptr)) return false;
-            if (multi) {   // (DS4_MULTI_ATTN: every row at its own position, one launch)
+            if (bp.kv) {   // (DS4_BT_FUSE: q's RoPE in the second merged launch below)
+            } else if (multi) {   // (DS4_MULTI_ATTN: every row at its own position, one launch)
                 Finish fr;
                 fr.rd = g.rd;
                 fr.vpp = NHL;
@@ -17107,7 +17847,71 @@ struct Model::Impl {
         // sparse attention calls over the run's n rows, on the bank's buffers (d.ext and the indexer's scratch reused
         // run after run, in stream order).  A run of one is a window of one.  (DS4_MULTI_ATTN=1: attn_batch_multi,
         // the same calls for all the runs at once where they read only their own state)
-        if (multi && !attn_batch_multi(l, d, li, mi, T, wp, err)) return false;
+        if (bp.kv) {   // (DS4_BT_FUSE: the second merged launch - q's RoPE at each row's position, the new rows into the rings)
+            const MaPlan& mp = bt_mplan;
+            BtFin m2;
+            Finish fr;   // (the unfused multi path's q rotation)
+            fr.rd = g.rd;
+            fr.vpp = NHL;
+            fr.freqs = freqs;
+            if (NHL > 0) {
+                m2.seg[0].kind = 1;
+                m2.seg[0].x = d.q;
+                m2.seg[0].n_vec = T * NHL;
+                m2.seg[0].len = HD;
+                m2.seg[0].stride = HD;
+                m2.seg[0].f = fr;
+                m2.nseg = 1;
+            }
+            for (int b = 0; b < T; ++b) m2.fr.pos[b] = (int) bt_pos[b];
+            m2.ring = 3;
+            m2.rr = brr;
+            m2.ext = d.mext;
+            m2.n = g.win;
+            m2.d = HD;
+            // (=3: sparse_attn_rows' unpack too, where the rows' selections and compressed rows are final here)
+            if (attn_merge > 2 && NHL > 0 && HD == 512 && bt_sel_final(l, wp, bp)) {
+                m2.unpack = true;
+                m2.uc = bp.ck;
+                m2.sel = d.topk;
+                m2.sel_stride = ts;
+                m2.cap = d.mscr.cap;
+                m2.out = d.mscr.rows;
+                m2.ut = T;
+                for (int t = 0; t < T; ++t) {
+                    m2.ua.win0[t] = mp.win0[t];
+                    m2.ua.nwin[t] = mp.nwin[t];
+                    m2.ua.nsel[t] = bp.nsel[t];
+                }
+            }
+            bool ok2 = bt_fin(m2, s);
+            if (!ok2 && m2.unpack) {
+                m2.unpack = false;
+                ok2 = bt_fin(m2, s);
+            }
+            bp.sel = ok2 && m2.unpack;
+            if (!ok2) {   // (refused: the unfused launches)
+                if (NHL > 0 && !finish_rows(d.q, T * NHL, HD, HD, fr, m2.fr, s)) {
+                    err = "DS4_BT_FUSE: q's rotation refused";
+                    return false;
+                }
+                ext_to_ring_runs(brr, d.mext, g.win, HD, s);
+            }
+            if (!(btf_seen.fetch_or(1u) & 1u))
+                std::fprintf(stderr, "ds4: DS4_BT_FUSE: the merged attention launches engaged (first: layer %d, %d rows)\n", l.il, T);
+            if (bp.sel && !(btf_seen.fetch_or(2u) & 2u))
+                std::fprintf(stderr, "ds4: DS4_BT_FUSE: the unpack folded into the second merged launch (first: layer %d, %d rows)\n",
+                             l.il, T);
+        }
+        // (DS4_BT_FUSE + DS4_XK_QO: the o finish rounds wo_a's int8 input, T rows a group, into HC_FUSE's x int8 rows - free
+        //  here: only the input GEMVs above read them, and the MoE's hc_fused writes them anew)
+        if (bt_fuse > 0 && xk_qo && multi && NHL > 0 && OG > 0 && HQ % OG == 0 && (HQ / OG) % 32 == 0 && HD % 32 == 0 &&
+            d.xq8 != nullptr && d.xd8 != nullptr && (size_t) T * HQ <= (size_t) kWin * D) {
+            bp.oq = d.xq8;
+            bp.od = d.xd8;
+            bp.per = HQ / OG;
+        }
+        if (multi && !attn_batch_multi(l, d, li, mi, T, wp, err, bp.kv || bp.oq != nullptr ? &bp : nullptr)) return false;
         for (int r0 = 0; !multi && r0 < T;) {
             int n = 1;
             while (r0 + n < T && bt_bank[r0 + n] == bt_bank[r0]) ++n;
@@ -17156,11 +17960,31 @@ struct Model::Impl {
             const int per = HQ / OG;
             for (int gi = 0; gi < OG; ++gi)
                 j[gi] = job(l.wo_a[gi], d.o + (size_t) gi * per, d.oa + (size_t) gi * g.o_lora, T, HQ, (size_t) OG * g.o_lora);
-            if (!mv_n(d, j, OG, err)) return false;
+            gg::PreQ8 po;   // (DS4_BT_FUSE + DS4_XK_QO: the groups read the o finish's int8 rows, T rows each)
+            if (bp.oq_done) {
+                po.x = d.o;
+                po.q = bp.oq;
+                po.d = bp.od;
+                po.k = per;
+                po.rows = T;
+                po.nslice = OG;
+                po.slice = (size_t) per;
+                po.xcs = (size_t) HQ;
+                if (!(btf_seen.fetch_or(4u) & 4u))
+                    std::fprintf(stderr, "ds4: DS4_BT_FUSE: the o finish rounds wo_a's input (first: layer %d, %d rows)\n", l.il, T);
+            }
+            if (!mv_n(d, j, OG, err, bp.oq_done ? &po : nullptr)) return false;
             if (!mv(d, {job(l.a3 ? l.a3_bd : l.wo_b, d.oa, d.ao, T, (size_t) OG * g.o_lora, D)}, err)) return false;
         } else CK(cudaMemsetAsync(d.ao, 0, (size_t) T * D * sizeof(*d.ao), s));
+        if (bt_fuse > 0) {   // (DS4_BT_FUSE: DS4_AR_POST's fold as layer() takes it; DS4_AR_POST unset: the two below)
+            ar_then_post(d, d.ao, T, ag, mi, nm, d.a_post, d.a_comb, s);
+            if (ar_post > 0 && nm > 1 && !(btf_seen.fetch_or(8u) & 8u))
+                std::fprintf(stderr, "ds4: DS4_BT_FUSE: the attention's all-reduce through DS4_AR_POST (first: layer %d, %d rows)\n",
+                             l.il, T);
+        } else {
         if (nm > 1) allreduce(d.ao, T * D, ag, mi, ++d.ar_seq, d.xcnt, s);
         hc_post(d.ao, d.h, d.a_post, d.a_comb, D, H, T, d.h2, s);
+        }
         std::swap(d.h, d.h2);
         prof_mark(d, 1);
         return true;
@@ -18033,6 +18857,9 @@ std::string Model::helper_report() const {
         std::snprintf(b, sizeof b, "helper delay (DS4_HELPER_DELAY_US): %.0f us added to %lld answers with helper picks\n",
                       p_->helper_delay_ms * 1000.0, (long long) p_->helper_delay_n);
         out += b;
+    }
+    if (p_->dd_audit) {   // DS4_DD_AUDIT
+        out += "helper device-direct audit (DS4_DD_AUDIT): " + p_->dd_audit_line() + "\n";
     }
     if (p_->dd_live) {   // DS4_HELPER_DD
         std::snprintf(b, sizeof b, "helper device-direct (DS4_HELPER_DD): %lld requests joined on the device (%lld armed sets), %lld helper picks answered "
