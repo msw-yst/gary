@@ -1042,6 +1042,14 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
                                    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml ${CMAKE_CURRENT_SOURCE_DIR}/src/dsv41)
         target_link_libraries(ds4_multi_attn_test PRIVATE ${_strata_gpu_runtime_target} Threads::Threads)
         target_compile_options(ds4_multi_attn_test PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")
+        # (DS4_BF16MV): bf16_mv_kernel vs bf16_mv2_kernel's variants (DS4_BF16MV) at the native pack's lead shapes, B 1..8 - bit for bit
+        # and time; one GPU, no model
+        set_source_files_properties(tests/dsv41/bf16mv_bench.cpp PROPERTIES LANGUAGE HIP)
+        add_executable(ds4_bf16mv_bench tests/dsv41/bf16mv_bench.cpp)
+        target_include_directories(ds4_bf16mv_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${_strata_gpu_include_directories}
+                                   ${CMAKE_CURRENT_SOURCE_DIR}/src/dsv41)
+        target_link_libraries(ds4_bf16mv_bench PRIVATE ${_strata_gpu_runtime_target} Threads::Threads)
+        target_compile_options(ds4_bf16mv_bench PRIVATE "$<$<COMPILE_LANGUAGE:HIP,CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/strata/dsv41/hip_extra.h>")
       endif()
       # (docs/dsv41/cards/HX-04.md): the helper's expert kernels alone at decode shapes (us / expert,
       # GB/s, and an A/B bitwise check of the gfx906 token kernels against the portable ones on one device)

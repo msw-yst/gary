@@ -116,6 +116,7 @@ Its switches are in section 2.9.
 | `DS4_ENGRAM_LOCK` (not in the release commit) | Engram row-cache locking (ported). | attention, Engram layers; host | — | never run | not measured ([FG-06](cards/FG-06.md)) |
 | `DS4_ENGRAM_CACHE_MB` | Size of the host cache for Engram table rows. | attention, Engram layers; host | by construction (I/O only) | build 12 (default) | not measured |
 | `DS4_BT_FUSE=1` | The one-row path's attention fusions carried into the batched attention path (fusion item 2). | attention, batched steps (2+ requests in a step); every XTX | measured identical (batch test B = 1 / 2 / 8 against solo; served greedy at 4 concurrent) | build 17 (code default off) | batched step −6.0 % at B = 1, −5.8 % at B = 8; served 8 users +6.4 % alone (MEASURED) ([FG-16](cards/FG-16.md)); in build 17 with `DS4_ECOWN`, 8 users +12.5 % ([SV-17](cards/SV-17.md)) |
+| `DS4_BF16MV=<variant>` | The BF16 dense matvec (attention projections, shared expert, head, Engram projection on BF16 packs) with more weight loads in flight and optionally several rows a warp; each lane's FMA chain, the reduction and the epilogue unchanged. `1` = `r1u4`; served value measured `r2u4n`. | BF16 dense matrices; every XTX | by construction; bench BITWISE 16 of 16 (MEASURED) | release 4 (code default off) | native MXFP4 pack: verify step −4.4 %, 4 users +9.8 %, kernel 0.51× (MEASURED); 2.25-bit pack: none expected (no BF16 dense matrices) ([FG-20](cards/FG-20.md)) |
 
 ### 2.3 All-reduces (attention and MoE, every XTX)
 
@@ -377,3 +378,5 @@ the expert kernels did not reach the engine). What moved the served numbers was 
   `DS4_EC_FIX=1` ([HX-26](cards/HX-26.md), [HX-28](cards/HX-28.md)); served, the prompt helper is slower than none from 16K
   up, which build 16's cap avoids ([PF-13](cards/PF-13.md)).
 - **Reliability:** two prompt-read hangs, cause open; the self-reporting build is in use ([SV-12](cards/SV-12.md)).
+
+**Update, 17 Nov (release 4).** `DS4_BF16MV`: the BF16 matvec with more loads in flight, bit-identical; on a native MXFP4 pack a served verify step −4.4 % and 4 users +9.8 % ([FG-20](cards/FG-20.md)). Peer reads of MI50 memory are exact only if the MI50's SDMA engine did not write it or its HDP was flushed ([HW-12](cards/HW-12.md)); this engine only pushes. Drafting at four users (`DS4_BATCH_DSPARK_MAX=4`) was slower in a greedy test; the served value stays 3 ([DR-10](cards/DR-10.md)).

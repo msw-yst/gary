@@ -3,7 +3,7 @@
 This folder records what we changed in Strata's DeepSeek V4.1 Flash engine to run it on a mix of AMD consumer and
 datacenter cards, and what each change did when measured. The long read is [WRITEUP.md](WRITEUP.md); this file is the
 index, and [FEATURES.md](FEATURES.md) maps every switch to the stage of a token it acts on. The latest results are in
-[UPDATE-2026-11-14.md](UPDATE-2026-11-14.md), [UPDATE-2026-11-15.md](UPDATE-2026-11-15.md) and [UPDATE-2026-11-16.md](UPDATE-2026-11-16.md) (release 3: build 17, the expert-kernel benchmarks, validation against upstream Strata and llama.cpp). Each card covers one change or event and follows the same template: what and why, the prediction (and whether it
+[UPDATE-2026-11-14.md](UPDATE-2026-11-14.md), [UPDATE-2026-11-15.md](UPDATE-2026-11-15.md), [UPDATE-2026-11-16.md](UPDATE-2026-11-16.md) (release 3: build 17, the expert-kernel benchmarks, validation against upstream Strata and llama.cpp) and [UPDATE-2026-11-17.md](UPDATE-2026-11-17.md) (release 4). Each card covers one change or event and follows the same template: what and why, the prediction (and whether it
 was written down before the run), correctness, timing, results, verdict, how to reproduce, and caveats.
 
 Built by YST. Contact: https://yst.dev
@@ -15,7 +15,7 @@ Built by YST. Contact: https://yst.dev
 - **Correctness first.** Exact changes must produce byte-identical output to the flags-off build (decode output, batch
   test, logits or teacher-forced score). Approximate changes get a paired teacher-forced comparison instead. "Not run"
   means not run.
-- **Code.** All changes ship as release commits on top of upstream Strata `v0.2.9` (release 3, build 17, is the latest). Cards cite the release commit plus the
+- **Code.** All changes ship as release commits on top of upstream Strata `v0.2.9` (release 4, build 17 plus opt-in changes, is the latest). Cards cite the release commit plus the
   flags (environment variables or command-line options) that turn each change on. Changes that were tried on side
   branches and not kept are marked "not in the fork's release commit".
 - **Prompts.** Timing numbers come from a private prompt set that is not published. Ratios between arms of the same run
@@ -73,6 +73,18 @@ phase timer, a tree-speculation counter, a double-count audit, an Engram trace) 
   ([FG-19](cards/FG-19.md)). The gfx906 expert kernels are unchanged since release 2.
 - `validation/` compares engines at identical weights: build 17 matches upstream Strata (ENGINE PASS, [QA-10](cards/QA-10.md)),
   and the 2.25 bpw weights, not the engine, are the distance to the hosted model ([QA-11](cards/QA-11.md)).
+
+## Release 4 (17 Nov)
+
+- **Code:** build 17 plus `DS4_BF16MV` (a bit-identical BF16 matvec, [FG-20](cards/FG-20.md)), off by default. The release build and its recommended environment are
+  still build 17's ([SV-17](cards/SV-17.md)). `DS4_BF16MV=r2u4n` took 2 ms off a served verify step and added 9.8 % at
+  4 users on a native MXFP4 pack; the 2.25-bit pack's dense matrices are not BF16, so it is not expected to help there.
+- **MI50 P2P:** peer reads of MI50 memory return stale data when the MI50's own SDMA engine wrote it, until the MI50's
+  HDP is flushed ([HW-12](cards/HW-12.md)).
+- **Results without code in this release:** mixed precision, native experts on top of the 2.25-bit pack
+  ([QA-12](cards/QA-12.md)); drafting at four users is slower in a greedy test ([DR-10](cards/DR-10.md));
+  castagna-veloce against llama.cpp on four MI50s ([EB-09](cards/EB-09.md)).
+- Details: [UPDATE-2026-11-17.md](UPDATE-2026-11-17.md).
 
 ## Benchmarking GPU permutations
 
@@ -133,9 +145,9 @@ About 395 GPU-min in all. Until these run, each of these cards carries the priva
 
 | status | cards |
 |---|---|
-| kept | 65 |
-| dropped | 20 |
-| finding | 24 |
+| kept | 66 |
+| dropped | 21 |
+| finding | 27 |
 | method | 13 |
 | not run | 7 |
 | shelved | 4 |
@@ -154,9 +166,9 @@ About 395 GPU-min in all. Until these run, each of these cards carries the priva
 | done | 1 |
 | corrected | 1 |
 | pointer | 1 |
-| **total** | **154** |
+| **total** | **164** |
 
-Counts as of 15 Nov 09:00 UTC. Added 14–15 Nov evening and night (none of their code is in the published release):
+Counts as of 17 Nov (release 4 adds FG-20, HW-12, QA-12, DR-10, EB-09). Earlier: as of 15 Nov 09:00 UTC. Added 14–15 Nov evening and night (none of their code is in the published release):
 HX-29–32, SV-17, FG-18, HW-11, ME-12. Cards added since 11 Nov: EB-08, TP-08–09, HX-24–28, DR-07–09, FG-08–17, CP-05,
 PF-12–13, SV-10–16, HW-09–10, ME-10–11; dated addenda on PF-11, QA-04, QA-08, QA-09, DR-04, DR-06, SV-09, HW-05, HW-06,
 HW-08. Updated 13–14 Nov with results: SV-11, SV-13, SV-14, FG-12, DR-08, HX-26. Updated 14 Nov morning: HW-06
@@ -179,6 +191,7 @@ DeepSeek's own DSpark).
 | [EB-06](cards/EB-06.md) | Warm-up at load (helper and decode) | kept | n/a | not run | token-1 tail 86–89 → 38 ms (REPORTED) |
 | [EB-07](cards/EB-07.md) | Four correctness fixes ported from a community MIT project | kept | yes | identity: IDENTICAL | reg / logits IDENTICAL (MEASURED) |
 | [EB-08](cards/EB-08.md) | Expert files memory-mapped instead of an 83 GB pinned copy (`--mmap-experts on`) | kept (served from build 13s) | prompt yes; load time no | IDENTICAL [M] | prompt within noise at 1K / 32K / 110K; 83 GB less pinned RAM (MEASURED) |
+| [EB-09](cards/EB-09.md) | castagna-veloce against mainline llama.cpp on four MI50s, same GGUF | finding | no (decode 4.6 tok/s against 25–55 predicted) | n/a (speed only) | decode CPU-bound, 4.6 vs 4.4 tok/s; prefill pp512 1.40×, pp2048 1.85× castagna (MEASURED) |
 | [TP-01](cards/TP-01.md) | Tensor parallel over 3 XTX (`--tp 3`) | kept | n/a | teacher-forced tp1 vs tp3 [R] | decode 30.4–30.9 tok/s (REPORTED) |
 | [TP-02](cards/TP-02.md) | tp3 prompt path: three contiguous DMAs per member | kept | n/a | not run | 2K prompt 384 s → 10 s (REPORTED) |
 | [TP-03](cards/TP-03.md) | tp3 + one MI50 helper | kept | yes (32.85 vs a 31.9 bar) | teacher-forced: pass [R] | 32.85 tok/s; prompt 203 tok/s (REPORTED) |
@@ -231,6 +244,7 @@ DeepSeek's own DSpark).
 | [DR-07](cards/DR-07.md) | Sampled drafting inside batched decode, for concurrent users | kept (build 13s; served) | yes | distribution test PASS; batched greedy = solo with the prompt helper off [M] | 3 users 129.6 → 157.8 tok/s total (× 1.22) (MEASURED) |
 | [DR-08](cards/DR-08.md) | Drafter policy revisited: sampled drafts, the adaptive rule, a depth × confidence sweep, a confirm run | dropped ((5, 0.4) not confirmed; policy stays (3, 0.3)); SAMPLE and ADAPT dropped | no (sweep); confirm: every cell inside ±1.5 % and the noise | exact in distribution | confirm: (5, 0.4) −1.58 % against 3–4 % noise, not separable (MEASURED); SAMPLE +13.0 % (REPORTED) |
 | [DR-09](cards/DR-09.md) | Tree speculation: a desk model and a counting build | dropped (closed by the counting run) | n/a (counting run: close) | counting build IDENTICAL to build 15 [M] | h2 0.337 sampled, under the 0.35 close line (MEASURED) |
+| [DR-10](cards/DR-10.md) | Drafting with four active users (`DS4_BATCH_DSPARK_MAX=4`) | dropped (MAX stays 3; one served A/B pending) | no (× 1.05–1.45 predicted) | greedy batched = solo everywhere [M] | 4 users, 4 over 3: build 17 × 0.806, native × 0.932, x25c × 0.787 (MEASURED) |
 | [FG-01](cards/FG-01.md) | How much of a decode token is launch overhead? | finding | n/a | n/a | expected 0–3 % (REPORTED) |
 | [FG-02](cards/FG-02.md) | Decode kernel fusions: HC_FUSE, ROUTE_FUSE, DECODE_TRIM, ROUTER_BF16 | kept (via build 10) | partly | exact-path IDENTICAL; ROUTER_BF16 paired quality within noise [M] | launches −17 %; +7.6 % (1 rep, indicative) (REPORTED) |
 | [FG-03](cards/FG-03.md) | Stream vs hipGraph launch probe; graph track closed | dropped (track closed) | n/a | n/a | graph saves 0.35–0.88 µs per kernel (REPORTED) |
@@ -250,6 +264,7 @@ DeepSeek's own DSpark).
 | [FG-17](cards/FG-17.md) | Decode phase timings without a tracer: real kernel gaps 2.9 µs; the MI50s on the critical path | finding (phase-timer build not in this release) | phases yes; gap and helper share no | flag on = off IDENTICAL [M] | B1 step 12.97 ms: attention 5.61, publish → join 2.67; gap 2.9 µs a boundary; helper last in 98.2 % of layers (MEASURED) |
 | [FG-18](cards/FG-18.md) | Where the MI50 helper's time goes in a served step; graph replay and the XTX launch gap | finding (measurement build not in the published release) | 9 of 9 phase rows; gap, chain and lateness out | identical with stamps on [M] | served one user waits for the helpers 9–13 % of a step; graph replay saves 0.4–0.9 µs a kernel (MEASURED) |
 | [FG-19](cards/FG-19.md) | XTX expert decode against llama.cpp (QBENCH) | finding | 2 of 5 (±25 % at batch 1 out; MXFP4 30–45 µs out; rel_rms out, narrowly) | ours vs CPU reference rel_max ≤ 1.4 % [M] | IQ2 batch 1 1.45–1.48× llama.cpp's GPU time, batch 4–8 0.51–0.83×; MXFP4 1.4–2.3× (MEASURED) |
+| [FG-20](cards/FG-20.md) | The BF16 matvec re-scheduled for bandwidth (`DS4_BF16MV`) | kept (opt-in, release 4) | 4 users yes; verify step no (× 0.956 vs × 0.80–0.93) | bench BITWISE 16 of 16; served greedy check uninformative [M] | native pack: verify step 43.4 → 41.5 ms (−4.4 %), 4 users +9.8 %; kernel 0.51× (MEASURED) |
 | [AR-01](cards/AR-01.md) | FP16 all-reduce for prompt chunks (default) | kept | n/a | at the rounding floor (1.63e-3) [R] | kept as default (REPORTED) |
 | [AR-02](cards/AR-02.md) | One-phase decode all-reduce (AR_FUSE) | kept (default) | n/a | bitwise SAME [R] | decode +1.2 % (+0.6 % with drafter) (REPORTED) |
 | [AR-03](cards/AR-03.md) | Peer-to-peer decode all-reduce | dropped (NO-GO) | no (predicted +20–30 %, got −4 / −11 %) | bit-identical [R] | −4 % / −11 % (REPORTED) |
@@ -287,6 +302,7 @@ DeepSeek's own DSpark).
 | [QA-09](cards/QA-09.md) | Long context: 240K retrieval at three depths, native 1M context, memory per token | finding (fuller check pending) | n/a | retrieval 3 of 3 exact [M] | prefill ~1,590 tok/s at 240K; decode 77–80 tok/s; 920 B a token per XTX (MEASURED / INFERRED); addendum: 512K context +1.17 ms a token over 1K (MEASURED) |
 | [QA-10](cards/QA-10.md) | Engine parity with upstream Strata and llama.cpp at the same weights (VANILLA) | kept (method; ENGINE PASS) | yes (pre-registered rule) | KL from llama.cpp 0.00417 (ours) vs 0.00414 (upstream), floor 0.002 [M] | ours − upstream +0.00003 nats a token, top-1 96.50 vs 96.99 % (MEASURED) |
 | [QA-11](cards/QA-11.md) | The 2.25-bit model against the hosted model's logprobs (HOSTLP) | finding | yes (QUANT COST SHOWN; native closes ≥ 70 %) | V and P1 alike vs hosted [M] | 2.25 bpw 0.0434–0.0438 nats, 90.3 % top-1; native MXFP4 0.0054, 96.0 % (88 % of the gap closed) (MEASURED / REPORTED) |
+| [QA-12](cards/QA-12.md) | Mixed precision: native MXFP4 hot experts on top of the 2.25-bit pack | finding (code not in this release) | quality bar 0.019 missed by 0.002 | no-manifest build = native build, BITWISE at equal placement [M] | x25c KL 0.0438 → 0.0210 (native 0.0054) at 1.18× build 17's time a token (MEASURED) |
 | [SV-01](cards/SV-01.md) | OpenAI-compatible launchers | kept | n/a | smoke prompt [R] | — |
 | [SV-02](cards/SV-02.md) | Prefix store: prompt state survives a restart | kept (opt-in) | n/a | [R] | 25K-token prompt TTFT 63.1 → 10.4 s after restart (REPORTED) |
 | [SV-03](cards/SV-03.md) | Batched decode banks | kept | yes (conditional go) | exact B1–B8 [R] | B4 103 tok/s total with stripe helpers (REPORTED) |
@@ -315,6 +331,7 @@ DeepSeek's own DSpark).
 | [HW-09](cards/HW-09.md) | XTX #2's power controller hung and the host lost power; the card was replaced | incident (card replaced) | n/a | n/a | third SMU hang on the same card; replacement board gap ~28 °C (REPORTED) |
 | [HW-10](cards/HW-10.md) | 12 Nov hardware work: a fifth MI50 for benches, XTX #3 re-pasted, a riser at x8 | hardware event | no (the x8 prompt estimate) | n/a | XTX #3 69 °C peak after re-pasting; x8 vs x16 ≤ 0.04 ms a token (REPORTED) |
 | [HW-11](cards/HW-11.md) | Host memory and CPU while serving: the 123 GB is the expert RAM store; Engram lives in the page cache | finding | n/a | n/a | RAM store 119.8 GB preloaded; Engram 7.4 of 110.6 GB in page cache; serving 4–5 cores, prompt bursts 14–16 (REPORTED) |
+| [HW-12](cards/HW-12.md) | MI50 peer reads go stale after the MI50's own SDMA writes, until its HDP is flushed | finding | yes (the HDP readout) | n/a | SDMA-written source CORRUPT; blit, kernel-written or HDP flush WORKS; settle 1 / 20 ms CORRUPT; kernels 6.17.2 and 7.0 (MEASURED) |
 | [FN-01](cards/FN-01.md) | Main-engine (Qwen3.8-Flash-Next) helper gates | pointer | — | see EB-01, HX-01 | see EB-01 |
 | [FN-02](cards/FN-02.md) | Flash Next lever audit and ranked plan | desk | — | n/a | MTP ranked first (+45–70 % predicted) (REPORTED) |
 | [FN-03](cards/FN-03.md) | Qwen3.8-Flash-Next: 1 XTX + 1 MI50 helper + MTP | kept (best measured layout) | yes (+50.6 %, inside +45–70 %) | teacher-forced 100 % / KL 0 (prompt path only); decoded MTP quality untested [M] | 93.31 tok/s (arm e) (MEASURED) |

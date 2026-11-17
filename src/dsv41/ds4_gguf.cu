@@ -61,73 +61,7 @@ __device__ __forceinline__ float warp_sum(float v) {
 }
 
 // ---------------------------------------------------------------- BF16 matrices
-struct BfJob {
-    const void* w;
-    size_t ld;          // values a row (BF16), bytes a row (MXFP4)
-    const float* x;
-    size_t xcs;
-    float* y;
-    size_t ycs;
-    const float* bias;
-    float alpha;
-    int k, n, ncol;
-    const int8_t* xq;   // (Q8_0: the activations rounded to int8, q8_quant's)
-    const float* xd;
-};
-struct BfJobs {
-    BfJob j[x3::kMaxMvJobs];
-};
-
-// grid (max rows / 8, jobs): a warp a row, each of its activations' dot in F32 - a lane 8 BF16 weights (16 bytes) and
-// 8 activations a step (VEC), or one of each (rows or activations not 16-byte aligned)
-template <int NC, bool VEC>
-__global__ void __launch_bounds__(kThreads) bf16_mv_kernel(const BfJobs J) {
-    const BfJob& b = J.j[blockIdx.y];
-    const int row = blockIdx.x * kWarps + (threadIdx.x >> 5), lane = threadIdx.x & 31;
-    if (row >= b.n) return;
-    const uint16_t* w = (const uint16_t*) b.w + (size_t) row * b.ld;
-    float acc[NC];
-#pragma unroll
-    for (int c = 0; c < NC; ++c) acc[c] = 0.0f;
-    if (VEC) {
-        for (int i = lane * 8; i < b.k; i += 256) {
-            const uint4 q = *(const uint4*) (w + i);
-            const float wf[8] = {__uint_as_float(q.x << 16), __uint_as_float(q.x & 0xffff0000u),
-                                 __uint_as_float(q.y << 16), __uint_as_float(q.y & 0xffff0000u),
-                                 __uint_as_float(q.z << 16), __uint_as_float(q.z & 0xffff0000u),
-                                 __uint_as_float(q.w << 16), __uint_as_float(q.w & 0xffff0000u)};
-#pragma unroll
-            for (int c = 0; c < NC; ++c)
-                if (c < b.ncol) {
-                    const float4* xp = (const float4*) (b.x + c * b.xcs + i);
-                    const float4 x0 = __ldg(xp), x1 = __ldg(xp + 1);
-                    float a = acc[c];
-                    a = fmaf(wf[0], x0.x, a);
-                    a = fmaf(wf[1], x0.y, a);
-                    a = fmaf(wf[2], x0.z, a);
-                    a = fmaf(wf[3], x0.w, a);
-                    a = fmaf(wf[4], x1.x, a);
-                    a = fmaf(wf[5], x1.y, a);
-                    a = fmaf(wf[6], x1.z, a);
-                    a = fmaf(wf[7], x1.w, a);
-                    acc[c] = a;
-                }
-        }
-    } else {
-        for (int i = lane; i < b.k; i += 32) {
-            const float wf = __uint_as_float((uint32_t) w[i] << 16);
-#pragma unroll
-            for (int c = 0; c < NC; ++c)
-                if (c < b.ncol) acc[c] = fmaf(wf, b.x[c * b.xcs + i], acc[c]);
-        }
-    }
-#pragma unroll
-    for (int c = 0; c < NC; ++c)
-        if (c < b.ncol) {
-            const float v = warp_sum(acc[c]);
-            if (lane == 0) b.y[c * b.ycs + row] = b.alpha * v + (b.bias != nullptr ? b.bias[row] : 0.0f);
-        }
-}
+#include "ds4_bf16mv.cuh"   // (FG-20) BfJob / BfJobs and bf16_mv_kernel, moved there verbatim; bf16_mv2_kernel (DS4_BF16MV)
 
 
 __global__ void q8_rows_kernel(const uint8_t* __restrict__ w, size_t ld, int k, int n, uint16_t* __restrict__ dst,
@@ -1256,6 +1190,43 @@ bool iq_args(const x3::ExpertLayout& lay, int n_embd, int n_ff, float limit, iq:
     }
     return true;
 }
+#if !defined(STRATA_METAL)
+// (FG-20) DS4_BF16MV: unset / "0" -> bf16_mv_kernel (as before); "1" -> bf16_mv2_kernel's default variant; a variant
+// name (ds4_bf16mv.cuh's kBf16mvVars: r1u2 r1u4 r1u8 r2u2 r2u4 r4u2 r1u4n r2u4n) -> that one.  Read once; one line on stderr.
+int bf16mv_variant() {
+    static const int v = [] {
+        const char* e = std::getenv("DS4_BF16MV");
+        const int i = bf16mv_parse(e);
+        if (i == -2)
+            std::fprintf(stderr, "ds4: DS4_BF16MV=%s is not a variant: the BF16 matvec stays bf16_mv_kernel\n", e);
+        else if (i >= 0)
+            std::fprintf(stderr, "ds4: DS4_BF16MV=%s: the BF16 matvec (VEC jobs) as bf16_mv2_kernel %s (R %d, U %d%s), "
+                                 "bit-identical re-schedule of bf16_mv_kernel\n",
+                         e, kBf16mvVars[i].name, kBf16mvVars[i].R, kBf16mvVars[i].U, kBf16mvVars[i].NT ? ", NT" : "");
+        return i < 0 ? -1 : i;
+    }();
+    return v;
+}
+template <int NC, int R, int U, bool NT>
+void bf16mv2_launch_v(const BfJobs& J, int nj, int max_n, cudaStream_t s) {
+    const dim3 grid((unsigned) ((max_n + kWarps * R - 1) / (kWarps * R)), (unsigned) nj);
+    strata_ds4_launch(bf16_mv2_kernel<NC, R, U, NT>, grid, kThreads, 0, s, J);
+}
+template <int NC>
+void bf16mv2_launch(int v, const BfJobs& J, int nj, int max_n, cudaStream_t s) {
+    switch (v) {   // (kBf16mvVars' order)
+        case 0: bf16mv2_launch_v<NC, 1, 2, false>(J, nj, max_n, s); break;
+        case 1: bf16mv2_launch_v<NC, 1, 4, false>(J, nj, max_n, s); break;
+        case 2: bf16mv2_launch_v<NC, 1, 8, false>(J, nj, max_n, s); break;
+        case 3: bf16mv2_launch_v<NC, 2, 2, false>(J, nj, max_n, s); break;
+        case 4: bf16mv2_launch_v<NC, 2, 4, false>(J, nj, max_n, s); break;
+        case 5: bf16mv2_launch_v<NC, 4, 2, false>(J, nj, max_n, s); break;
+        case 6: bf16mv2_launch_v<NC, 1, 4, true>(J, nj, max_n, s); break;
+        default: bf16mv2_launch_v<NC, 2, 4, true>(J, nj, max_n, s); break;
+    }
+}
+static_assert(kBf16mvNVars == 8, "bf16mv2_launch's switch lists kBf16mvVars");
+#endif
 template <int NC>
 void mv_launch(int f, const BfJobs& J, int nj, int max_n, bool vec, cudaStream_t s) {
     const dim3 grid((unsigned) ((max_n + kWarps - 1) / kWarps), (unsigned) nj);
@@ -1279,6 +1250,15 @@ void mv_launch(int f, const BfJobs& J, int nj, int max_n, bool vec, cudaStream_t
         // the BF16 matvec (vec: the rows and activations 16-byte aligned, so the 8-value step is safe)
         if (vec && max_n > 0 && nj > 0 &&
             ::strata::dsv41::metal_host::mx_mv((const void*) &J, nj, max_n, sizeof(BfJob), 0)) return;
+#endif
+#if !defined(STRATA_METAL)
+        if (vec) {   // (FG-20) DS4_BF16MV set: the re-scheduled kernel, same bits
+            const int v = bf16mv_variant();
+            if (v >= 0) {
+                bf16mv2_launch<NC>(v, J, nj, max_n, s);
+                return;
+            }
+        }
 #endif
         if (vec) strata_ds4_launch(bf16_mv_kernel<NC, true>, grid, kThreads, 0, s, J);
         else strata_ds4_launch(bf16_mv_kernel<NC, false>, grid, kThreads, 0, s, J);
