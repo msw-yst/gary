@@ -80,7 +80,8 @@ phase timer, a tree-speculation counter, a double-count audit, an Engram trace) 
   still build 17's ([SV-17](cards/SV-17.md)). `DS4_BF16MV=r2u4n` took 2 ms off a served verify step and added 9.8 % at
   4 users on a native MXFP4 pack; the 2.25-bit pack's dense matrices are not BF16, so it is not expected to help there.
 - **MI50 P2P:** peer reads of MI50 memory return stale data when the MI50's own SDMA engine wrote it, until the MI50's
-  HDP is flushed ([HW-12](cards/HW-12.md)).
+  HDP is flushed ([HW-12](cards/HW-12.md)). Everything we know about P2P on these cards (platform checks, the
+  repro, the push-only all-reduce, what did not work): [p2p-on-gfx906-and-gfx1100.md](p2p-on-gfx906-and-gfx1100.md).
 - **Results without code in this release:** mixed precision, native experts on top of the 2.25-bit pack
   ([QA-12](cards/QA-12.md)); drafting at four users is slower in a greedy test ([DR-10](cards/DR-10.md));
   castagna-veloce against llama.cpp on four MI50s ([EB-09](cards/EB-09.md)).
