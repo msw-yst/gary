@@ -1,9 +1,16 @@
 # DeepSeek V4.1 Flash on RX 7900 XTX + MI50: experiment cards
 
 This folder records what we changed in Strata's DeepSeek V4.1 Flash engine to run it on a mix of AMD consumer and
-datacenter cards, and what each change did when measured. The long read is [WRITEUP.md](WRITEUP.md); this file is the
+datacenter cards, and what each change did when measured. Our fork of Strata is called **Gary**.
+
+> We're calling it Gary because there aren't enough Garys around, and calling it anything with "LLM" in the name is
+> just so predictable, and so unfashionable.
+
+The code identifiers keep their names (the `strata-dsv41` binary, `DS4_*` switches, paths and commands), so everything
+below still runs as written. The long read is [WRITEUP.md](WRITEUP.md); this file is the
 index, and [FEATURES.md](FEATURES.md) maps every switch to the stage of a token it acts on. The latest results are in
-[UPDATE-2026-11-14.md](UPDATE-2026-11-14.md), [UPDATE-2026-11-15.md](UPDATE-2026-11-15.md), [UPDATE-2026-11-16.md](UPDATE-2026-11-16.md) (release 3: build 17, the expert-kernel benchmarks, validation against upstream Strata and llama.cpp) and [UPDATE-2026-11-17.md](UPDATE-2026-11-17.md) (release 4). Each card covers one change or event and follows the same template: what and why, the prediction (and whether it
+[UPDATE-2026-11-14.md](UPDATE-2026-11-14.md), [UPDATE-2026-11-15.md](UPDATE-2026-11-15.md), [UPDATE-2026-11-16.md](UPDATE-2026-11-16.md) (release 3: build 17, the expert-kernel benchmarks, validation against upstream Strata and llama.cpp) and [UPDATE-2026-11-17.md](UPDATE-2026-11-17.md) (release 4). Results since release 4 (18–19 Nov, code not in a release) are in the
+section below, and what the whole project taught us is in [LESSONS.md](LESSONS.md). Each card covers one change or event and follows the same template: what and why, the prediction (and whether it
 was written down before the run), correctness, timing, results, verdict, how to reproduce, and caveats.
 
 Built by YST. Contact: https://yst.dev
@@ -17,7 +24,7 @@ Built by YST. Contact: https://yst.dev
   means not run.
 - **Code.** All changes ship as release commits on top of upstream Strata `v0.2.9` (release 4, build 17 plus opt-in changes, is the latest). Cards cite the release commit plus the
   flags (environment variables or command-line options) that turn each change on. Changes that were tried on side
-  branches and not kept are marked "not in the fork's release commit".
+  branches and not kept are marked "not in Gary's release commit".
 - **Prompts.** Timing numbers come from a private prompt set that is not published. Ratios between arms of the same run
   compare like with like; absolute numbers should be read as indicative until the public re-runs below are done.
 - **Data.** `data/cards/<ID>/` holds sanitised extracts of the run summaries, with `SHA256SUMS`. The originals are kept
@@ -33,9 +40,9 @@ Built by YST. Contact: https://yst.dev
 | XTX #2 | RX 7900 XTX 24 GB (a different board from 13 Nov 14:37, [HW-09](cards/HW-09.md)) | PCIe Gen4 x16 |
 | XTX #4 | RX 7900 XTX 24 GB (from 9 Nov; second firmware position from 13 Nov, [HW-09](cards/HW-09.md)) | PCIe Gen4 x8 |
 | MI50 #1–4 | Instinct MI50 32 GB (gfx906), 135 W cap | PCIe Gen4 x4 each |
-| MI50 #5 | Instinct MI50 32 GB (gfx906), bench card only (from 12 Nov; never a helper in a timed run) | PCIe Gen1 x8 on a riser |
+| MI50 #5 | Instinct MI50 32 GB (gfx906), bench card only (from 12 Nov; never a helper in a timed run). From 17 Nov evening a fifth MI50 moved in from another machine carries this label; qualified 19 Nov ([HW-14](cards/HW-14.md)) | PCIe Gen1 x8 on a riser (12–17 Nov) |
 
-Host: one EPYC Zen 2 16-core, DDR4-2666. ROCm 7.14 on Linux. The layout changed over the project (one XTX with host-RAM
+Host: one EPYC Zen 2 16-core, DDR4-2666 (2933 from 19 Nov, [HW-13](cards/HW-13.md)). ROCm 7.14 on Linux. The layout changed over the project (one XTX with host-RAM
 experts → three XTX + three MI50 → four + four); each card's Timing section says which layout it ran on. Runs after
 13 Nov 13:09 use the changed XTX set ([HW-09](cards/HW-09.md)); absolute numbers across that line are not directly
 comparable, ratios within a run are.
@@ -86,6 +93,37 @@ phase timer, a tree-speculation counter, a double-count audit, an Engram trace) 
   ([QA-12](cards/QA-12.md)); drafting at four users is slower in a greedy test ([DR-10](cards/DR-10.md));
   castagna-veloce against llama.cpp on four MI50s ([EB-09](cards/EB-09.md)).
 - Details: [UPDATE-2026-11-17.md](UPDATE-2026-11-17.md).
+
+## Since release 4 (18–19 Nov): the native MXFP4 pack's prompt path, P2P, the CPU lane
+
+None of this code is in a release: it is on the internal native MXFP4 build and side branches, and each card's Code line
+says so. Release 4 is unchanged (build 17 plus `DS4_BF16MV`).
+
+- **Native prompt reads 4.6× faster at 2K.** A native 2K prompt's first token went from 15.2 s to 3.3 s, 8K from 16.5 to
+  7.3 s, with decode about 10 % faster, in four measured steps: where the time goes ([PF-15](cards/PF-15.md)); the MI50
+  prompt helper works but is slower, because it took the hot RAM-held experts and left the cold disk tail in small
+  batches ([PF-18](cards/PF-18.md)); a RAM store that keeps only what the XTXs stream, plus full batches, takes the disk
+  out of the prompt ([PF-19](cards/PF-19.md)); DMA straight from that store removes the host copy
+  ([PF-20](cards/PF-20.md)). Dead ends on the way: [PF-14](cards/PF-14.md), [PF-16](cards/PF-16.md).
+- **The short-prompt cutoff** pays a cost a token against the chunked path's flat cost; code crosses over at about 1,190
+  tokens ([PF-17](cards/PF-17.md)).
+- **Determinism:** greedy repeats that differed were placement differing between server starts; pinned, 13 of 13 repeat
+  ([ME-13](cards/ME-13.md)). Served noise and sample sizes: [ME-14](cards/ME-14.md); samplers that distort runs:
+  [ME-15](cards/ME-15.md).
+- **P2P:** why pushing loses at decode sizes ([AR-10](cards/AR-10.md), [HW-15](cards/HW-15.md)); a direct
+  reduce-scatter + all-gather wins at prompt sizes, bit-identical, first token −2 to −3 % ([AR-11](cards/AR-11.md));
+  host-route variants ([AR-12](cards/AR-12.md)); XTX clocks forced up ([CP-06](cards/CP-06.md)). The P2P write-up has a
+  new section 8.
+- **Native decode:** the lead waits, mostly for the CPU lane ([FG-21](cards/FG-21.md), [FG-22](cards/FG-22.md)); making
+  the lane faster has little room ([FG-23](cards/FG-23.md)); batched GPU sampling gave nothing ([FG-24](cards/FG-24.md));
+  the MI50 MXFP4 kernels ([HX-35](cards/HX-35.md), [HX-36](cards/HX-36.md)).
+- **Drafting:** acceptance by pack ([DR-11](cards/DR-11.md)); block 6 one user 11–12 % faster, held by its four-user bar
+  ([DR-12](cards/DR-12.md)); tree drafting measured and shelved ([DR-13](cards/DR-13.md)).
+- **Quality:** where the mixed pack's gap comes from ([QA-13](cards/QA-13.md)); a loop guard that does not rescue
+  ([QA-14](cards/QA-14.md)).
+- **Hardware:** RAM at 2933 ([HW-13](cards/HW-13.md)); a fifth MI50 ([HW-14](cards/HW-14.md)); tensor-parallel 3 does
+  not load on the native build ([TP-10](cards/TP-10.md)).
+- **Addenda (dated 19 Nov)** on PF-06, PF-10, PF-11, PF-13, QA-12, HW-12, HW-06, DR-01, DR-09, AR-03, AR-04 and FG-20.
 
 ## Benchmarking GPU permutations
 
@@ -146,17 +184,17 @@ About 395 GPU-min in all. Until these run, each of these cards carries the priva
 
 | status | cards |
 |---|---|
-| kept | 66 |
-| dropped | 21 |
-| finding | 27 |
-| method | 13 |
+| kept | 71 |
+| dropped | 27 |
+| finding | 39 |
+| method | 16 |
 | not run | 7 |
-| shelved | 4 |
+| shelved | 5 |
 | desk | 3 |
-| parked | 4 |
+| parked | 5 |
 | open | 2 |
 | superseded | 2 |
-| hardware event | 2 |
+| hardware event | 3 |
 | incident | 2 |
 | fixed in this release | 2 |
 | running | 1 |
@@ -167,9 +205,11 @@ About 395 GPU-min in all. Until these run, each of these cards carries the priva
 | done | 1 |
 | corrected | 1 |
 | pointer | 1 |
-| **total** | **164** |
+| **total** | **193** |
 
-Counts as of 17 Nov (release 4 adds FG-20, HW-12, QA-12, DR-10, EB-09). Earlier: as of 15 Nov 09:00 UTC. Added 14–15 Nov evening and night (none of their code is in the published release):
+Counts as of 19 Nov. Added 18–19 Nov (no code in a release): PF-14–20, HX-35–36, DR-11–13, FG-21–24, AR-10–12, CP-06,
+QA-13–14, TP-10, HW-13–15, ME-13–15; dated 19 Nov addenda on PF-06, PF-10, PF-11, PF-13, QA-12, HW-06, HW-12, DR-01,
+DR-09, AR-03, AR-04 and FG-20. Release 4 added FG-20, HW-12, QA-12, DR-10, EB-09. Earlier: as of 15 Nov 09:00 UTC. Added 14–15 Nov evening and night (none of their code is in the published release):
 HX-29–32, SV-17, FG-18, HW-11, ME-12. Cards added since 11 Nov: EB-08, TP-08–09, HX-24–28, DR-07–09, FG-08–17, CP-05,
 PF-12–13, SV-10–16, HW-09–10, ME-10–11; dated addenda on PF-11, QA-04, QA-08, QA-09, DR-04, DR-06, SV-09, HW-05, HW-06,
 HW-08. Updated 13–14 Nov with results: SV-11, SV-13, SV-14, FG-12, DR-08, HX-26. Updated 14 Nov morning: HW-06
@@ -202,6 +242,7 @@ DeepSeek's own DSpark).
 | [TP-07](cards/TP-07.md) | Permutations and multi-worker serving on the early layouts | superseded | n/a | not run | 3 workers on 3 MI50: 92.7 tok/s total (REPORTED) |
 | [TP-08](cards/TP-08.md) | Is the four-way split uneven? A dose probe, and a design for uneven cards | dropped (re-split not built; the run's verdict "no data") | probe yes; barrier and prompt doses no | IDENTICAL [M] | a perfect re-split ≤ 1.4 % decode, 0 % on 8K prompts (MEASURED) |
 | [TP-09](cards/TP-09.md) | A layer split (pipeline) of the four XTX for more users | dropped (closed: the existing split lost for prompts and decode) | yes (slower everywhere) | n/a | prompts 1.5–5.2 × slower than tp4; decode 20.6 ms vs 14.9 (MEASURED) |
+| [TP-10](cards/TP-10.md) | Tensor-parallel 3 with the fourth XTX as a helper | dropped (not testable on the native build) | — | not reached | tp3 does not load: the 129,280-row output head does not split three ways (MEASURED) |
 | [HX-01](cards/HX-01.md) | MI50 helper on a Gen4 x4 link vs x16 | kept (x4 is fine) | n/a | teacher-forced: pass [R] | no measurable decode loss on x4 (MEASURED) |
 | [HX-02](cards/HX-02.md) | Zero-copy and one-shot switches for the helper | dropped (ZC_OUTPUT rejected) | n/a | not run | ZC_OUTPUT −8 %; others within noise (REPORTED) |
 | [HX-03](cards/HX-03.md) | Shared helper pool, shared-memory mailbox, shared RAM store | shelved | n/a | not run (pool gates never run) | 3 engines on one MI50: ~132 tok/s combined (REPORTED) |
@@ -236,6 +277,8 @@ DeepSeek's own DSpark).
 | [HX-32](cards/HX-32.md) | Swap instead of evict (`DS4_ECSWAP`): a long-running server keeps its prompt speed | kept (build 18, staged, re-validation pending; not in the published release) | 8 of 10 (life cell out, better; 2K decode out, a token-path effect) | 0 twice / 0 dropped / 0 mismatches over 1,592 handovers [M] | 2K first token after 50 prompts −22.7 % (2.67 → 2.06 s) (MEASURED) |
 | [HX-33](cards/HX-33.md) | MI50 expert kernels against llama.cpp and castagna-veloce (QBENCH) | finding | 2 of 5 (MXFP4 2× IQ2_XS out; castagna ≥ 1.5× GB/s out; rel_rms ≤ 1e-2 out, narrowly) | ours vs CPU reference rel_max 1.0–1.3 %; references non-finite only [M] | batch 1 GPU µs, ours / castagna / llama.cpp: IQ2_XXS 51.6 / 70.2 / 79.6, MXFP4 80.8 / 54.2 / 58.5; castagna fused Q2_K/Q3_K 29.1 (MEASURED) |
 | [HX-34](cards/HX-34.md) | The MI50 helper's request round trip, stage by stage | finding | yes (104.6 µs, inside 90–130) | every data-path variant BITWISE identical [M] | 104.6 µs p50, kernels ~63; graph + kernel fetch + zero-copy + flag 68.9 µs (−34 %) (MEASURED) |
+| [HX-35](cards/HX-35.md) | 4-bit (MXFP4) expert kernels: eight variants and an MI50 flat-grid kernel | finding (code not in a release) | no on the XTX (already at bandwidth) | all variants BIT-EXACT; engine switches 30 of 30 BITWISE [M] | MI50 served-shape windows × 0.66–0.80; XTX neutral (MEASURED) |
+| [HX-36](cards/HX-36.md) | The MI50 flat MXFP4 kernel served on the native pack (`DS4_MXW=3`) | kept (internal native build; not in a release) | yes (× 0.960 in × 0.955–0.975) | BITS PASS 6 of 6 [M] | one user × 0.960, four users × 1.035 (MEASURED) |
 | [DR-01](cards/DR-01.md) | DSpark drafter settings: confidence 0.3, block 3 | kept | n/a | no gate (divergence explained as numerics) [R] | +23 % decode (REPORTED) |
 | [DR-02](cards/DR-02.md) | Per-card drafter memory budget | kept | n/a | 1 repeated-token decode in 9 [R] | one text prompt 54.6 → 63.1 tok/s (REPORTED) |
 | [DR-03](cards/DR-03.md) | Drafter blocks tensor-parallel over the lead's group | kept | n/a | not run | +30 % trunk experts per XTX; text 54.2 → 63.6 tok/s (REPORTED) |
@@ -246,6 +289,9 @@ DeepSeek's own DSpark).
 | [DR-08](cards/DR-08.md) | Drafter policy revisited: sampled drafts, the adaptive rule, a depth × confidence sweep, a confirm run | dropped ((5, 0.4) not confirmed; policy stays (3, 0.3)); SAMPLE and ADAPT dropped | no (sweep); confirm: every cell inside ±1.5 % and the noise | exact in distribution | confirm: (5, 0.4) −1.58 % against 3–4 % noise, not separable (MEASURED); SAMPLE +13.0 % (REPORTED) |
 | [DR-09](cards/DR-09.md) | Tree speculation: a desk model and a counting build | dropped (closed by the counting run) | n/a (counting run: close) | counting build IDENTICAL to build 15 [M] | h2 0.337 sampled, under the 0.35 close line (MEASURED) |
 | [DR-10](cards/DR-10.md) | Drafting with four active users (`DS4_BATCH_DSPARK_MAX=4`) | dropped (MAX stays 3; one served A/B pending) | no (× 1.05–1.45 predicted) | greedy batched = solo everywhere [M] | 4 users, 4 over 3: build 17 × 0.806, native × 0.932, x25c × 0.787 (MEASURED) |
+| [DR-11](cards/DR-11.md) | Drafting by pack: native 2.76 tokens a round, 2.25-bit and mixed packs about 1.8 | finding | yes (both) | greedy evaluation [M] | full drafts offered 90 % on native against 27–31 % (MEASURED) |
+| [DR-12](cards/DR-12.md) | Drafter block 6 instead of 3 on the native pack | finding (NO-GO for release 4 by its four-user bar) | one user yes; four-user no-harm bar not met | bits IDENTICAL, placement equal [M] | one user × 0.886 (2K), × 0.878 (8K); four users × 0.991 [0.969–1.014] (MEASURED) |
+| [DR-13](cards/DR-13.md) | Tree drafting measured: a real ceiling, eaten by the verify cost | shelved | ceiling yes; speed no | offline replay = engine 100 % [M] | +0.48 tokens a round ceiling; a verify row 4.69 ms; best tree × 1.10 ms a token (MEASURED / INFERRED) |
 | [FG-01](cards/FG-01.md) | How much of a decode token is launch overhead? | finding | n/a | n/a | expected 0–3 % (REPORTED) |
 | [FG-02](cards/FG-02.md) | Decode kernel fusions: HC_FUSE, ROUTE_FUSE, DECODE_TRIM, ROUTER_BF16 | kept (via build 10) | partly | exact-path IDENTICAL; ROUTER_BF16 paired quality within noise [M] | launches −17 %; +7.6 % (1 rep, indicative) (REPORTED) |
 | [FG-03](cards/FG-03.md) | Stream vs hipGraph launch probe; graph track closed | dropped (track closed) | n/a | n/a | graph saves 0.35–0.88 µs per kernel (REPORTED) |
@@ -266,6 +312,10 @@ DeepSeek's own DSpark).
 | [FG-18](cards/FG-18.md) | Where the MI50 helper's time goes in a served step; graph replay and the XTX launch gap | finding (measurement build not in the published release) | 9 of 9 phase rows; gap, chain and lateness out | identical with stamps on [M] | served one user waits for the helpers 9–13 % of a step; graph replay saves 0.4–0.9 µs a kernel (MEASURED) |
 | [FG-19](cards/FG-19.md) | XTX expert decode against llama.cpp (QBENCH) | finding | 2 of 5 (±25 % at batch 1 out; MXFP4 30–45 µs out; rel_rms out, narrowly) | ours vs CPU reference rel_max ≤ 1.4 % [M] | IQ2 batch 1 1.45–1.48× llama.cpp's GPU time, batch 4–8 0.51–0.83×; MXFP4 1.4–2.3× (MEASURED) |
 | [FG-20](cards/FG-20.md) | The BF16 matvec re-scheduled for bandwidth (`DS4_BF16MV`) | kept (opt-in, release 4) | 4 users yes; verify step no (× 0.956 vs × 0.80–0.93) | bench BITWISE 16 of 16; served greedy check uninformative [M] | native pack: verify step 43.4 → 41.5 ms (−4.4 %), 4 users +9.8 %; kernel 0.51× (MEASURED) |
+| [FG-21](cards/FG-21.md) | Where a native decode step goes: the lead waits, mostly for the CPU lane | finding | n/a | n/a | CPU lane skipped: verify step 44.5 → 36.4 ms; lead waits ~15 ms a step (MEASURED / INFERRED) |
+| [FG-22](cards/FG-22.md) | The CPU lane on the native pack: a quarter of a step, last on 70 % of layers | finding | n/a | n/a | ceiling 11.32 of 44.79 ms a step; eight layers carry half (MEASURED) |
+| [FG-23](cards/FG-23.md) | Making the CPU lane faster: five levers, none adopted | dropped | no (all five) | lane-first order BITS FAIL; the others exact [M] | lane kernel at 85–90 % of the memory ceiling; best lever ~1 % (MEASURED) |
+| [FG-24](cards/FG-24.md) | Batched GPU sampling for concurrent users (`DS4_GSAMP`) | dropped | no (× 1.005 against ≥ 1.05) | BITS PASS: greedy 6 of 6, 600 of 600 seeds [M] | sampler 3.2× cheaper per window; four users × 1.005 (MEASURED) |
 | [AR-01](cards/AR-01.md) | FP16 all-reduce for prompt chunks (default) | kept | n/a | at the rounding floor (1.63e-3) [R] | kept as default (REPORTED) |
 | [AR-02](cards/AR-02.md) | One-phase decode all-reduce (AR_FUSE) | kept (default) | n/a | bitwise SAME [R] | decode +1.2 % (+0.6 % with drafter) (REPORTED) |
 | [AR-03](cards/AR-03.md) | Peer-to-peer decode all-reduce | dropped (NO-GO) | no (predicted +20–30 %, got −4 / −11 %) | bit-identical [R] | −4 % / −11 % (REPORTED) |
@@ -274,11 +324,15 @@ DeepSeek's own DSpark).
 | [AR-06](cards/AR-06.md) | Peer-to-peer decode all-reduce, second attempt (dp2p) | dropped (NO-GO) | no | [R] | NO-GO (REPORTED) |
 | [AR-07](cards/AR-07.md) | Decode all-reduce levers on build 10: FUSE_NORM (FN) and OVERLAP (OV) | shelved | no (predicted +3.5–7 % B1) | FN exact; OV DIFFER with drafter [M] | FN ~0; OV slower (MEASURED) |
 | [AR-08](cards/AR-08.md) | Smart expert reduction (SER) | parked | — | not run | not run |
+| [AR-10](cards/AR-10.md) | Why direct GPU-to-GPU writes lose the decode all-reduce | finding | no (fence budget: 23 of 35 out) | 0 wrong values [M] | skew removed, T1 / T4: host 13.0 / 28.9 µs, best push 28.0 / 51.0 (MEASURED) |
+| [AR-11](cards/AR-11.md) | A direct reduce-scatter + all-gather for prompt all-reduces | kept (release candidate; internal branch) | yes (every band) | served IDENTICAL after one fix [M] | exchange stage × 0.62; first token −2.2 to −3.1 % at 8K–32K (MEASURED) |
+| [AR-12](cards/AR-12.md) | Faster host-route decode all-reduce variants | parked (bench only) | first round no; second no gain | 205 of 205 bit checks [M] | best variant × 0.69–0.76 in the bench, not ported (MEASURED) |
 | [CP-01](cards/CP-01.md) | XTX power caps, −50 mV undervolt, boot service, fan hold | kept | n/a | n/a | not measured (power sweep never run) |
 | [CP-02](cards/CP-02.md) | Pin the MI50 PCIe link speed | dropped (NO-GO) | no | identical [R] | decode set −10.1 %, B8 −8.5 % (REPORTED) |
 | [CP-03](cards/CP-03.md) | MI50 DPM `high` (clock pin) | kept (via launch wrapper) | n/a | IDENTICAL [M] | tp4h4 B1 58.31 → 60.95 tok/s (MEASURED) |
 | [CP-04](cards/CP-04.md) | DPM `high` vs manual top-level clock pin | dropped (manual pin) | yes (desk model said manual would not help) | IDENTICAL [M] | manual pin loses at B8 (44.25 vs 41.15 ms) (MEASURED) |
 | [CP-05](cards/CP-05.md) | MI50 power cap 155 W and 178 W instead of 135 W | dropped (caps stay 135 W) | decode yes (no change); 110K prompt better than predicted | IDENTICAL [M] | 178 W: 32K prompt −2.78 %, 110K −2.39 %; decode no change (MEASURED) |
+| [CP-06](cards/CP-06.md) | XTX performance level `high` | dropped | n/a | n/a | hand-off 2.5 → 1.3 µs in the lab; nothing measurable served; idle +218 W (MEASURED) |
 | [PF-01](cards/PF-01.md) | Prompt streaming (TP_DIRECT) and a 2,048-row attention slab | kept (default) | n/a | [R] | 2K 7.45 s / 16K 37.29 s baseline (REPORTED) |
 | [PF-02](cards/PF-02.md) | Matrix-core prompt attention with hi+lo FP16 ("f32" mode) | kept (default) | corrected theory | paired quality pass [R] | 16K TTFT 18.75 → 11.06 s with HIPK (REPORTED) |
 | [PF-03](cards/PF-03.md) | Matrix-core expert tiles (HIPK) default; PF_WMMA variants | kept (HIPK=1) | n/a | within noise [R] | 16K TTFT 12.3 s cold / 10.7 s warm (REPORTED) |
@@ -292,6 +346,13 @@ DeepSeek's own DSpark).
 | [PF-11](cards/PF-11.md) | MI50 prompt helper (`DS4_PF_HELPER`): faster short prompts, NOT bit-identical | served (from build 13s), validation pending | partly (fixed cost ~1 s vs 0.2-0.5 predicted) | **not bit-identical**; unset IDENTICAL; validation run formally inconclusive; batched ≠ solo [M/R] | 1K suffix 3.42 → 1.33 s, 2K 3.71 → 2.11 s, 16K equal (MEASURED) |
 | [PF-12](cards/PF-12.md) | MI50 prompt tiles (`DS4_PF_TILE`): bit-exact | kept (build 15) | yes, exceeded (× 0.847 vs ≤ 0.93) | bench bit-identical; served IDENTICAL [M] | TTFT −15 % at 2K, 8K, 32K and 4 users × 8K (MEASURED) |
 | [PF-13](cards/PF-13.md) | The MI50 prompt helper 2K–128K: never slower in one process, slower from 16K served | finding | yes (both runs, and the cap) | n/a (helper not bit-identical by design) | served 32K TTFT on 22.2 s vs off 18.4 s; 2K 2.9 vs 4.6 s; the cap, in build 16: 32K 18.4 s, 64K 35.0 s (MEASURED) |
+| [PF-14](cards/PF-14.md) | The MI50 prompt helper on the native pack, first try | dropped (superseded by PF-19) | no (10 of 20 out) | not bit-identical by design; KL from hosted unchanged [M] | 2K first token 24.6 s with the helper alone against 9.1 s (MEASURED) |
+| [PF-15](cards/PF-15.md) | Where a native prompt read's time goes | finding | first reading wrong, corrected | n/a | about 337 GB moved by the host a 2K prompt; 14.75 of 16.2 s waiting on staging (MEASURED / INFERRED) |
+| [PF-16](cards/PF-16.md) | Reading each expert once; skipping read-ahead for RAM-held experts | dropped | no | bits PASS [M] | `read()` × 0.25 and storage × 0.70, first token not faster (MEASURED) |
+| [PF-17](cards/PF-17.md) | The short-prompt cutoff on the native pack | finding (no cutoff adopted yet) | 1,250 and 1,600 NO-GO | 13 of 13 repeat with pinned placement [M] | cold 600 tokens 14.7 → 4.3 s; code crossover about 1,190 tokens (MEASURED) |
+| [PF-18](cards/PF-18.md) | The MI50 prompt helper on the native pack works, and is slower | finding (fixed in PF-19) | no (× 1.75 against × 0.45–0.70) | text close 3 of 3; not bit-identical by design [M] | experts staged 12,688 → 5,724 a XTX; 2K first token × 1.75 (MEASURED) |
+| [PF-19](cards/PF-19.md) | The RAM store keeps only what the XTXs stream; batches stay full | kept (internal native build) | 12 of 20 out, mostly on the good side | text close 3 of 3 in every arm [M] | 2K 15.2 → 4.7 s; disk 47.7 → 0 GB a read; decode × 0.913 (MEASURED) |
+| [PF-20](cards/PF-20.md) | DMA straight from the RAM store | kept (internal native build) | 2K and 8K yes; 14K and decode out | text close 3 of 3 [M] | 2K 15.22 → 3.33 s; 8K 16.50 → 7.30 s; host copies 0 (MEASURED) |
 | [QA-01](cards/QA-01.md) | Helper quality gate: XTX alone vs XTX + MI50, teacher-forced | kept (pass) | yes | pass: top-1 96.94 %, median KL 4.5e-4 [M] | top-1 96.94 %, ppl 3.3889 → 3.3861 (MEASURED) |
 | [QA-02](cards/QA-02.md) | The rounding floor: why median KL fails 1e-3 on every TP change | method | n/a | floor ≈ 1.6–1.8e-3 median KL [M] | tp3 vs single-group reference: median KL 1.79e-3, top-1 95.84 % (MEASURED) |
 | [QA-03](cards/QA-03.md) | Build 10 quality vs a fresh reference of the same pack | kept (pass on the paired test) | yes (paired); KL line printed GATE FAIL | top-1 96.28 %; paired intervals include 0 [M] | tp4h4 top-1 96.28 %, ppl 3.4014 vs 3.3968 (MEASURED) |
@@ -304,6 +365,8 @@ DeepSeek's own DSpark).
 | [QA-10](cards/QA-10.md) | Engine parity with upstream Strata and llama.cpp at the same weights (VANILLA) | kept (method; ENGINE PASS) | yes (pre-registered rule) | KL from llama.cpp 0.00417 (ours) vs 0.00414 (upstream), floor 0.002 [M] | ours − upstream +0.00003 nats a token, top-1 96.50 vs 96.99 % (MEASURED) |
 | [QA-11](cards/QA-11.md) | The 2.25-bit model against the hosted model's logprobs (HOSTLP) | finding | yes (QUANT COST SHOWN; native closes ≥ 70 %) | V and P1 alike vs hosted [M] | 2.25 bpw 0.0434–0.0438 nats, 90.3 % top-1; native MXFP4 0.0054, 96.0 % (88 % of the gap closed) (MEASURED / REPORTED) |
 | [QA-12](cards/QA-12.md) | Mixed precision: native MXFP4 hot experts on top of the 2.25-bit pack | finding (code not in this release) | quality bar 0.019 missed by 0.002 | no-manifest build = native build, BITWISE at equal placement [M] | x25c KL 0.0438 → 0.0210 (native 0.0054) at 1.18× build 17's time a token (MEASURED) |
+| [QA-13](cards/QA-13.md) | Where the mixed pack's remaining gap comes from | finding | no (non-expert term 0.0036 against 0.000–0.002) | teacher-forced [M] | x25c 0.0206; with native non-expert tensors 0.0170; oracle choice 0.0165 (MEASURED) |
+| [QA-14](cards/QA-14.md) | A loop guard for agent runs on the 2.25-bit pack | finding | no (2 of 6 against native 4 of 6) | n/a | caught 1 of 1 loop, 0 false triggers, 0 rescues (REPORTED) |
 | [SV-01](cards/SV-01.md) | OpenAI-compatible launchers | kept | n/a | smoke prompt [R] | — |
 | [SV-02](cards/SV-02.md) | Prefix store: prompt state survives a restart | kept (opt-in) | n/a | [R] | 25K-token prompt TTFT 63.1 → 10.4 s after restart (REPORTED) |
 | [SV-03](cards/SV-03.md) | Batched decode banks | kept | yes (conditional go) | exact B1–B8 [R] | B4 103 tok/s total with stripe helpers (REPORTED) |
@@ -333,6 +396,9 @@ DeepSeek's own DSpark).
 | [HW-10](cards/HW-10.md) | 12 Nov hardware work: a fifth MI50 for benches, XTX #3 re-pasted, a riser at x8 | hardware event | no (the x8 prompt estimate) | n/a | XTX #3 69 °C peak after re-pasting; x8 vs x16 ≤ 0.04 ms a token (REPORTED) |
 | [HW-11](cards/HW-11.md) | Host memory and CPU while serving: the 123 GB is the expert RAM store; Engram lives in the page cache | finding | n/a | n/a | RAM store 119.8 GB preloaded; Engram 7.4 of 110.6 GB in page cache; serving 4–5 cores, prompt bursts 14–16 (REPORTED) |
 | [HW-12](cards/HW-12.md) | MI50 peer reads go stale after the MI50's own SDMA writes, until its HDP is flushed | finding | yes (the HDP readout) | n/a | SDMA-written source CORRUPT; blit, kernel-written or HDP flush WORKS; settle 1 / 20 ms CORRUPT; kernels 6.17.2 and 7.0 (MEASURED) |
+| [HW-13](cards/HW-13.md) | Host RAM at 2933 MT/s instead of 2666 | kept | n/a | no memory errors at boot [M] | bandwidth +14–16 %; first token unchanged while disk-bound (MEASURED) |
+| [HW-14](cards/HW-14.md) | A fifth MI50 fitted and qualified | hardware event | n/a | identity bitwise against a production MI50 [M] | first soak stopped at 80 °C; after a cooling fix 66 °C, PASS (MEASURED) |
+| [HW-15](cards/HW-15.md) | What limits P2P on this board: the receiving GPU's power state | finding | n/a | 0 wrong values [M] | idle receiver 15.3 GB/s, busy 26.8; hand-off 2.5 against 1.3 µs (MEASURED) |
 | [FN-01](cards/FN-01.md) | Main-engine (Qwen3.8-Flash-Next) helper gates | pointer | — | see EB-01, HX-01 | see EB-01 |
 | [FN-02](cards/FN-02.md) | Flash Next lever audit and ranked plan | desk | — | n/a | MTP ranked first (+45–70 % predicted) (REPORTED) |
 | [FN-03](cards/FN-03.md) | Qwen3.8-Flash-Next: 1 XTX + 1 MI50 helper + MTP | kept (best measured layout) | yes (+50.6 %, inside +45–70 %) | teacher-forced 100 % / KL 0 (prompt path only); decoded MTP quality untested [M] | 93.31 tok/s (arm e) (MEASURED) |
@@ -348,10 +414,14 @@ DeepSeek's own DSpark).
 | [ME-10](cards/ME-10.md) | Every benchmarked build is in git, and rebuilds byte for byte | method | n/a | n/a | 9 of 9 builds byte-identical (MEASURED) |
 | [ME-11](cards/ME-11.md) | Builds pinned to spare cores may run during timing runs | method | n/a | n/a | 8.823 / 8.853 (with build) / 8.867 ms a token (REPORTED) |
 | [ME-12](cards/ME-12.md) | An Engram access-trace build that changes nothing, and the SSD's random-read latency | method (trace build not in the published release) | n/a | identical, trace on and off [M] | SSD 4 KiB random: QD1 59 µs p50, QD8 106.8 K IOPS (MEASURED) |
+| [ME-13](cards/ME-13.md) | Greedy repeats need pinned, deterministic placement | method | yes | 13 of 13 identical with it [M] | without it 0–3 of 9 cells repeat (MEASURED) |
+| [ME-14](cards/ME-14.md) | How noisy a served A/B is | method | n/a | parser count re-scored [M] | s_d: one-user decode 5.09 %, four users 1.28 % (MEASURED) |
+| [ME-15](cards/ME-15.md) | Samplers beside a timed run change the run | method | n/a | n/a | four users 79.0 → 62.6 tok/s when a sampler started (MEASURED) |
 
 Groups: EB engine bring-up · TP layout and tensor parallel · HX MI50 helpers · DR drafter · FG fusion and graphs ·
 AR all-reduce · CP clocks and power · PF prefill · QA quality · SV serving and builds · HW hardware events ·
-FN Qwen3.8-Flash-Next · ME method.
+FN Qwen3.8-Flash-Next · ME method. AR-09 is not published: it was the push all-reduce card of a release-4 variant that
+was not chosen; the measured result is in the P2P write-up.
 
 ## Acknowledgements
 

@@ -274,3 +274,21 @@ sizes (INFERRED from the bench's device times: push 86–104 µs on the GPU agai
    distribution patches over the upstream driver source we read.
 8. **Upstream report:** the finding reproduces with a ~20-line probe on two kernels. We have not filed it with ROCm / amdgpu
    yet.
+
+## 8. Since this write-up (18–19 Nov)
+- **Open question 1, why pushing loses at decode sizes:** answered in [AR-10](cards/AR-10.md) and [HW-15](cards/HW-15.md).
+  A write lands in host DRAM about 1 µs sooner than in a peer XTX's VRAM (the receiving card's inbound path); one card
+  writing small uncached pieces to three peers gets a fifth of its pair bandwidth; and an idle receiving XTX caps a pair
+  at about 15 GB/s and doubles the hand-off. Mid-kernel peer data is visible only in uncached receive buffers (a gfx11
+  cache property). A redesigned push was correct but still 1.6–2.4× slower than the host route at decode sizes. Decode
+  keeps the host route.
+- **Where P2P wins:** at prompt sizes. A direct reduce-scatter plus all-gather is 2–2.6× faster than the host route at
+  1–16 MiB, and served on the native MXFP4 pack it cut the prompt exchange stage to × 0.62 and the first token by 2–3 %,
+  bit-identical after one defect was fixed (a wait that gave up silently after 2 s) ([AR-11](cards/AR-11.md); internal
+  branch, a release candidate).
+- **Open question 2, the HDP flush cost:** 1.30 µs p50 idle, 2.21 µs under copy-engine load
+  ([HW-12](cards/HW-12.md), addendum).
+- **Open question 4, the MI50 fault test:** re-run on an MI50 with the fixed clock conversion: 24 of 24 PASS, 0 wrong
+  values, no timeouts or fallbacks on the cells that failed before (MEASURED).
+- **XTX performance level `high`** halves the hand-off in the lab but showed nothing in serving and costs 218 W at idle
+  ([CP-06](cards/CP-06.md)).

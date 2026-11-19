@@ -20,6 +20,10 @@ Two caveats apply throughout:
 served benchmark, and a hardware incident) are added as dated paragraphs in sections 2, 4, 6, 7, 8, 9 and 10; the
 original text is left as it was.
 
+*Update, 19 Nov.* Our fork of Strata is now called Gary; the code identifiers are unchanged. The lessons of the whole project, each with the cards behind it, are collected in
+[LESSONS.md](LESSONS.md). The work of 18–19 Nov on the native MXFP4 pack (prompt reads 15.2 → 3.3 s at 2K, P2P, the CPU
+lane) is in the README's "Since release 4" section; none of its code is in a release.
+
 ## 1. The goal
 
 Run DeepSeek V4.1 Flash locally at a usable single-stream speed, using cards that are cheap per gigabyte of memory:

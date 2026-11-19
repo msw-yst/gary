@@ -2,7 +2,7 @@
 
 Built by YST. Contact: https://yst.dev
 
-This is a reference for every engine switch and build feature in this fork, kept and dropped alike: what it does, which
+This is a reference for every engine switch and build feature in Gary, kept and dropped alike: what it does, which
 stage of a decode token it acts on, on which card, whether it is exact, whether it is on in build 12, and what it
 measured. The stages are the ones in [ANATOMY.md](ANATOMY.md); the evidence is in the cards linked in each row.
 
@@ -19,7 +19,7 @@ measured. The stages are the ones in [ANATOMY.md](ANATOMY.md); the evidence is i
   otherwise. Build 17 is the build in this release (release 3, [SV-17](cards/SV-17.md)); build 16 was release 2 ([SV-16](cards/SV-16.md)); the README's "Builds" table lists what
   each one adds. Build 16's and 17's switches are off by default in the code; their recommended environments set them.
 - **Effect:** the card's headline number, with its label. "Not measured" means no card measures it.
-- **Code:** every switch in this file is in the fork's release commits (the build-17 source) unless its row says
+- **Code:** every switch in this file is in Gary's release commits (the build-17 source) unless its row says
   "not in the release commit". Each card's Code line says the same.
 
 ## 1. One decode token, and the switches that act on each stage
@@ -301,7 +301,7 @@ default are INFERRED from the code, not measured. Section numbers say where each
 | `DS4_DRAFT_COUNTS=<path>` | Drafter expert picks: added to the file at exit (profiling run), or with `DS4_DRAFT_KEEP` the file the kept set is read from. | drafter; host | n/a (profiling) / see `DS4_DRAFT_KEEP` | off | part of DR-05's design ([DR-05](cards/DR-05.md)) |
 | `DS4_DRAFT_CAL=<dir>` | Sums of x² of each helper-held drafter expert's gate/up input, for an importance matrix (`tools/dsv41/drafter_requant.py --cal`). | drafter; host | by construction (read only) | off | n/a (calibration data) |
 | `DS4_DRAFT_HIST=1` | Prints the drafter-expert pick histogram at exit. | drafter; host | by construction | off (diagnostic) | n/a |
-| `DS4_FAST_ATTN_MODE=<mode>` | Arithmetic of the matrix-core prompt attention. Unset: f32 (hi + lo FP16 pairs) where the fast path is on by this fork's rule (gfx1100 in a tensor-parallel group), upstream's f16 elsewhere. | prefill attention; every XTX | quality-gated (f32 mode: [PF-02](cards/PF-02.md)) | default as described | see PF-02 ([PF-02](cards/PF-02.md)) |
+| `DS4_FAST_ATTN_MODE=<mode>` | Arithmetic of the matrix-core prompt attention. Unset: f32 (hi + lo FP16 pairs) where the fast path is on by Gary's rule (gfx1100 in a tensor-parallel group), upstream's f16 elsewhere. | prefill attention; every XTX | quality-gated (f32 mode: [PF-02](cards/PF-02.md)) | default as described | see PF-02 ([PF-02](cards/PF-02.md)) |
 | `DS4_FAST_ATTN_LAYERS=a-b,c` | Limits the fast prompt attention to these layers; the others keep the scalar kernel. | prefill attention; every XTX | n/a (diagnostic) | off (all layers) | n/a |
 | `DS4_FAST_ATTN_CHECK=1` | Compares each fast attention call with the scalar kernel and prints the errors; syncs and allocates every call. | prefill attention; every XTX | n/a (diagnostic) | off | n/a |
 | `DS4_G906_XXS_DOWN=1` | Runs the IQ2_XXS down projection on the gfx906 kernel too; by default it stays on the portable kernel, measured faster there at one group. | helper window; MI50 | bench exact (the gfx906 kernels' parity tests) | off | not measured in a card (INFERRED from code; the code comment cites a kernel trace) |
