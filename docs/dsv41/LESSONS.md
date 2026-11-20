@@ -1,6 +1,6 @@
 # Lessons: what this work taught us, in plain words
 
-Short points from our work on Gary, our fork of Strata, each backed by the cards that show it. Most come from 8–19 Nov, and the last week on the native MXFP4 pack
+Short points from our work on Gary, our fork of Strata, each backed by the cards that show it. Most come from 8–20 Nov, and the last week on the native MXFP4 pack
 taught the most. Numbers here are rounded; the cards have the exact figures and their labels (MEASURED, REPORTED,
 INFERRED). The long read is [WRITEUP.md](WRITEUP.md); the index is [README.md](README.md).
 
@@ -103,3 +103,23 @@ INFERRED). The long read is [WRITEUP.md](WRITEUP.md); the index is [README.md](R
     [HW-05](cards/HW-05.md)
 28. **Check divisibility before planning a layout.** Tensor-parallel 3 died at load: the 129,280-row output head does not
     split three ways. [TP-10](cards/TP-10.md)
+
+## Reading results (20 Nov)
+
+29. **Look at the per-rep lines before announcing a gain.** A served four-user gain of 6.5 % for a new MI50 kernel came
+    from one baseline rep that stalled (72 tok/s against 98–103 for every other rep). Without it the kernel is neutral. We
+    had reported the gain; it is withdrawn on the card, with the bad rep kept in view. [HX-38](cards/HX-38.md)
+30. **The summary script is part of the experiment.** A parser that read the labels of a memory-error file instead of its
+    values turned a clean soak into "no reading" and the run's verdict into NO-GO. The raw file said 0 errors; fixing the
+    parser and re-summarising the same run gave GO with no new GPU time. Test a summariser on a real file, not only a
+    synthetic one. [SV-18](cards/SV-18.md)
+31. **A mode built for exactness is not a mode for speed.** Locked placement made A/Bs repeatable, and it also understated
+    served decode by 6–9 % and hid a 0.7 s first-token cost that only the live cache pays. Headline speeds are now measured
+    as served; locked mode is for identity checks. [ME-16](cards/ME-16.md), [SV-20](cards/SV-20.md)
+32. **Harnesses inherit settings; strip test modes explicitly.** Small-layout arms copied the new configuration's
+    environment, freeze setting included, and our own configuration gate refused them, losing every arm but one. An earlier
+    arm turned on the deterministic-rounds test mode without its freeze and waited on every live expert move. Build each
+    arm's environment from a named base, not from the previous arm's. [TP-11](cards/TP-11.md), [ME-16](cards/ME-16.md)
+33. **Size the rigour to the question.** The first plan for testing one cache switch came to about three GPU hours, copied
+    from a full-release protocol. Exactness first in a few locked minutes, then live ABBA on the cells the switch can move,
+    brings it to a 30–40 minute target; the wider cells come back only if the narrow ones move. [ME-16](cards/ME-16.md)
