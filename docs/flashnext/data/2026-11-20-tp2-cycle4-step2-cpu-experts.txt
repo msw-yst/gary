@@ -1,0 +1,48 @@
+# Tensor parallel cycle 4, step 2: the CPU-expert bucket at batch.  2 x RX 7900 XTX, UD-IQ4_XS, 2026-11-20.
+# Sanitised extract of the run summary (the original is kept privately).  See docs/flashnext/cards/NX-03.md and NX-04.md.
+#
+# Settings as cycle 3: STRATA_SET "pcie-frac=0 adapt-swaps=0 spec=2 suffix-draft=0 tensor-parallel=2", PARALLEL=8, 128k context,
+# STRATA_ROUTE_TAIL_SKIP=0, STRATA_IQ_MT_MIN=1, no drafter; host thread on CPU 0, 43 CPU-pool workers.  Another, unrelated
+# job ran on other CPUs of the machine during the first runs; hence the alternating pairs below.
+# Client: 8 prompts, 384 tokens, temperature 0, presence_penalty 0; c = 1 (each prompt alone = the solo path), 2, 4, 8.
+# Exactness per arm: each prompt's text at 2/4/8 users against its solo text (=solo), and against the base arm at the same level.
+#
+# What the bucket is (cycle 3: card 0 waits 15.1 ms per window at 4 users for the host's CPU experts; card 1 idles at the MoE
+# all-reduce):
+#   - Flash-Next has 512 experts a layer (24,576).  Card 0 holds 6,607 of its 12,288 (even ids) in VRAM, card 1 5,536 of its
+#     12,288 (odd): disjoint, 49 % of the experts carrying 52 % of the routed entries.  Routing is nearly flat, so placement has
+#     little to give.
+#   - The batch pool already groups rows by expert across sequences (one job per distinct expert with all its rows; the kernels
+#     decode the weights once for every row), but sequences barely share experts: 637 CPU entries over 612 distinct experts per
+#     4-row window (1.04 rows per expert).
+#   - So the host pass is a weight stream: ~612 x 3.4 MB = 2.1 GB per 4-row window in ~19-21 ms = ~100-110 GB/s, against
+#     ~115-125 GB/s practical on this socket (EPYC 7642, 8 x DDR4-2666, one NUMA node).  Thread count does not move it.
+#
+# A/B (same session; aggregate tok/s wall / all streams active; ms per batch window from the engine's batch line at 4 and 8 rows):
+#   arm                                   1u     2u           4u           8u            4-row window         8-row window   exact
+#   base (cycle-3 behaviour) x0           46.1   67.1/76.7    80.1/ 92.2   92.9/107.4    40.62 (commit 2.74)  69.92 (5.01)   all
+#   base x1                               46.1   66.7/76.2    79.2/ 90.7   89.2/102.8    41.29 (2.77)         73.05 (5.13)   all
+#   STRATA_BATCH_SELF_COMMIT=1, s0        45.6   66.7/76.0    81.4/ 93.6   94.8/109.8    40.05 (0.01)         68.24 (0.01)   all
+#   STRATA_BATCH_SELF_COMMIT=1, s1        46.4   64.9/75.4    82.6/ 95.0   93.6/108.2    39.38 (0.01)         69.31 (0.01)   all
+#     -> mean 4 users 79.7/91.5 -> 82.0/94.3 (+3 %), 8 users 91.1/105.1 -> 94.2/109.0 (+3.5 %); window -1.2 ms (4 rows), -2.7
+#        (8 rows): the commit graph's 2.7 / 5.1 ms go, ~1.3 ms of it comes back as the in-window state advance.  1 user unchanged.
+#   + STRATA_QSA_SLOTS=1 (beside s1)      45.5   66.1/75.2    80.0/ 91.4   90.3/104.0    40.88 vs 41.43       72.20 vs 70.08 all
+#     -> no gain (the attention bucket is not launch-bound at 4-8 rows on tp2's half heads); not taken.
+#   + pcie-frac=0.2 (+ self-commit)       45.7   64.9/73.7    81.9/ 93.9   90.2/104.0    39.89: CPU 15.23 (was 20.88), card-0 wait 20.58
+#     -> card 0 DMAs part of its missed experts during its CPU wait: the CPU pass -27 %, +4-5 % at 4-8 users, -2 % at 1-2 users.
+#        NOT EXACT: solo text changed against base 0/8, and batched text against its own solo 0/4 (4 users).  Which experts take
+#        the PCIe lane (GPU arithmetic) depends on the whole window's misses, so a row's result depends on its neighbours.
+#        Rejected under the exactness rule.
+#   pool 26 workers (+ self-commit; against 43 workers):
+#                                         45.6   64.4/73.1    80.0/ 91.7   91.5/105.8    CPU 20.21 vs 20.88   37.23 vs 40.19 all
+#     -> 17 fewer workers: the CPU pass the same or faster at 4-8 rows, ~2 % slower at 1-2 users.  DRAM-bound; default kept.
+#   (run-to-run noise: two identical base runs differed 3-4 % at 4-8 users, one beside the other job, one quiet: 80.2/90.7 vs
+#    76.8/86.9; hence the alternating pairs above.)
+#
+# Change kept: --tensor-parallel 2 turns STRATA_BATCH_SELF_COMMIT on by default (Verifier::default_batch_self_commit; the variable
+# set to any value keeps its own word, =0 off).  tp off unchanged.  Exact: every prompt identical solo vs 2/4/8 users and vs the
+# base at every level (s0, s1); solo 256-token identity (PARALLEL=1, untimed) sha256 prefix 4a71bce34308965e = one card.
+#
+# Proposed next step for this bucket at the time (overlap, not a faster pass): two half-batch windows in flight per card.  Estimate
+# then: +10-15 % at 4 users, +30-40 % at 8.  Not built: cycle 5 moved the CPU experts to the MI50s instead, and the engine
+# anatomy (docs/flashnext/ANATOMY.md, section 6) argues against it once the CPU pass is gone.

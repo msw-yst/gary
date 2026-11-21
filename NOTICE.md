@@ -1,9 +1,10 @@
 # NOTICE
 
 This repository is a fork of [Strata](https://github.com/Niko1221/Strata) by Niko1221 and the Strata contributors. It is
-based on upstream tag `v0.2.9` and adds YST's work running DeepSeek V4.1 Flash on RX 7900 XTX (gfx1100) cards with
-Instinct MI50 (gfx906) cards as expert helpers. The changes, their measurements and the flags that turn them on are
-documented in [docs/dsv41](docs/dsv41/README.md).
+based on upstream tag `v0.2.9` and adds YST's work running DeepSeek V4.1 Flash and Qwen3.8 Flash-Next on RX 7900 XTX
+(gfx1100) cards with Instinct MI50 (gfx906) cards as expert helpers. The changes, their measurements and the flags that turn
+them on are documented in [docs/dsv41](docs/dsv41/README.md) (DeepSeek) and [docs/flashnext](docs/flashnext/README.md)
+(Flash-Next).
 
 Maintained by YST. Contact: https://yst.dev
 
@@ -31,6 +32,12 @@ Peasant Smith (mw00) and the Project Maya contributors. That notice covers the f
 The ported pull requests are credited in the source files that carry them, with their authors: pepuscz (the
 hyper-connection, route and SwiGLU fusions and the uneven split), tctiger (the multi-part copies) and mrsirg97 (the BF16
 router), as in Project Maya's history. Source files carrying ported code say so in a header or comment line.
+
+## llama.cpp
+
+The Flash-Next work's gfx1100 IQ4 codebook lookup (`STRATA_XTX_FAST_PERM`, `src/kernels/cuda/xtx_fast_perm.cuh`) uses the same
+`v_perm_b32` form as the gfx906 body already in the tree, which comes from llama.cpp's HIP code (MIT License, the ggml
+authors). Performance comparisons in docs/flashnext use upstream llama.cpp as the reference.
 
 ## Acknowledgements
 
