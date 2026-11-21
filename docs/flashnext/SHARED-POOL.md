@@ -34,7 +34,9 @@ Run data: [data/2026-11-21-dp-pool.md](data/2026-11-21-dp-pool.md). Timing model
 - **Cheaper on the host.** Host RAM 124 GiB against 190 GiB, and about 13 busy cores against 32-40 [MEASURED].
 - **Two runtime conditions.** Export needs the ROCm 7.2.1 HSA runtime. The importing process must share the exporter's
   network and PID namespace (we use one podman pod with `--share net,pid,ipc`).
-- **Next.** Placement tuning: a slower-card weight, a hot set ranked from agent traffic, and slots vs hot-cache size.
+- **Placement tuning.** A slower-card weight (+1.3 % per agent at 8 users), a hot set ranked from agent traffic (+0.3 %) and
+  per-worker hot sets (-0.6 %) all missed the 2 % bar and were not kept; no step changed a bit of the output [MEASURED].
+- **Next.** Slots vs hot-cache size; planning the expert dispatch on the device.
 
 ## 2. Facts the design rests on
 
@@ -183,8 +185,8 @@ The service model comes from timing builds with graph replay off, so these busy 
   throughput, so they do overlap partly [MEASURED].
 - **The slow-link MI50.** Its kernels are as fast as the others; its transfers are not. Giving it weight 0.58 (16 % of
   the pool's routed mass: the coldest ~3,200-4,000 experts) equalises its round trip with the others and saves ~60 us
-  per layer [ESTIMATE]. The switch exists (`STRATA_POOL_WEIGHTS`); the measured runs below used the plain stripe, and the
-  weight is the first tuning step.
+  per layer [ESTIMATE]. The switch exists (`STRATA_POOL_WEIGHTS`); the measured runs below used the plain stripe. Measured
+  later as a tuning step it gave +1.3 % per agent at 8 users, under the 2 % bar, and was not kept (section 8).
 - **Expected speed [ESTIMATE].** Remove the single-card server's CPU wait and add a tp2-like visible helper wait: about
   28 ms per window at 4 users per worker (~31 tok/s per agent, against 21.7-23.3 for two single-card servers), ~22 ms at
   2 users (43-45 tok/s), ~42 ms at 8 (~21 tok/s). Section 8 compares these with what we measured.
@@ -374,6 +376,26 @@ runtime with no pool (H), and the pool (P, hot 4,700, MI50 caches 5,000) [MEASUR
 - MTP on has no same-runtime control: the first MTP-on cell (arm B, two private arenas, 191 GiB host RAM in use) stalled at its
   first request and was stopped, with no abort-list line in the kernel log ([data](data/2026-11-21-dp-pool.md) section 7).
 
+### Placement tuning
+
+Each step alone at 8 users (4 + 4, 4 slots per worker) against the configuration above (plain stripe, shipped profile, hot
+4,700 / MI50 5,000), MTP off, control and treatment alternated (C T C T, the workload twice per cell, 4 measurements per arm).
+Bar: at least +2 % per agent [MEASURED]:
+
+| Step | Treatment | Per agent C -> T | Aggregate C -> T | Verdict |
+|---|---|---|---|---|
+| a | slow-link MI50 weight 0.58 (`STRATA_POOL_WEIGHTS`; it holds 4,876 colder experts, 17.9 % of the pool mass against 27.4 % on each other card) | 28.48 -> 28.84 (**+1.3 %**) | 242.5 -> 245.1 (+1.1 %) | not kept |
+| b | ranking from worker 1's routing on agent-turn-like prompts (section 5's histogram), both workers | 28.94 -> 29.03 (**+0.3 %**) | 242.4 -> 247.4 (+2.1 %) | not kept |
+| c | per-worker hot sets: XTX B exports (hot 4,700), XTX A keeps 5,200 | 28.76 -> 28.58 (**-0.6 %**, second cell only) | 242.5 -> 243.9 (+0.6 %) | not kept |
+
+- b raised worker 1's XTX hits per layer window from 11.9 to 15.5 (+30 %) and shortened the batch window 30.7 -> 30.2 ms,
+  too little to move per-agent speed on these short prompts; agent turns, where the histogram came from, were not
+  benchmarked.
+- c's first treatment cell is left out: its two workers' users did not run at the same time, so its medians do not compare.
+- **Placement never changed a bit:** in every step both workers gave the reference hash and the same 8 solo texts as the
+  control, batched == solo and worker 1 == worker 2 8/8, with experts moved between MI50s (a) and between XTX and MI50 (b,
+  c). On this pack an expert computes the same on gfx1100 and gfx906 [INFERRED from texts, not a per-expert bitwise test].
+
 ### Side measurement: XTX power cap
 
 On two single-card servers at 4 and 8 users, caps of 402 W (maximum), 303 W (default) and 272 W (the driver's floor)
@@ -382,22 +404,23 @@ gave the same decode speed within 0.3 % aggregate (24.4-24.6 tok/s per agent at 
 
 ## 9. Open questions and next steps
 
-Next: **placement tuning**, one step at a time, A/B against the current pool, each kept only if it gains at least 2 % at
-8 users. Steps that change placement re-run the full exactness set, and a changed reference hash is accepted only
+Placement tuning, one step at a time, A/B against the current pool, each kept only if it gains at least 2 % at
+8 users. Steps 1-3 are measured (section 8): none reached the bar and none was kept. Steps that change placement re-run the full exactness set, and a changed reference hash is accepted only
 deliberately.
 
-1. Weight 0.58 for the slow-link MI50 vs 1.0 (`STRATA_POOL_WEIGHTS`; expected +2-4 % at 8 users) [ESTIMATE].
+1. Weight 0.58 for the slow-link MI50 vs 1.0 (`STRATA_POOL_WEIGHTS`; expected +2-4 % at 8 users [ESTIMATE]; measured +1.3 %).
 2. A ranking from served agent-like traffic instead of the shipped profile. We have collected one from worker 1 on 48
    coding-agent prompts (21,376 generated tokens); agent turns already show 46 % local at the same cache size, so we
-   expect a local share of 40 % or more and +3-6 % [ESTIMATE].
-3. Own hot set per worker (a') vs the same hot set.
+   expect a local share of 40 % or more and +3-6 % [ESTIMATE]; measured +0.3 % per agent, +2.1 % aggregate.
+3. Own hot set per worker (a') vs the same hot set; measured -0.6 %.
 4. Planning the expert dispatch on the device, as tp2's first card does, to skip the 2.5-3.0 ms per window of host-plan
    waits [ESTIMATE]. This must be bit-identical to before.
 5. Slots per worker vs hot-cache size (264 experts per slot; a smaller resident context buys hot cache).
 
 Open questions:
 
-- Is a Q4K expert bitwise equal on XTX and MI50? If yes, placement can never change a text.
+- Is a Q4K expert bitwise equal on XTX and MI50? If yes, placement can never change a text. The tuning steps moved experts
+  between the cards without changing any text, which points to yes, but no per-expert bitwise test has been run.
 - Why does XTX B have 1.27 GiB less free VRAM than XTX A? It sets the common hot prefix (~460 experts, ~2.7 % of entries).
 - Which workload should the hot set be tuned for: short prompts or agent turns?
 - MTP on the pool workers at more than one user per worker: the pool fits with MTP at every slot count (section 3), and

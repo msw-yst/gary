@@ -282,11 +282,12 @@ pool workers do (8/8).
 - **Build and launch from this tree**: the published tree builds (`strata`, `strata-device`, `pool_plan_test` with
   `tools/dsv41/build.sh`, MMQ off) and `pool_plan_test` passes. Layout 1 was run once as written (one chat request); layouts 2
   and 3 have not been run as written, and the MMQ-on build sequence ([Build](#build)) has not been run from this tree.
-- **Pool vs baseline runtime**: the pool's ratios mix the pool with a runtime / build difference (pool on the ROCm 7.2.1 HSA
-  runtime, baseline on the bundled one); a same-runtime baseline is being measured.
+- **Pool vs baseline runtime**: controlled with MTP off (the runtime does not explain the gain, [Results](#results)); the MTP-on
+  pool ratios have no same-runtime control.
 - **Shared pool**: needs the ROCm 7.2.1 HSA runtime and one pod with shared network / PID / IPC namespaces; needs one shared host
-  expert arena; the exporter's death stops both workers. Placement tuning (slow-link MI50 weight, a hot set from agent traffic)
-  and MTP at more than one user per worker are not measured. The cause of the first trial's driver stall is likely
+  expert arena; the exporter's death stops both workers. Placement tuning (slow-link MI50 weight +1.3 %, a hot set from agent
+  traffic +0.3 %, per-worker hot sets -0.6 % per agent at 8 users) missed the 2 % bar and was not kept
+  ([SHARED-POOL.md](SHARED-POOL.md) section 8); MTP at more than one user per worker is not measured. The cause of the first trial's driver stall is likely
   memory-pressure eviction but not proven.
 - **Long prompts serialise**: four cold 50k prompts at once still take ~150-160 s for the last first token.
 - **Exactness corners**: with penalties on, tp2's solo text differs from one card's (pre-existing); a rare solo near-tie in long
