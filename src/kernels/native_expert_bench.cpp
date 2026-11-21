@@ -45,6 +45,9 @@ int nibble_main(int argc, char** argv);
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc >= 2 && std::strcmp(argv[1], "--nibble") == 0) return nibble_main(argc, argv);
+#if defined(STRATA_USE_HIP) && !defined(STRATA_HIP_GFX906)
+    K::xtx_fast_perm_startup();   // STRATA_XTX_FAST_PERM=1: the gfx1100 IQ4 lookup flag, before any launch
+#endif
     if (argc < 7) {
         std::fprintf(stderr, "usage: native_expert_bench <shard1.gguf> <layer[,layer]> <groups> <tokens> <ref mode> <mode> [iters]\n");
         return 2;

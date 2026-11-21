@@ -31,6 +31,14 @@
 #include <unistd.h>
 #include "pool_affinity_linux.hpp"
 #endif
+#if defined(__linux__)
+#include <cerrno>
+#include <climits>
+#include <ctime>
+#include <linux/futex.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
+#endif
 
 namespace strata::kernels::cpu {
 
@@ -696,11 +704,85 @@ int64_t now_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
         .count();
 }
+// ---- pool wait modes (STRATA_POOL_WAIT, 2026-11-21).  A futex on `epoch_` itself: the host's publish is the
+// fetch_add on that word, so a waiter whose `seen` is stale returns at once (the kernel compares the word under
+// its own lock), and the wake needs no mutex.  Linux only; other systems keep mode 0.
+#if defined(__linux__)
+// true when the wait ended by its timeout
+bool futex_wait_epoch(std::atomic<uint32_t>* w, uint32_t seen, int64_t rel_ns) {
+    static_assert(sizeof(std::atomic<uint32_t>) == sizeof(uint32_t), "futex word");
+    struct timespec ts, *tp = nullptr;
+    if (rel_ns > 0) {
+        ts.tv_sec = (time_t) (rel_ns / 1000000000);
+        ts.tv_nsec = (long) (rel_ns % 1000000000);
+        tp = &ts;
+    }
+    const long r = syscall(SYS_futex, reinterpret_cast<uint32_t*>(w), FUTEX_WAIT_PRIVATE, seen, tp, nullptr, 0);
+    return r != 0 && errno == ETIMEDOUT;
+}
+void futex_wake_epoch(std::atomic<uint32_t>* w, int n = INT_MAX) {
+    syscall(SYS_futex, reinterpret_cast<uint32_t*>(w), FUTEX_WAKE_PRIVATE, n, nullptr, nullptr, 0);
+}
+#endif
+int64_t env_us_ns(const char* name, int64_t def_us) {
+    const char* e = std::getenv(name);
+    return (e != nullptr && *e != '\0' ? (int64_t) (std::max)(0, std::atoi(e)) : def_us) * 1000;
+}
+// STRATA_POOL_STATS: layers and windows (host thread only)
+std::atomic<bool> g_pool_stats{false};
+int64_t g_st_layers = 0, g_st_layers_cpu = 0, g_st_windows = 0, g_st_windows_cpu = 0, g_st_jobs = 0;
+int64_t g_st_last_layer = -1;
+bool g_st_window_cpu = false;
 // CBA: one plain global, written by the constructor and destructor of the pool that owns it; fine while pools are
 // built and destroyed on one thread (generate's measure pools, then the main one), an atomic owner if that changes.
 NumaSplitPlan g_numa_plan;
 const ExpertPool* g_numa_owner = nullptr;
+// STRATA_POOL_WAIT=pred: the newest pool in mode 3, which note_layer feeds (the expert source's pool; built last)
+std::atomic<ExpertPool*> g_pred_pool{nullptr};
 }  // namespace
+
+// STRATA_POOL_WAIT=pred: per layer index, the gap from the host finishing the previous layer to this layer's note
+// (just before its publish), over the last kW windows.  Host thread only.
+struct ExpertPool::PredState {
+    static constexpr int kL = 256, kW = 4;
+    int64_t g[kL][kW] = {};
+    int n[kL] = {};
+    int wi[kL] = {};
+    int64_t t_end = 0;       // when the host finished the previous layer (0: not known)
+    int64_t layer = -1;      // the layer being run
+    int64_t max_layer = -1;  // the highest layer index seen (the next after it is layer 0)
+};
+
+void ExpertPool::pred_note(int64_t layer, int cpu_jobs) {
+    PredState& p = *pred_;
+    const int64_t t = now_ns();
+    if (layer >= 0 && layer < PredState::kL) {
+        // a gap far beyond a decode layer (a request boundary, prefill) is not learnt from
+        if (p.t_end != 0 && t - p.t_end < 5000000) {
+            p.g[layer][p.wi[layer]] = t - p.t_end;
+            p.wi[layer] = (p.wi[layer] + 1) % PredState::kW;
+            if (p.n[layer] < PredState::kW) ++p.n[layer];
+        }
+        if (layer > p.max_layer) p.max_layer = layer;
+    }
+    p.layer = layer;
+    if (cpu_jobs == 0) pred_post(t);   // no publish for this layer: the next one is the target, from now
+}
+
+void ExpertPool::pred_post(int64_t t_end) {
+    PredState& p = *pred_;
+    p.t_end = t_end;
+    int64_t l = p.layer + 1;
+    if (l > p.max_layer || l < 0 || l >= PredState::kL) l = 0;
+    int64_t w = t_end;   // no prediction yet: due now (the workers spin pred_spin, then block)
+    if (p.n[l] > 0) {
+        int64_t g = p.g[l][0];
+        for (int i = 1; i < p.n[l]; ++i) g = (std::min)(g, p.g[l][i]);
+        w = t_end + g - pred_margin_ns_;
+    }
+    wake_at_ns_.store(w, std::memory_order_relaxed);
+    wake_ep_.store(epoch_.load(std::memory_order_relaxed), std::memory_order_release);
+}
 
 const NumaSplitPlan& active_numa_split() { return g_numa_plan; }
 
@@ -740,6 +822,90 @@ void ExpertPool::diag(std::FILE* f) const {
     std::fprintf(f, " for %lld ms\n", (long long) (now_ms() - hstate_ms_.load()));
 }
 
+// STRATA_POOL_STATS: samples in 0.1 us units, reset after each line
+struct ExpertPool::PoolStats {
+    std::vector<int32_t> gap, first, last, phase;
+    int64_t phases = 0, tasks = 0, present = 0, absent = 0, sleepers = 0, gap_sum_ns = 0;
+    int64_t t_end = 0;          // the previous phase's end (steady ns)
+    int64_t t_line = 0;         // the previous line
+    uint64_t blocks = 0, naps = 0, nap_timeouts = 0;   // the workers' totals at the previous line
+};
+
+void ExpertPool::note_layer(int64_t layer, int cpu_jobs) {
+    if (ExpertPool* pp = g_pred_pool.load(std::memory_order_relaxed)) pp->pred_note(layer, cpu_jobs);
+    if (!g_pool_stats.load(std::memory_order_relaxed)) return;
+    if (layer <= g_st_last_layer) {   // a new window began
+        ++g_st_windows;
+        if (g_st_window_cpu) ++g_st_windows_cpu;
+        g_st_window_cpu = false;
+    }
+    g_st_last_layer = layer;
+    ++g_st_layers;
+    g_st_jobs += cpu_jobs;
+    if (cpu_jobs > 0) { ++g_st_layers_cpu; g_st_window_cpu = true; }
+}
+
+void ExpertPool::stats_phase(uint32_t e, int64_t t_pub, int64_t t_done, int tasks, uint32_t sleepers_at_pub) {
+    PoolStats& s = *pstat_;
+    auto q = [](int64_t ns) { return (int32_t) (std::min)((int64_t) INT32_MAX, ns / 100); };
+    if (s.t_end != 0) {
+        s.gap.push_back(q(t_pub - s.t_end));
+        s.gap_sum_ns += t_pub - s.t_end;
+    }
+    int64_t lo = INT64_MAX, hi = INT64_MIN;
+    for (int i = 0; i < n_; ++i) {
+        if (wstat_[(size_t) i].wake_ep.load(std::memory_order_relaxed) != e) { ++s.absent; continue; }
+        const int64_t w = wstat_[(size_t) i].wake_ns.load(std::memory_order_relaxed) - t_pub;
+        lo = (std::min)(lo, w);
+        hi = (std::max)(hi, w);
+        ++s.present;
+    }
+    if (lo != INT64_MAX) { s.first.push_back(q((std::max)((int64_t) 0, lo))); s.last.push_back(q((std::max)((int64_t) 0, hi))); }
+    s.phase.push_back(q(t_done - t_pub));
+    ++s.phases;
+    s.tasks += tasks;
+    s.sleepers += sleepers_at_pub;
+    const int64_t now = now_ns();
+    s.t_end = now;
+    if (s.t_line == 0) s.t_line = now;
+    if (now - s.t_line < 5000000000LL) return;
+    auto pct = [](std::vector<int32_t>& v, double p) -> double {
+        if (v.empty()) return -1;
+        const size_t k = (size_t) (p * (double) (v.size() - 1));
+        std::nth_element(v.begin(), v.begin() + (std::ptrdiff_t) k, v.end());
+        return v[k] / 10.0;
+    };
+    uint64_t b = 0, nps = 0, nto = 0;
+    for (int i = 0; i < n_; ++i) {
+        b += wstat_[(size_t) i].blocks.load(std::memory_order_relaxed);
+        nps += wstat_[(size_t) i].naps.load(std::memory_order_relaxed);
+        nto += wstat_[(size_t) i].nap_timeouts.load(std::memory_order_relaxed);
+    }
+    const double secs = (double) (now - s.t_line) / 1e9;
+    const long long ph = (long long) s.phases;
+    std::fprintf(stderr,
+                 "strata pool stats: %.1f s, wait mode %d, %lld phases (%.0f/s), %.1f tasks, layers %lld (with CPU work %lld), "
+                 "windows %lld (with CPU work %lld), CPU experts/layer %.2f; gap us p10 %.1f p50 %.1f p90 %.1f p99 %.1f "
+                 "(idle between phases %.0f %%); first worker start us p50 %.1f p90 %.1f p99 %.1f; last worker start us "
+                 "p50 %.1f p90 %.1f p99 %.1f; workers present %.1f of %d; phase us p50 %.1f p90 %.1f; sleepers at publish "
+                 "%.1f; futex blocks %llu, naps %llu (timed out %llu)\n",
+                 secs, wait_mode_, ph, (double) ph / secs, ph ? (double) s.tasks / (double) ph : 0.0,
+                 (long long) g_st_layers, (long long) g_st_layers_cpu, (long long) g_st_windows, (long long) g_st_windows_cpu,
+                 g_st_layers ? (double) g_st_jobs / (double) g_st_layers : 0.0,
+                 pct(s.gap, 0.10), pct(s.gap, 0.50), pct(s.gap, 0.90), pct(s.gap, 0.99), 100.0 * (double) s.gap_sum_ns / (secs * 1e9),
+                 pct(s.first, 0.50), pct(s.first, 0.90), pct(s.first, 0.99), pct(s.last, 0.50), pct(s.last, 0.90),
+                 pct(s.last, 0.99), ph ? (double) s.present / (double) ph : 0.0, n_, pct(s.phase, 0.50), pct(s.phase, 0.90),
+                 ph ? (double) s.sleepers / (double) ph : 0.0, (unsigned long long) (b - s.blocks),
+                 (unsigned long long) (nps - s.naps), (unsigned long long) (nto - s.nap_timeouts));
+    std::fflush(stderr);
+    s.blocks = b; s.naps = nps; s.nap_timeouts = nto;
+    s.gap.clear(); s.first.clear(); s.last.clear(); s.phase.clear();
+    s.phases = s.tasks = s.present = s.absent = s.sleepers = s.gap_sum_ns = 0;
+    g_st_layers = g_st_layers_cpu = g_st_windows = g_st_windows_cpu = g_st_jobs = 0;
+    s.t_line = now_ns();
+    s.t_end = s.t_line;   // the print is not a gap
+}
+
 ExpertPool::ExpertPool(int n_workers, bool pin, bool host_works, PoolAffinity affinity, int tasks)
     : tasks_(tasks), host_works_(host_works), affinity_(affinity), topo_(detect_cpu_topology(true, affinity)) {
     if (tasks < 0 || tasks > kMaxTasks) throw std::invalid_argument("expert pool tasks must be in 0..4096");
@@ -747,6 +913,41 @@ ExpertPool::ExpertPool(int n_workers, bool pin, bool host_works, PoolAffinity af
     layout_ = logical_cpu_layout();   // now, before anything pins the caller (Linux reads the calling thread's allowed CPUs)
     if (const char* e = std::getenv("STRATA_POOL_SPIN_US"))   // a test knob; see kSpinBeforeSleep
         spin_before_sleep_ = std::chrono::microseconds((std::max)(0, std::atoi(e)));
+#if defined(__linux__)
+    if (const char* e = std::getenv("STRATA_POOL_WAIT"); e != nullptr && *e != '\0') {
+        wait_mode_ = std::strcmp(e, "futex") == 0 ? 1 : std::strcmp(e, "nap") == 0 ? 2 : std::strcmp(e, "pred") == 0 ? 3 : 0;
+        if (wait_mode_ == 0 && std::strcmp(e, "spin") != 0)
+            std::fprintf(stderr, "strata cpu pool: STRATA_POOL_WAIT=%s is not spin, futex, nap or pred; the workers spin as before\n", e);
+    }
+    if (wait_mode_ != 0) {
+        spin_ns_ = env_us_ns("STRATA_POOL_SPIN_US", 50);
+        nap_margin_ns_ = env_us_ns("STRATA_POOL_NAP_MARGIN_US", 60);
+        nap_after_ns_ = env_us_ns("STRATA_POOL_NAP_AFTER_US", 300);
+        pred_margin_ns_ = env_us_ns("STRATA_POOL_PRED_MARGIN_US", 30);
+        pred_spin_ns_ = env_us_ns("STRATA_POOL_PRED_SPIN_US", 200);
+        pred_minnap_ns_ = env_us_ns("STRATA_POOL_PRED_MINNAP_US", 15);
+        wake_fanout_ = (int) (env_us_ns("STRATA_POOL_WAKE_FANOUT", 0) / 1000);
+        if (wait_mode_ == 3) pred_.reset(new PredState);
+        static std::atomic<bool> told{false};
+        if (!told.exchange(true)) {
+            if (wait_mode_ == 3)
+                std::fprintf(stderr, "strata cpu pool: wait mode pred: inside a layer spin %lld us then a futex wait; between "
+                                     "layers a nap to the host's per-layer prediction - %lld us, a spin of at most %lld us, then "
+                                     "a futex wait; wake fan-out %d\n", (long long) (spin_ns_ / 1000),
+                             (long long) (pred_margin_ns_ / 1000), (long long) (pred_spin_ns_ / 1000), wake_fanout_);
+            else
+                std::fprintf(stderr, "strata cpu pool: wait mode %s: spin %lld us, then %sa futex wait on the epoch; wake fan-out %d\n",
+                             wait_mode_ == 1 ? "futex" : "nap", (long long) (spin_ns_ / 1000),
+                             wait_mode_ == 2 ? "a nap to the predicted next layer (margin) and a short spin, then " : "",
+                             wake_fanout_);
+        }
+    }
+#endif
+    if (const char* e = std::getenv("STRATA_POOL_STATS"); e != nullptr && *e == '1') {
+        stats_ = true;
+        g_pool_stats.store(true);
+        pstat_.reset(new PoolStats);
+    }
     // STRATA_NUMA_SPLIT, read here for the worker count (the split itself is decided below, once the count is known).
     // 0.2.2: with 2 or more NUMA nodes and neither variable set the split is tried by itself, and STRATA_NUMA_POOL=0 turns that
     // off (numa_pool.hpp).  One node: pick_numa_pool says Unchanged and nothing below differs from the pool before the split.
@@ -848,6 +1049,7 @@ ExpertPool::ExpertPool(int n_workers, bool pin, bool host_works, PoolAffinity af
     scratch_.resize((size_t) n_);
     wstate_.reset(new std::atomic<int32_t>[(size_t) n_]);
     for (int i = 0; i < n_; ++i) wstate_[(size_t) i].store(kParked);
+    wstat_.reset(new WorkerStat[(size_t) n_]);
     hstate_ms_.store(now_ms());
     g_diag_pool.store(this);
     strata::core::diag_pool_fn().store(&diag_active_pool);
@@ -933,6 +1135,7 @@ ExpertPool::ExpertPool(int n_workers, bool pin, bool host_works, PoolAffinity af
             worker(i);
         });
     }
+    if (wait_mode_ == 3) g_pred_pool.store(this);
 }
 
 std::string ExpertPool::placement_line() const {
@@ -948,6 +1151,8 @@ std::string ExpertPool::placement_line() const {
 ExpertPool::~ExpertPool() {
     const ExpertPool* self = this;
     g_diag_pool.compare_exchange_strong(self, nullptr);
+    ExpertPool* me = this;
+    g_pred_pool.compare_exchange_strong(me, nullptr);
     if (g_numa_owner == this) {
         g_numa_plan = NumaSplitPlan{};
         g_numa_owner = nullptr;
@@ -964,12 +1169,119 @@ void ExpertPool::publish() {
     // order at least one of them sees the other's write - the worker sees the new epoch and does not sleep, or
     // the host sees the sleeper and notifies under the mutex the worker holds until it is inside `wait`.
     // On x86 the fetch_add is a locked xadd either way, so this costs the token path nothing.
+    // STRATA_POOL_WAIT futex / nap: the same argument with the futex in place of the condition variable - a waiter
+    // does `sleepers_++`, then FUTEX_WAIT(epoch_, seen), which the kernel refuses if the epoch has moved.
+    if (wait_mode_ == 2 || stats_) last_pub_ns_.store(now_ns(), std::memory_order_relaxed);
     epoch_.fetch_add(1, std::memory_order_seq_cst);
     if (sleepers_.load(std::memory_order_seq_cst) != 0) {
+#if defined(__linux__)
+        if (wait_mode_ != 0) {
+            // fan-out: wake k and let each woken worker wake k more (wake_more); a stop wakes everyone
+            futex_wake_epoch(&epoch_, wake_fanout_ > 0 && !stop_.load(std::memory_order_relaxed) ? wake_fanout_ : INT_MAX);
+            return;
+        }
+#endif
         std::lock_guard<std::mutex> lk(sleep_mu_);
         sleep_cv_.notify_all();
     }
 }
+
+void ExpertPool::wake_more() {
+#if defined(__linux__)
+    if (wake_fanout_ > 0 && sleepers_.load(std::memory_order_seq_cst) != 0) futex_wake_epoch(&epoch_, wake_fanout_);
+#endif
+}
+
+#if defined(__linux__)
+// STRATA_POOL_WAIT futex (1) / nap (2): wait in the park until the epoch moves from `seen`.  `gaps` is the worker's own
+// ring of recent publish gaps (park entry to the next publish) long enough to nap in.  Returns true on stop.
+bool ExpertPool::park_futex(int id, uint32_t seen, int64_t* gaps, int& ngaps, int& gi) {
+    constexpr int kGaps = 8;
+    const int64_t t_park = now_ns();
+    auto moved = [&] { return epoch_.load(std::memory_order_acquire) != seen; };
+    auto spin_for = [&](int64_t t0, int64_t ns) {
+        uint32_t k = 0;
+        while (!moved()) {
+            if (stop_.load(std::memory_order_relaxed)) return;
+            strata_cpu_pause();
+            if ((++k & 63u) == 0 && now_ns() - t0 >= ns) return;
+        }
+    };
+    auto fwait = [&](int64_t rel_ns) -> bool {   // one futex wait, counted as a sleeper; true if it timed out
+        wstate_[(size_t) id].store(kSleeping, std::memory_order_relaxed);
+        sleepers_.fetch_add(1, std::memory_order_seq_cst);
+        bool to = false;
+        if (epoch_.load(std::memory_order_seq_cst) == seen && !stop_.load(std::memory_order_relaxed))
+            to = futex_wait_epoch(&epoch_, seen, rel_ns);
+        sleepers_.fetch_sub(1, std::memory_order_relaxed);
+        wstate_[(size_t) id].store(kParked, std::memory_order_relaxed);
+        if (wake_fanout_ > 0 && (moved() || stop_.load(std::memory_order_relaxed))) wake_more();
+        return to;
+    };
+    if (wait_mode_ == 3) {
+        // pred.  Until the host posts for this epoch the phase is still in flight (other threads run its tail): spin, as
+        // the default does, so an early finisher is never asleep when a phase follows within microseconds.  The post
+        // lands right after the phase's last task: inside a layer its time is "now" (spin spin_ns, then block); after a
+        // layer's last phase it is the predicted next publish - margin (nap to it, re-read after each nap since a layer
+        // without CPU work moves it later; then spin at most pred_spin past it, then block).
+        const int64_t win = soon_.load(std::memory_order_acquire) != 0 ? spin_ns_ : pred_spin_ns_;
+        for (;;) {
+            if (moved()) break;
+            if (stop_.load(std::memory_order_relaxed)) return true;
+            if (wake_ep_.load(std::memory_order_acquire) != seen) {   // no post yet: the phase is in flight
+                for (int i = 0; i < 32 && !moved(); ++i) strata_cpu_pause();
+                continue;
+            }
+            const int64_t now = now_ns();
+            const int64_t w = wake_at_ns_.load(std::memory_order_relaxed);
+            if (w - now > pred_minnap_ns_) {
+                const bool to = fwait(w - now);
+                if (stats_) {
+                    wstat_[(size_t) id].naps.fetch_add(1, std::memory_order_relaxed);
+                    if (to) wstat_[(size_t) id].nap_timeouts.fetch_add(1, std::memory_order_relaxed);
+                }
+                continue;
+            }
+            if (now - w < win) {   // the time has come: spin
+                for (int i = 0; i < 32 && !moved(); ++i) strata_cpu_pause();
+                continue;
+            }
+            (void) fwait(0);
+            if (stats_) wstat_[(size_t) id].blocks.fetch_add(1, std::memory_order_relaxed);
+        }
+        return stop_.load(std::memory_order_relaxed);
+    }
+    spin_for(t_park, spin_ns_);
+    if (!moved() && wait_mode_ == 2 && ngaps > 0) {
+        int64_t g = gaps[0];
+        for (int i = 1; i < ngaps; ++i) g = (std::min)(g, gaps[i]);
+        const int64_t rel = t_park + g - nap_margin_ns_ - now_ns();
+        if (rel > 5000) {
+            const bool to = fwait(rel);
+            if (stats_) {
+                wstat_[(size_t) id].naps.fetch_add(1, std::memory_order_relaxed);
+                if (to) wstat_[(size_t) id].nap_timeouts.fetch_add(1, std::memory_order_relaxed);
+            }
+            if (to) spin_for(now_ns(), nap_after_ns_);   // the publish is due: be spinning when it comes
+        }
+    }
+    while (!moved()) {
+        if (stop_.load(std::memory_order_relaxed)) return true;
+        (void) fwait(0);
+        if (stats_) wstat_[(size_t) id].blocks.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (wait_mode_ == 2) {
+        const int64_t gap = last_pub_ns_.load(std::memory_order_relaxed) - t_park;
+        // only gaps a nap could use; one far longer than the ring's (a request boundary) would not be learnt from anyway
+        if (gap > spin_ns_ + nap_margin_ns_ + 5000) {
+            gaps[gi] = gap;
+            gi = (gi + 1) % kGaps;
+            if (ngaps < kGaps) ++ngaps;
+        }
+    }
+    return stop_.load(std::memory_order_relaxed);
+}
+#endif
 
 void ExpertPool::worker(int id) {
     uint32_t seen = 0;
@@ -978,7 +1290,18 @@ void ExpertPool::worker(int id) {
     // `run()` - which waits for `parked_ == n_` before publishing - then deadlocks.  It deadlocks on the very
     // first call, which is the good case; a version that deadlocked on the second would be far worse.
     parked_of(id).fetch_add(1, std::memory_order_acq_rel);
+#if defined(__linux__)
+    int64_t gaps[8] = {0};
+    int ngaps = 0, gi = 0;
+    if (wait_mode_ >= 2) (void) prctl(PR_SET_TIMERSLACK, 1000UL, 0, 0, 0);   // a nap's timeout within ~1 us, not the 50 us default
+#endif
     for (;;) {
+#if defined(__linux__)
+        if (wait_mode_ != 0) {
+            if (park_futex(id, seen, gaps, ngaps, gi)) return;
+        } else
+#endif
+        {
         // Park: wait for work.  `_mm_pause` rather than a bare spin because it yields the pipeline to the
         // sibling hyperthread; `epoch_` is bumped once per LAYER, not once per expert, so most of these
         // iterations are spent here with nothing to do.
@@ -1023,9 +1346,14 @@ void ExpertPool::worker(int id) {
             sleepers_.fetch_sub(1, std::memory_order_relaxed);
             wstate_[(size_t) id].store(kParked, std::memory_order_relaxed);
         }
+        }
         if (stop_.load(std::memory_order_acquire)) return;
         // acquire: the batch this epoch published (`head`, and the description before it) is visible from here
         seen = epoch_.load(std::memory_order_acquire);
+        if (stats_) {
+            wstat_[(size_t) id].wake_ns.store(now_ns(), std::memory_order_relaxed);
+            wstat_[(size_t) id].wake_ep.store(seen, std::memory_order_relaxed);
+        }
         parked_of(id).fetch_sub(1, std::memory_order_acq_rel);   // leaving the park
 
         // Drain: one claim per iteration, so a slow worker takes fewer experts and a fast one takes more.
@@ -1287,10 +1615,25 @@ void ExpertPool::run_phase(int mode, int n_tasks) {
     wait_parked("before a phase");
     mode_ = mode;
     njobs_ = n_tasks;
+    const uint32_t sl = stats_ ? sleepers_.load(std::memory_order_relaxed) : 0;
+    // pred: phases 1 / 3 / 5 (gate/up rows) are followed by this layer's down rows within microseconds
+    const bool soon = wait_mode_ == 3 && ((mode & 1) != 0 || pred_more_);
+    if (wait_mode_ == 3) soon_.store(soon ? 1u : 0u, std::memory_order_relaxed);   // the publish's release orders it
     const uint32_t e = begin_batch(n_tasks);
     if (host_works_) drain(-1, host_scratch_, e);
     wait_done(n_tasks);
+    if (wait_mode_ == 3) {   // the phase is done: tell the parking workers when the next publish comes
+        const int64_t t = now_ns();
+        if (soon) {   // this layer's next phase, within microseconds
+            wake_at_ns_.store(t, std::memory_order_relaxed);
+            wake_ep_.store(e, std::memory_order_release);
+        } else {
+            pred_post(t);
+        }
+    }
+    const int64_t t_done = stats_ ? now_ns() : 0;
     wait_parked("after a phase");
+    if (stats_) stats_phase(e, last_pub_ns_.load(std::memory_order_relaxed), t_done, n_tasks, sl);
     // Each slice's stamp is stored after its last `done` increment, so `wait_done` can return before it lands; the
     // thread that stored it has parked again since (it left the park to claim), and that re-park is what the wait
     // above acquired.  So the stamps are read here, not in `wait_done`.
@@ -1383,7 +1726,9 @@ void ExpertPool::run_split_multi_native(const NativeFmt& f, ExpertJobMulti* jobs
         const auto c = std::chrono::steady_clock::now();
         mrows_ = (int64_t) nb * f.n_embd;
         mtasks_ = numa_n_ > 0 ? numa_plan_phase((int) f.n_embd, nb) : phase_tasks(mrows_);
+        pred_more_ = b0 + kMaxSplitMulti < n;   // pred: another batch of this layer follows at once
         run_phase(6, mtasks_);
+        pred_more_ = false;
         const auto d = std::chrono::steady_clock::now();
         ms_multi_gu += std::chrono::duration<double, std::milli>(b - a).count();
         ms_multi_q += std::chrono::duration<double, std::milli>(c - b).count();
@@ -1411,6 +1756,7 @@ void ExpertPool::run(ExpertJob* jobs, int n) {
     jobs_ = jobs;
     njobs_ = n;
     mode_ = 0;
+    if (wait_mode_ == 3) soon_.store(0, std::memory_order_relaxed);
     const uint32_t e = begin_batch(n);   // done, then head (release), then the epoch: the batch is described first
 
     // ---- **THE HOST DRAINS TOO (R2.2), INSTEAD OF SPINNING ON `done_`.**
@@ -1440,6 +1786,7 @@ void ExpertPool::run(ExpertJob* jobs, int n) {
     }
 
     wait_done(n);
+    if (wait_mode_ == 3) pred_post(now_ns());
     // And park again, so the next `run` starts from a known state.  See the header for why `done` alone is
     // not enough.
     const auto t_c = std::chrono::steady_clock::now();

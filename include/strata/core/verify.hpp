@@ -27,6 +27,7 @@
 #include "strata/core/layer.hpp"
 #include "strata/core/session.hpp"
 #include "strata/kernels/sampler.hpp"
+#include "strata/kernels/tp_allreduce.hpp"
 #include "strata/kernels/window_limits.hpp"
 
 #include <cuda_runtime.h>
@@ -203,6 +204,34 @@ public:
     /// The next stage: `run` and `commit` continue into it (its pool calls get `next_user`); sampling settings
     /// and `final_R` are the last stage's.
     void set_next(Verifier* next, void* next_user) { next_ = next; next_user_ = next_user; }
+    /// --tensor-parallel N (tp_slice.hpp): this verifier is member `member` of the all-reduce group `ar`; its weights and
+    /// geometry are its card's slices, and its window all-reduces the mixer's and the MoE's partial outputs (two calls a
+    /// layer) and computes the shared expert only on layers l % tp == member.  The leader (member 0) drives `peer` (member
+    /// 1, tp 2) inside run / commit / wait_commit: both windows are launched, the host serves both cards' CPU experts
+    /// layer by layer (the leader's pool with `peer_user` for the peer: its own Drive), and the picks are the leader's.
+    /// Set before init on both.
+    void set_tp(strata::kernels::TpArGroup* ar, int member, int tp, Verifier* peer, void* peer_user) {
+        tp_ar_ = ar; tp_member_ = member; tp_n_ = tp; tp_peer_ = peer; tp_peer_user_ = peer_user;
+    }
+    int tp_member() const { return tp_member_; }
+    /// --tensor-parallel, experts owned by residency (cycle 3; before init; STRATA_TP_DEVPLAN=0: off, the host plans
+    /// every layer of both cards as in cycle 2).  `gpu_only` (card 1, which owns exactly its VRAM experts): every layer
+    /// is planned on the device and the window raises no doorbell at all (the zero-doorbell graph, the experts it does
+    /// not hold dropped).  `peer_res` (card 0; the peer's host residency table [layer][expert], fixed): a layer whose
+    /// routed experts are all in one card's VRAM or the other's is planned on the device, the window does not wait for
+    /// the host there, and the host skips it; a layer with a CPU expert is the host's as before.
+    void set_tp_plan(bool gpu_only, const int32_t* peer_res) { tp_gpu_only_req_ = gpu_only; tp_peer_res_h_ = peer_res; }
+    /// Layer-steps of the decode windows (T == 1) the device planned / all of them, since the last call (the leader's).
+    void tp_devplan_counts(int64_t& planned, int64_t& steps) { planned = tpd_planned_; steps = tpd_steps_; tpd_planned_ = tpd_steps_ = 0; }
+    /// STRATA_TP_TIMING=1 (read once; off by default, no stamps recorded when off): the decode windows' (T == 1) timing
+    /// of both cards since the last call - per card the GPU time by class (GDN projections / recurrence, attention,
+    /// out-projection, hc read + router, shared expert, VRAM experts, waiting for the CPU experts, combine), the two
+    /// all-reduces split into transfer / wait for the peer / sum, the host's per-layer wait and CPU-expert time, the host
+    /// time around the launches, and which card reached each layer's MoE all-reduce last.  One summary line per card;
+    /// STRATA_TP_TIMING=2 adds the per-layer table.  Empty when off or nothing was timed.  Resets.  (On the leader.)
+    std::string tp_timing_report();
+    std::string tp_timing_lite_report();   ///< STRATA_TP_TIMING=3 (host clocks only); called by tp_timing_report
+    static int tp_timing();
     /// floats per token in a hand-off buffer
     static int64_t handoff_floats(const ModelGeometry& g) { return (int64_t) g.hc * g.n_embd + g.n_embd + g.hc; }
 
@@ -272,12 +301,22 @@ public:
     /// for its doorbell, #31); batch_poll then makes no CUDA call before every layer is served.
     int batch_serve(PoolMultiFn pool, void* user);
     void set_external_serve(bool on) { ext_serve_.store(on, std::memory_order_release); }
-    /// A slot's sampling (temperature / top_p / top_k / min_p / seed; penalties are not applied in batch windows):
-    /// its row is drawn again on the last stage with Philox(seed, position), as a solo window draws it.  Greedy by
-    /// default.  Set on the first stage, it reaches the last.
+    /// A slot's sampling (temperature / top_p / top_k / min_p / seed, and the penalties when set_batch_history gave
+    /// the window's histories): its row is drawn again on the last stage with Philox(seed, position), as a solo window
+    /// draws it.  Greedy by default.  Set on the first stage, it reaches the last.
     void set_slot_sampling(int slot, const strata::kernels::SamplerParams& sp) {
         if (slot >= 0 && slot < (int) slot_sp_.size()) slot_sp_[(size_t) slot] = sp;
         if (next_) next_->set_slot_sampling(slot, sp);
+    }
+    /// The penalty histories of the NEXT batch windows (device memory on the head's card): row t of the window at
+    /// `rows + t * stride`, the last `stride` tokens row t's pick follows (`strata::kernels::penalty_rows` of its
+    /// slot's consumed tokens and the slot's rows before it), -1 in front.  A row whose slot has penalty_last_n > 0
+    /// is sampled with the last min(penalty_last_n, stride) of them - the solo window's call for that position, so
+    /// batched == solo with penalties on.  Null: penalties are skipped in batch windows (the pipelined groups' path).
+    void set_batch_history(const int32_t* rows, int stride) {
+        bhist_d_ = rows;
+        bhist_stride_ = rows != nullptr ? stride : 0;
+        if (next_) next_->set_batch_history(rows, stride);
     }
     const int32_t* batch_out() const { return b_out_; }
     bool last_stage() const { return g_ != nullptr && le_ == g_->n_layers; }
@@ -286,6 +325,9 @@ public:
     /// the session from another stream or the host afterwards (a new request, a checkpoint, a snapshot, the prompt
     /// path, the end of a run) calls wait_commit() first.  STRATA_COMMIT_SYNC=1 keeps the wait.
     static void set_commit_async(bool on);
+    /// STRATA_BATCH_SELF_COMMIT's default when the variable is unset (one-row-per-slot batch windows keep their rows in the
+    /// window graph, no commit graph after it).  Call before any batch graph is captured.
+    static void default_batch_self_commit(bool on);
     /// Waits for the last commit graph when commit() did not (an event recorded after it, not the whole device);
     /// false with `err` when it failed.  Free when nothing is pending.
     bool wait_commit(std::string& err);
@@ -442,7 +484,9 @@ private:
     std::chrono::steady_clock::time_point ext_checked_{};   ///< batch_poll's last check with external serving
     int32_t b_out_[strata::kernels::kWindowMaxT] = {};
     std::vector<strata::kernels::SamplerParams> slot_sp_;
-    bool sample_rows(int S, std::string& err);   ///< the sampled slots' rows of the last batch window
+    const int32_t* bhist_d_ = nullptr;   ///< set_batch_history: the batch window rows' penalty histories (device)
+    int bhist_stride_ = 0;
+    bool sample_rows(int S, std::string& err);   ///< the sampled or penalized slots' rows of the last batch window
     int32_t* h_commitb_ = nullptr; int32_t* m_commitb_ = nullptr;   // per slot [1, 0, pos, -1 ..], stride 2 + max_t
     int32_t* commitb_ = nullptr;
     float* tail_snap_b_ = nullptr;         ///< per (slot, QSA layer) indexer tail snapshot
@@ -555,6 +599,46 @@ private:
     bool chain_overlap() const;          ///< this stage hands off through a flag to a next stage that waits on it
     Verifier* next_ = nullptr;
     void* next_user_ = nullptr;
+    // --tensor-parallel (set_tp)
+    strata::kernels::TpArGroup* tp_ar_ = nullptr;
+    int tp_member_ = 0, tp_n_ = 1;
+    Verifier* tp_peer_ = nullptr;
+    void* tp_peer_user_ = nullptr;
+    uint32_t tp_ple_rows_[64 * 8] = {};   ///< the peer's PLE rows of its window (tp_launch), kVerifyMaxT * PLE_N_HEADS at most
+    bool tp_do_ple_ = false;
+    // cycle 3 (set_tp_plan)
+    bool tp_gpu_only_req_ = false;        ///< card 1 asked for the device-only plan
+    bool tp_gpu_only_ = false;            ///< ... and has it: all_resident_ forced, tp_resident_plan drops the peer's experts
+    const int32_t* tp_peer_res_h_ = nullptr;
+    int32_t* tp_peer_res_d_ = nullptr;    ///< card 0: the peer's residency table on this device
+    bool tp_devplan_ = false;             ///< card 0: device_plan_ with the tensor-parallel plan / doorbell / copies
+    static constexpr int kTpMarks = 256;
+    uint32_t* h_skipm_ = nullptr;         ///< card 0: [step] = ring when the device planned the step (mapped; zeroed per window)
+    uint32_t* m_skipm_ = nullptr;
+    int64_t tpd_planned_ = 0, tpd_steps_ = 0;
+    // STRATA_TP_TIMING (tp_timing_report): the all-reduce stamps [layer][2][4] (device, host copy), and the sums
+    static constexpr int kTpCls = 10;
+    unsigned long long* tp_ars_ = nullptr;
+    std::vector<unsigned long long> tp_ars_h_;
+    std::vector<double> tpt_cls_;     ///< [layer][kTpCls] ns
+    std::vector<double> tpt_ar_;      ///< [layer][2][3] ns: transfer, wait for the peer, sum
+    std::vector<double> tpt_hw_, tpt_hp_;   ///< [layer] ms: the host's wait for the ring, its CPU-expert work
+    std::vector<int64_t> tpt_last_;   ///< [layer] windows in which this card reached the MoE all-reduce last
+    double tpt_win_ns_ = 0, tpt_pre_ms_ = 0, tpt_between_ms_ = 0;
+    int64_t tpt_windows_ = 0;
+    bool tpt_on_ = false;             ///< STRATA_TP_TIMING > 0 on a tensor-parallel verifier
+    std::vector<float> tpt_wall_;     ///< the leader's decode windows' wall ms (capture to both synced)
+    std::chrono::steady_clock::time_point tpt_synced_{};
+    bool tpt_have_sync_ = false;
+    void tp_collect();                ///< one decode window's stamps into the sums (after the window's sync)
+    /// the peer: stage the window, its PLE rows, launch its graph (captured by the leader)
+    bool tp_launch(int T, const int32_t* tokens, int64_t pos0, std::string& err);
+    /// one step k of a window's host loop: wait until layer-group k rang, serve its CPU experts, raise its flags
+    bool tp_serve(int64_t k, int T, PoolMultiFn pool, void* user, const uint32_t* ple_rows, std::string& err, int groups = 0);
+    /// --tensor-parallel (cycle 3): run_slot_rows after the leader's batch launch - the peer's launch, both cards' layers
+    /// served from this thread, both synced, the leader's picks.
+    bool tp_batch_rest(const int* rows, int S, const int32_t* tokens, const int64_t* pos, PoolMultiFn pool, void* user,
+                       int32_t* out, std::string& err);
     bool ple_stage() const { return lb_ <= 1 && 1 < le_; }   ///< holds layer 1, where the PLE block runs
     void stage_inputs(int T, const int32_t* tokens, int64_t pos0);
     bool staged_ = false;

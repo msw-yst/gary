@@ -1,6 +1,10 @@
 #include "strata/core/remote_experts.hpp"
 #include "strata/core/device.hpp"   // primary_device() (STRATA_PRIMARY_DEVICE)
 #include "strata/core/remote_expert_opt.hpp"
+#if defined(STRATA_USE_HIP)
+#include "strata/core/remote_helper_fast.hpp"   // STRATA_HELPER_FAST (HIP builds only)
+#endif
+#include "strata/platform/aux_cpus.hpp"           // STRATA_HELPER_THREADS: the helper threads are placed, not swept
 
 #include "strata/kernels/cpu/expert_layout.hpp"
 #include "strata/kernels/cpu/hadamard.hpp"
@@ -10,10 +14,18 @@
 #include "strata/kernels/window_limits.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
+#if defined(__linux__)
+#include <sched.h>
+#endif
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
 
 namespace strata::core {
 namespace {
@@ -64,6 +76,17 @@ bool check(cudaError_t result, const char* what, std::string& err, int device) {
     err = "CUDA" + std::to_string(device) + " experts: " + what + ": " + cudaGetErrorString(result);
     return false;
 }
+
+inline void cpu_relax() {
+#if defined(__x86_64__) || defined(_M_X64)
+    _mm_pause();
+#endif
+}
+
+int env_int(const char* name, int dflt) {
+    const char* v = std::getenv(name);
+    return v != nullptr && v[0] != '\0' ? std::atoi(v) : dflt;
+}
 } // namespace
 
 RemoteExperts::~RemoteExperts() { close(); }
@@ -98,10 +121,14 @@ bool RemoteExperts::preflight(int device, double& free_gib, std::string& err) {
 }
 
 void RemoteExperts::close() {
+    stop_worker();
     if (device_ < 0) return;
     DeviceScope scope(device_);
     if (scope.ok) {
         if (stream_) cudaStreamSynchronize(stream_);
+        for (auto& kv : graphs_) if (kv.second.second) cudaGraphExecDestroy(kv.second.second);
+        if (h_flag_) cudaFreeHost(h_flag_);
+        if (d_seq_) cudaFree(d_seq_);
         if (read_stream_) cudaStreamSynchronize(read_stream_);
         cache_.close();
         if (d_x_) cudaFree(d_x_);
@@ -116,8 +143,20 @@ void RemoteExperts::close() {
         if (h_meta_) cudaFreeHost(h_meta_);
         if (stream_) cudaStreamDestroy(stream_);
         if (read_stream_) cudaStreamDestroy(read_stream_);
+        for (cudaEvent_t& e : ev_) if (e) cudaEventDestroy(e);
     }
+    for (cudaEvent_t& e : ev_) e = nullptr;
+    graphs_.clear();
+    fmt_keys_.clear();
+    graph_ = false;
+    fast_ = 0;
+    h_flag_ = z_flag_ = d_seq_ = nullptr;
+    seq_ = 0;
+    z_meta_ = nullptr;
+    meta_copy_ = 0;
+    timing_ = false;
     device_ = -1;
+    pending_ = false;
     stream_ = nullptr;
     read_stream_ = nullptr;
     h_x_ = h_out_ = d_x_ = d_out_ = nullptr;
@@ -157,10 +196,12 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
     std::vector<std::pair<int32_t, int32_t>> selected;
     selected.reserve((size_t) std::min<int64_t>(slots, layers * experts));
     std::vector<uint8_t> picked(claimed.size(), 0);
+    skipped_held_ = 0;
     for (const auto& pair : ranked) {
         if (pair.first < 0 || pair.first >= layers || pair.second < 0 || pair.second >= experts) continue;
         const size_t index = (size_t) pair.first * (size_t) experts + (size_t) pair.second;
-        if (primary.slot_of(pair.first, pair.second) < 0 && !claimed[index] && !picked[index]) {
+        if (primary.slot_of(pair.first, pair.second) >= 0 || claimed[index]) { ++skipped_held_; continue; }
+        if (!picked[index]) {
             const uint64_t bytes = lay.native ? (lay.blob_bytes(pair.first) + 255) / 256 * 256 : lay.max_blob;
             if (auto_size && needed + bytes + (512ull << 20) > free_bytes) break;
             selected.push_back(pair);
@@ -207,12 +248,21 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
     const size_t scratch = std::max<size_t>(
         (size_t) strata::kernels::moe_hit_grouped_scratch_bytes(CAP, H, FF),
         strata::kernels::native_expert_scratch_bytes(CAP, FF));
-    const size_t meta_bytes = sizeof(RemoteMeta) + (remote_opt_ ? remote_opt_->metadata_bytes() : 0);
+    size_t meta_bytes = sizeof(RemoteMeta) + (remote_opt_ ? remote_opt_->metadata_bytes() : 0);
+    // STRATA_HELPER_FAST (default 0 = the copy / zero-copy transport below, unchanged): see remote_experts.hpp.  HIP
+    // builds only, not with --remote-expert-opt (its reduce returns through its own buffers).  The metadata staging is
+    // then mapped (coherent, strata_hip.h) and a 16-byte multiple, the fetch kernel's word.
+    fast_ = 0;
+#if defined(STRATA_USE_HIP)
+    fast_ = remote_opt_ == nullptr ? std::clamp(env_int("STRATA_HELPER_FAST", 0), 0, 2) : 0;
+#endif
+    if (fast_) meta_bytes = (meta_bytes + 15) / 16 * 16;
     const bool allocated =
         check(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking), "stream", err, device) &&
         check(cudaHostAlloc((void**) &h_x_, (size_t) CAP * H * sizeof(float), cudaHostAllocPortable | cudaHostAllocMapped), "input staging", err, device) &&
         check(cudaHostAlloc((void**) &h_out_, (size_t) CAP * H * sizeof(float), cudaHostAllocPortable | cudaHostAllocMapped), "result staging", err, device) &&
-        check(cudaHostAlloc(&h_meta_, meta_bytes, cudaHostAllocPortable), "metadata staging", err, device) &&
+        check(cudaHostAlloc(&h_meta_, meta_bytes, cudaHostAllocPortable | (fast_ ? cudaHostAllocMapped : 0u)),
+              "metadata staging", err, device) &&
         check(cudaMalloc((void**) &d_x_, (size_t) CAP * H * sizeof(float)), "input", err, device) &&
         check(cudaMalloc((void**) &d_out_, (size_t) CAP * H * sizeof(float)), "result", err, device) &&
         check(cudaMalloc((void**) &d_q8_, (size_t) CAP * (H / 32) * 36), "activation", err, device) &&
@@ -226,6 +276,14 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
         close();
         return false;
     }
+    if (const char* ht = std::getenv("STRATA_HELPER_TIMING"); ht != nullptr && std::atoi(ht) != 0) {
+        timing_ = true;
+        for (cudaEvent_t& e : ev_)
+            if (cudaEventCreate(&e) != cudaSuccess) { timing_ = false; break; }
+        cudaGetLastError();
+    }
+    ms_gpu_in_ = ms_gpu_kernels_ = ms_gpu_out_ = ms_round_trip_ = 0;
+    groups_launched_ = 0;
     if (strata::kernels::cpu::hadamard_spec().any()) {   // APR: this device's copies of the sign vectors
         d_sx_ = strata::kernels::hadamard_device_signs(strata::kernels::cpu::hadamard_signs((int) H), (int) H);
         d_sh_ = strata::kernels::hadamard_device_signs(strata::kernels::cpu::hadamard_signs((int) FF), (int) FF);
@@ -252,6 +310,30 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
                  cudaHostGetDevicePointer((void**) &z_x_, h_x_, 0) == cudaSuccess &&
                  cudaHostGetDevicePointer((void**) &z_out_, h_out_, 0) == cudaSuccess;
     cudaGetLastError();
+    if (fast_) {   // STRATA_HELPER_FAST: the device views of the staging and the flag word; any failure: the copies
+        zero_copy_ = false;   // (the fast path reads x through the fetch kernel, never across PCIe from the expert kernels)
+        const bool ok_f =
+            cudaHostGetDevicePointer((void**) &z_x_, h_x_, 0) == cudaSuccess &&
+            cudaHostGetDevicePointer((void**) &z_out_, h_out_, 0) == cudaSuccess &&
+            cudaHostGetDevicePointer(&z_meta_, h_meta_, 0) == cudaSuccess &&
+            cudaHostAlloc((void**) &h_flag_, 64, cudaHostAllocPortable | cudaHostAllocMapped) == cudaSuccess &&
+            cudaHostGetDevicePointer((void**) &z_flag_, h_flag_, 0) == cudaSuccess &&
+            cudaMalloc((void**) &d_seq_, 64) == cudaSuccess && cudaMemset(d_seq_, 0, 64) == cudaSuccess &&
+            cudaDeviceSynchronize() == cudaSuccess;
+        cudaGetLastError();
+        if (ok_f) {
+            std::memset(h_flag_, 0, 64);
+            seq_ = 0;
+            meta_copy_ = meta_bytes;
+            graph_ = env_int("STRATA_HELPER_GRAPH", 0) != 0 && !timing_;
+        } else {
+            std::fprintf(stderr, "strata: CUDA%d experts: STRATA_HELPER_FAST could not map its staging; this helper "
+                                 "uses the copies\n", device);
+            fast_ = 0;
+            z_x_ = z_out_ = nullptr;
+            z_meta_ = nullptr;
+        }
+    }
     auto* meta = (RemoteMeta*) d_meta_;
     d_ptr_ = meta->ptr;
     d_start_ = meta->start;
@@ -274,15 +356,25 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
         layers_present_[(size_t) pair.first] = 1;
         claimed[(size_t) pair.first * (size_t) experts + (size_t) pair.second] = 1;
     }
+    threaded_ = threads_requested() && remote_opt_ == nullptr;
     return true;
 }
 
 bool RemoteExperts::begin(int64_t layer, const float* x, const int32_t* ids, int64_t n_tok,
                           int64_t k, const int32_t* kind, const int32_t* primary_res,
                           std::string& err) {
-    // cumulative host time in here (staging and launches), reported per request by the driver
+    if (!claim(layer, ids, n_tok, k, kind, primary_res, err)) return false;
+    return group_id_.empty() || launch(layer, x, n_tok, err);
+}
+
+bool RemoteExperts::claim(int64_t layer, const int32_t* ids, int64_t n_tok, int64_t k, const int32_t* kind,
+                          const int32_t* primary_res, std::string& err) {
+    // cumulative host time in here and in launch() (staging and launches), reported per request by the driver
     struct Timer { double& acc; std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
         ~Timer() { acc += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(); } } timer{ms_begin_};
+    rt0_ = timer.t0;
+    if (threaded_)   // (a failed dispatch may have left this helper's thread a job: it reads what claim() rewrites)
+        while (done_.load(std::memory_order_acquire) != posted_.load(std::memory_order_relaxed)) cpu_relax();
     const int64_t n = n_tok * k;
     if (n <= 0 || n > CAP || n_tok > strata::kernels::kWindowMaxT || k != 10 || layer < 0 ||
         (size_t) layer >= layers_present_.size() || device_ < 0) {
@@ -323,6 +415,20 @@ bool RemoteExperts::begin(int64_t layer, const float* x, const int32_t* ids, int
         }
     }
     start_.push_back((int32_t) dst_.size());
+    return true;
+}
+
+bool RemoteExperts::launch(int64_t layer, const float* x, int64_t n_tok, std::string& err) {
+    struct Timer { double& acc; std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+        ~Timer() { acc += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(); } } timer{ms_begin_};
+    if (group_id_.empty()) return true;
+    if (pending_) {   // the previous request was never finished (a failed pool call): nothing of it may still be in flight
+        DeviceScope drain(device_);
+        if (!drain.ok) { err = drain.error(device_); return false; }
+        if (!check(cudaStreamSynchronize(stream_), "drain an unfinished request", err, device_)) return false;
+        pending_ = false;
+        if (fast_) seq_ = *(volatile const uint32_t*) h_flag_;   // the flags raised so far (the stream has drained)
+    }
     // Private pinned buffers survive until this GPU has consumed them. The CPU
     // pool can write other output rows without a cross-device race.
     std::memcpy(h_x_, x, (size_t) n_tok * H * sizeof(float));
@@ -337,16 +443,86 @@ bool RemoteExperts::begin(int64_t layer, const float* x, const int32_t* ids, int
     DeviceScope scope(device_);
     if (!scope.ok) { err = scope.error(device_); return false; }
     groups_ = (int32_t) group_id_.size();
+    pending_ = true;   // from the first async call on; finish() clears it once the request has completed
+    if (fast_) std::atomic_thread_fence(std::memory_order_seq_cst);   // the staging stores, before the launch that reads them
+    bool queued = false;
+    if (graph_ && !reduce) {   // STRATA_HELPER_GRAPH: direct the first time, captured the second, replayed after that
+        const auto& lay = strata::kernels::cpu::expert_layout();
+        uint64_t fk = 0;
+        if (lay.native) {
+            const auto& fmt = lay.fmt[(size_t) layer];
+            fk = (uint64_t) fmt.gu_type | (uint64_t) fmt.d_type << 8 | (uint64_t) (fmt.had_gu ? 1 : 0) << 16 |
+                 (uint64_t) (fmt.had_d ? 1 : 0) << 17 | (uint64_t) fmt.had_block << 18 | (uint64_t) fmt.n_ff << 34;
+        }
+        size_t fi = 0;
+        while (fi < fmt_keys_.size() && fmt_keys_[fi] != fk) ++fi;
+        if (fi == fmt_keys_.size()) fmt_keys_.push_back(fk);
+        const uint64_t key = (uint64_t) fi | (uint64_t) n_tok << 8 | (uint64_t) groups_ << 16 | (uint64_t) dst_.size() << 32;
+        auto it = graphs_.find(key);
+        if (it == graphs_.end() && graphs_.size() < 4096) it = graphs_.emplace(key, std::make_pair(0, (cudaGraphExec_t) nullptr)).first;
+        if (it != graphs_.end()) {
+            auto& g = it->second;
+            if (g.second == nullptr && g.first == 1) {   // the second sighting: capture (on failure: direct from then on)
+                g.first = 2;
+                cudaGraph_t graph = nullptr;
+                std::string cerr;
+                bool ok = cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal) == cudaSuccess;
+                if (ok) {
+                    const bool body = enqueue(layer, n_tok, false, true, cerr);
+                    ok = cudaStreamEndCapture(stream_, &graph) == cudaSuccess && body && graph != nullptr;
+                }
+                cudaGraphExec_t exec = nullptr;
+                if (ok) ok = cudaGraphInstantiate(&exec, graph, 0ull) == cudaSuccess;
+                if (graph) cudaGraphDestroy(graph);
+                cudaGetLastError();
+                if (ok) { g.second = exec; ++graph_captures_; }
+            } else if (g.first < 2) {
+                ++g.first;
+            }
+            if (g.second != nullptr) {
+                if (!check(cudaGraphLaunch(g.second, stream_), "replay the helper graph", err, device_)) return false;
+                ++seq_;   // the graph's last node raises the flag
+                ++graph_replays_;
+                queued = true;
+            }
+        }
+        if (!queued) ++graph_direct_;
+    }
+    if (!queued && !enqueue(layer, n_tok, reduce, false, err)) return false;
+    const uint64_t compact_bytes = (uint64_t) (reduce ? n_tok : dst_.size()) * H * sizeof(float);
+    groups_launched_ += groups_;
+    ++launched_layers_;
+    returned_bytes_ += compact_bytes;
+    full_row_bytes_ += (uint64_t) (n_tok * 10) * H * sizeof(float);
+    return true;
+}
+
+bool RemoteExperts::enqueue(int64_t layer, int64_t n_tok, bool reduce, bool capturing, std::string& err) {
     const cudaStream_t s = stream_;
+    const bool tm = timing_ && !capturing;
+    if (tm) cudaEventRecord(ev_[0], s);
+#if defined(STRATA_USE_HIP)
+    if (fast_) {        // STRATA_HELPER_FAST: x and the metadata into VRAM by one kernel, from the coherent staging
+        if (!check(helper_fast::fetch(z_x_, d_x_, (size_t) n_tok * H * sizeof(float), z_meta_, d_meta_, meta_copy_, s),
+                   "fetch input", err, device_)) return false;
+    } else
+#endif
+    {
     const bool staged =
         (zero_copy_ || check(cudaMemcpyAsync(d_x_, h_x_, (size_t) n_tok * H * sizeof(float), cudaMemcpyHostToDevice, s), "copy input", err, device_)) &&
         check(cudaMemcpyAsync(d_meta_, h_meta_, sizeof(RemoteMeta) + (reduce ? remote_opt_->metadata_bytes() : 0),
                               cudaMemcpyHostToDevice, s), "copy group metadata", err, device_);
     if (!staged) return false;
+    }
+    if (tm) cudaEventRecord(ev_[1], s);
+    // where the expert kernels write: VRAM (then a copy or the push kernel), or the host rows directly (zero-copy, or
+    // STRATA_HELPER_FAST=2)
+    float* const rows_out = (zero_copy_ && !reduce) || fast_ == 2 ? z_out_ : d_out_;
+    const float* const x_in = zero_copy_ ? z_x_ : d_x_;
     const auto& lay = strata::kernels::cpu::expert_layout();
     if (lay.native) {
         const auto& fmt = lay.fmt[(size_t) layer];
-        const float* xe = zero_copy_ ? z_x_ : d_x_;
+        const float* xe = x_in;
         if (fmt.had_gu) {   // APR: Hadamard-folded gate/up take H (s * x)
             strata::kernels::hadamard_rows(xe, d_xr_, n_tok, H, fmt.had_block, d_sx_, s);
             xe = d_xr_;
@@ -355,26 +531,69 @@ bool RemoteExperts::begin(int64_t layer, const float* x, const int32_t* ids, int
         auto L = strata::kernels::native_expert_layout(fmt.gu_type, fmt.d_type, fmt.n_embd, fmt.n_ff);
         if (fmt.had_d) { L.had_block = fmt.had_block; L.d_signs = d_sh_; }
         strata::kernels::native_expert_grouped(L, d_ptr_, d_start_, d_count_, d_dst_, d_tok_,
-                                               groups_, (int64_t) dst_.size(), d_q8_, d_scratch_, zero_copy_ && !reduce ? z_out_ : d_out_, s);
+                                               groups_, (int64_t) dst_.size(), d_q8_, d_scratch_, rows_out, s);
     } else {
-        strata::kernels::quantize_q8_0_scaled(zero_copy_ ? z_x_ : d_x_, d_q8_, d_scales_, n_tok * H, s);
+        strata::kernels::quantize_q8_0_scaled(x_in, d_q8_, d_scales_, n_tok * H, s);
         strata::kernels::moe_grouped_s2_window(d_ptr_, d_start_, d_count_, d_dst_, d_tok_,
-                                               groups_, (int64_t) dst_.size(), d_q8_, d_scales_, d_scratch_, zero_copy_ && !reduce ? z_out_ : d_out_, s,
+                                               groups_, (int64_t) dst_.size(), d_q8_, d_scales_, d_scratch_, rows_out, s,
                                                (int) n_tok);
     }
     const uint64_t compact_bytes = (uint64_t) (reduce ? n_tok : dst_.size()) * H * sizeof(float);
+    if (tm) cudaEventRecord(ev_[2], s);
+#if defined(STRATA_USE_HIP)
+    if (fast_) {        // STRATA_HELPER_FAST: the rows to the coherent host rows by a kernel (1), then the flag
+        if ((fast_ == 1 && !check(helper_fast::push(d_out_, z_out_, (size_t) compact_bytes, s), "push results", err, device_)) ||
+            !check(helper_fast::flag_next(z_flag_, d_seq_, s), "raise the result flag", err, device_))
+            return false;
+        if (!capturing) ++seq_;   // (a captured flag counts when its graph is launched)
+    } else
+#endif
     if (reduce) {
         if (!remote_opt_->reduce(*this, (RemoteMeta*) d_meta_ + 1, err)) return false;
     } else if (!zero_copy_ && !check(cudaMemcpyAsync(h_out_, d_out_, (size_t) compact_bytes, cudaMemcpyDeviceToHost, s),
                "copy results", err, device_)) return false;
-    ++launched_layers_;
-    returned_bytes_ += compact_bytes;
-    full_row_bytes_ += (uint64_t) n * H * sizeof(float);
+    if (tm) cudaEventRecord(ev_[3], s);
     return true;
+}
+
+// STRATA_HELPER_FAST: the flag word holds the count of finished requests once the latest one's rows are in the host
+// rows (the flag kernel runs after them on the stream and fences at system scope first).
+bool RemoteExperts::flag_seen() const {
+    const uint32_t v = *(volatile const uint32_t*) h_flag_;
+    std::atomic_thread_fence(std::memory_order_acquire);   // the rows are read only after the word
+    return v == seq_;
+}
+
+// Spin on the flag word: no HIP call per poll.  Every 4096 polls one stream query notices a failed stream (an error:
+// report it) or a drained stream whose flag never arrived (a coherence fault: report it, never read the rows).
+bool RemoteExperts::wait_flag(std::string& err) {
+    for (uint32_t spins = 1;; ++spins) {
+        if (flag_seen()) return true;
+        if ((spins & 4095u) == 0) {
+            DeviceScope scope(device_);
+            const cudaError_t e = cudaStreamQuery(stream_);
+            if (e == cudaErrorNotReady) continue;
+            if (!check(e, "wait for the result flag", err, device_)) return false;
+            if (flag_seen()) return true;
+            err = "CUDA" + std::to_string(device_) + " experts: the stream finished but the result flag never arrived "
+                  "(STRATA_HELPER_FAST: is the host staging coherent?)";
+            return false;
+        }
+    }
 }
 
 bool RemoteExperts::finish(float* out, std::string& err) {
     if (group_id_.empty()) return true;
+    if (fast_ && !timing_) {   // STRATA_HELPER_FAST: the flag word, no device switch and no stream query per poll
+        const auto w0 = std::chrono::steady_clock::now();
+        const bool ok = wait_flag(err);
+        ms_wait_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - w0).count();
+        if (!ok) return false;
+        pending_ = false;
+        for (size_t i = 0; i < original_row_.size(); ++i)
+            std::memcpy(out + (size_t) original_row_[i] * H, h_out_ + i * H, (size_t) H * sizeof(float));
+        return true;
+    }
     DeviceScope scope(device_);
     if (!scope.ok) { err = scope.error(device_); return false; }
     const auto w0 = std::chrono::steady_clock::now();
@@ -400,10 +619,120 @@ bool RemoteExperts::finish(float* out, std::string& err) {
     if (!check(cudaStreamSynchronize(stream_), "finish", err, device_)) return false;
 #endif
     ms_wait_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - w0).count();
+    pending_ = false;
+    if (timing_) {   // the stream has drained: every event of this request is complete
+        float a = 0, b = 0, c = 0;
+        if (cudaEventElapsedTime(&a, ev_[0], ev_[1]) == cudaSuccess && cudaEventElapsedTime(&b, ev_[1], ev_[2]) == cudaSuccess &&
+            cudaEventElapsedTime(&c, ev_[2], ev_[3]) == cudaSuccess) {
+            ms_gpu_in_ += a; ms_gpu_kernels_ += b; ms_gpu_out_ += c;
+        }
+        cudaGetLastError();
+        ms_round_trip_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rt0_).count();
+    }
     if (remote_opt_ && remote_opt_->active()) { remote_opt_->accumulate(*this); return true; }
     for (size_t i = 0; i < original_row_.size(); ++i)
         std::memcpy(out + (size_t) original_row_[i] * H, h_out_ + i * H, (size_t) H * sizeof(float));
     return true;
+}
+
+std::string RemoteExperts::transport() const {
+    std::string t = fast_ == 1 ? "kernel fetch + push + flag (STRATA_HELPER_FAST=1)"
+                  : fast_ == 2 ? "kernel fetch + rows to host + flag (STRATA_HELPER_FAST=2)"
+                  : zero_copy_ ? "zero-copy" : "copies";
+    if (graph_) t += " + graph replay (STRATA_HELPER_GRAPH=1)";
+    if (threaded_) t += "; own issue thread (STRATA_HELPER_THREADS=1)";
+    return t;
+}
+
+// ---- STRATA_HELPER_THREADS (cycle 6): one thread per helper issues its request and collects its rows, so the four
+// helpers' issue (staging + launches) and waits overlap instead of running one after another on the host thread.
+bool RemoteExperts::threads_requested() {
+    static const bool on = env_int("STRATA_HELPER_THREADS", 0) != 0;
+    return on;
+}
+
+void RemoteExperts::post(int64_t layer, const float* x, int64_t n_tok, float* out) {
+    if (!worker_.joinable()) {   // first request: the thread, on the next CPU of STRATA_HELPER_CPUS (if given)
+        static std::atomic<int> next{0};
+        const int idx = next.fetch_add(1);
+        int cpu = -1;
+        if (const char* list = std::getenv("STRATA_HELPER_CPUS"); list != nullptr && list[0] != '\0') {
+            std::vector<int> cpus;
+            if (strata::aux_cpus::parse_cpu_list(list, cpus) && !cpus.empty()) cpu = cpus[(size_t) idx % cpus.size()];
+        }
+        stop_.store(false);
+        worker_ = std::thread([this, cpu] { worker_loop(cpu); });
+    }
+    // a job a failed dispatch never joined is still this thread's: wait for it before its fields are rewritten
+    while (done_.load(std::memory_order_acquire) != posted_.load(std::memory_order_relaxed)) cpu_relax();
+    job_layer_ = layer; job_x_ = x; job_ntok_ = n_tok; job_out_ = out;
+    const uint64_t p = posted_.load(std::memory_order_relaxed) + 1;
+    posted_.store(p, std::memory_order_seq_cst);   // the job's fields above, before the doorbell; and before the
+    if (sleeping_.load(std::memory_order_seq_cst)) {  // sleeping_ read (the thread stores sleeping_, then reads posted_)
+        std::lock_guard<std::mutex> lk(wake_mu_);
+        wake_cv_.notify_one();
+    }
+}
+
+bool RemoteExperts::join(std::string& err) {
+    const uint64_t p = posted_.load(std::memory_order_relaxed);
+    while (done_.load(std::memory_order_acquire) != p) cpu_relax();
+    if (!job_ok_) { err = job_err_; return false; }
+    return true;
+}
+
+void RemoteExperts::worker_loop(int cpu) {
+#if defined(__linux__)
+    if (cpu >= 0) {
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(cpu, &set);
+        sched_setaffinity(0, sizeof(set), &set);
+    }
+#endif
+    strata::aux_cpus::note_owned_thread();   // --aux-cpus' sweep leaves it where it is
+    cudaSetDevice(device_);
+    uint64_t seen = done_.load(std::memory_order_relaxed);
+    auto idle_since = std::chrono::steady_clock::now();
+    uint32_t spins = 0;
+    for (;;) {
+        const uint64_t p = posted_.load(std::memory_order_acquire);
+        if (p == seen) {
+            if (stop_.load(std::memory_order_acquire)) return;
+            cpu_relax();
+            if ((++spins & 1023u) != 0) continue;
+            // a parked thread spins ~20 ms (a decode's layers are microseconds apart), then sleeps until the next post
+            if (std::chrono::steady_clock::now() - idle_since < std::chrono::milliseconds(20)) continue;
+            std::unique_lock<std::mutex> lk(wake_mu_);
+            sleeping_.store(true, std::memory_order_seq_cst);
+            wake_cv_.wait_for(lk, std::chrono::milliseconds(50), [&] {
+                return posted_.load(std::memory_order_acquire) != seen || stop_.load(std::memory_order_acquire);
+            });
+            sleeping_.store(false, std::memory_order_relaxed);
+            idle_since = std::chrono::steady_clock::now();
+            continue;
+        }
+        std::string e;
+        bool ok = launch(job_layer_, job_x_, job_ntok_, e);
+        if (ok) ok = finish(job_out_, e);
+        job_ok_ = ok;
+        if (!ok) job_err_ = e;
+        seen = p;
+        done_.store(p, std::memory_order_release);   // the rows in out and the job's result, before the done word
+        idle_since = std::chrono::steady_clock::now();
+        spins = 0;
+    }
+}
+
+void RemoteExperts::stop_worker() {
+    if (!worker_.joinable()) return;
+    stop_.store(true, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> lk(wake_mu_);
+        wake_cv_.notify_one();
+    }
+    worker_.join();
+    stop_.store(false);
 }
 
 bool RemoteExperts::copy_cached_blobs(const int32_t* layers, const int32_t* experts, uint8_t* const* dst,

@@ -32,6 +32,7 @@
 #include "strata/core/sm120_series.hpp"
 #include "strata/core/defaults_026.hpp"
 #include "s26_tsum.cuh"
+#include "xtx_fast_perm.cuh"
 #if !defined(__HIPCC__)
 #include "q8_1_il.cuh"
 #endif
@@ -452,7 +453,15 @@ __device__ __align__(4) int8_t iq4nl_values[16] = {
     -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113
 };
 
+#if defined(__HIPCC__) && !defined(STRATA_HIP_GFX906)
+// (YST xtx-fast-perm) STRATA_XTX_FAST_PERM=1: 1 on a gfx1100 once xtx_fast_perm_startup ran, else 0 (xtx_fast_perm.cuh)
+__constant__ int g_xtx_fast_perm = 0;
+#endif
+
 __device__ __forceinline__ int2 iq4_table_lookup(int q4) {
+#if defined(__gfx1100__) && !defined(STRATA_HIP_GFX906)
+    if (g_xtx_fast_perm) return xtx_perm::table16_perm((uint32_t) q4, iq4nl_values);   // (uniform) bitwise the CUDA form below
+#endif
 #if defined(STRATA_HIP_GFX906)
     // AMD: llama.cpp's HIP lookup (see iq_kernels.cu get_int_from_table_16): 4 v_perm_b32 per 8 values
     const uint32_t* v32 = reinterpret_cast<const uint32_t*>(iq4nl_values);
@@ -477,7 +486,6 @@ __device__ __forceinline__ int2 iq4_table_lookup(int q4) {
     return make_int2(__byte_perm(tmp[0], tmp[1], 0x6420), __byte_perm(tmp[0], tmp[1], 0x7531));
 #endif
 }
-
 // Exact pinned vec_dot_iq4_xs_q8_1: a lane consumes one 32-element subblock,
 // computes integer dot products, applies signed scale in the integer domain,
 // then multiplies the two half scales and integer sum in the original order.
@@ -1476,7 +1484,9 @@ template<> struct B6X<IQ4XSTraits> {
     }
 };
 
-template<typename F, int NCOLS, int ROWS>
+// TS (STRATA_TSUM=1): warp 0's NCOLS x ROWS sums as one transposed butterfly, exactly as native_mmvq_multi_kernel's TS
+// epilogue (s26_tsum.cuh: bitwise the same sums as the plain xor butterfly), so B6 runs under TSUM with the same bits.
+template<typename F, int NCOLS, int ROWS, bool TS = false>
 __launch_bounds__(WARPS * WARP, 1)
 __global__ void b6_mmvq_rows_kernel(const typename F::Block* __restrict__ w, const Q81Block* __restrict__ x,
                                     float* __restrict__ y, int n_in, int n_out) {
@@ -1510,6 +1520,25 @@ __global__ void b6_mmvq_rows_kernel(const typename F::Block* __restrict__ w, con
     }
     __syncthreads();
     if (threadIdx.y > 0) return;
+    if constexpr (TS && NCOLS * ROWS <= 32) {
+        constexpr int V = NCOLS * ROWS, P = s26ts::pow2_ceil(V);
+        float v[P];
+#pragma unroll
+        for (int j = 0; j < NCOLS; ++j)
+#pragma unroll
+            for (int i = 0; i < ROWS; ++i) {
+#pragma unroll
+                for (int l = 0; l < WARPS - 1; ++l) tmp[j][i] += partial[l][j][i][threadIdx.x];
+                v[j * ROWS + i] = tmp[j][i];
+            }
+#pragma unroll
+        for (int k = V; k < P; ++k) v[k] = 0.0f;
+        const float sum = s26ts::tsum<P>(v, int(threadIdx.x));
+        const int k = s26ts::tsum_token<P>(int(threadIdx.x));
+        const int j = k / ROWS, i = k % ROWS;
+        if (int(threadIdx.x) == s26ts::tsum_lane<P>(k) && k < V && row0 + i < n_out) y[std::size_t(j) * n_out + row0 + i] = sum;
+        return;
+    }
 #pragma unroll
     for (int j = 0; j < NCOLS; ++j) {
 #pragma unroll
@@ -1523,21 +1552,33 @@ __global__ void b6_mmvq_rows_kernel(const typename F::Block* __restrict__ w, con
 }
 
 // the B6 launch for a format that has a B6X: true when it ran.  g_b6_rows: 1 = 2 rows per block (the fastest on both
-// cards in b6_mmvq_bench), else 2 / 4 / 8 rows.
+// cards in b6_mmvq_bench), else 2 / 4 / 8 rows.  Under STRATA_TSUM=1 the kernel takes the TSUM epilogue (the same bits).
 template<typename F, int NCOLS>
 bool b6_launch(const typename F::Block* w, const Q81Block* x, float* y, int n_in, int n_out, cudaStream_t s) {
     if constexpr (!B6X<F>::ok) {
         return false;
     } else {
-        if (b6_rows_mode() <= 0 || !g_multi_exact || s26_tsum_on() || n_in / F::DIV < 1) return false;
+        if (b6_rows_mode() <= 0 || !g_multi_exact || n_in / F::DIV < 1) return false;
+        // STRATA_B6_MMVQ_MIN: the fewest columns B6 takes.  Default 2 (every multi-column call) without TSUM, as before;
+        // 7 under TSUM, where b6_mmvq_bench on the XTX (Flash-Next Q6_K shapes, decode A/B 2026-11-21) has B6 1.27-1.48x
+        // faster than the TSUM default kernel at 8 columns but up to 1.35x slower at 4 and 6 (2560 -> 3072)
+        static const int min_cols = [] {
+            const char* v = std::getenv("STRATA_B6_MMVQ_MIN");
+            return v ? std::max(2, std::atoi(v)) : (s26_tsum_on() ? 7 : 2);
+        }();
+        if (NCOLS < min_cols) return false;
         const int rows = b6_rows_mode() == 1 ? 2 : b6_rows_mode();
         const dim3 threads(WARP, WARPS);
-        if (rows == 2)
-            b6_mmvq_rows_kernel<F, NCOLS, 2><<<unsigned((n_out + 1) / 2), threads, 0, s>>>(w, x, y, n_in, n_out);
-        else if (rows == 8)
-            b6_mmvq_rows_kernel<F, NCOLS, 8><<<unsigned((n_out + 7) / 8), threads, 0, s>>>(w, x, y, n_in, n_out);
-        else
-            b6_mmvq_rows_kernel<F, NCOLS, 4><<<unsigned((n_out + 3) / 4), threads, 0, s>>>(w, x, y, n_in, n_out);
+        const bool ts = s26_tsum_on();
+        if (rows == 2) {
+            if (ts) b6_mmvq_rows_kernel<F, NCOLS, 2, true><<<unsigned((n_out + 1) / 2), threads, 0, s>>>(w, x, y, n_in, n_out);
+            else b6_mmvq_rows_kernel<F, NCOLS, 2, false><<<unsigned((n_out + 1) / 2), threads, 0, s>>>(w, x, y, n_in, n_out);
+        } else if (rows == 8) {   // (8 x NCOLS > 32 values: the plain butterfly, the same bits)
+            b6_mmvq_rows_kernel<F, NCOLS, 8, false><<<unsigned((n_out + 7) / 8), threads, 0, s>>>(w, x, y, n_in, n_out);
+        } else {
+            if (ts) b6_mmvq_rows_kernel<F, NCOLS, 4, true><<<unsigned((n_out + 3) / 4), threads, 0, s>>>(w, x, y, n_in, n_out);
+            else b6_mmvq_rows_kernel<F, NCOLS, 4, false><<<unsigned((n_out + 3) / 4), threads, 0, s>>>(w, x, y, n_in, n_out);
+        }
         return true;
     }
 }
@@ -3974,5 +4015,11 @@ void native_mmvq_il(int ggml_type, const void* weights, const void* x_q8_1, cons
 void native_mmvq_il_tune(int) {}
 void native_mmvq_il_pf(int) {}
 #endif  // !__HIPCC__
+
+#if defined(__HIPCC__) && !defined(STRATA_HIP_GFX906)
+// (YST xtx-fast-perm) this TU's g_xtx_fast_perm on the current device, for xtx_fast_perm_startup (iq_kernels.cu), which
+// sets both TUs' flags once per gfx1100 device at process start.  Synchronous: never call it while a stream captures.
+cudaError_t xtx_fast_perm_write_native_mmvq(int v) { return cudaMemcpyToSymbol(g_xtx_fast_perm, &v, sizeof v); }
+#endif
 
 } // namespace strata::kernels

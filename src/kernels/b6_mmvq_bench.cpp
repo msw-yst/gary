@@ -1,6 +1,9 @@
 // src/kernels/b6_mmvq_bench.cpp - B6: what a verify row costs in the dense projections, per kernel, per card.
 //
-//     build/b6_mmvq_bench [reps] [device, -1 = all] [B rows mode: 1 = 2 rows, or 2 / 4 / 8]
+//     build/b6_mmvq_bench [reps] [device, -1 = all] [B rows mode: 1 = 2 rows, or 2 / 4 / 8] [case set: 0 = the
+//                         GSQ-RCO cases below, 1 = Flash-Next YST-Q4K-imat's Q6_K dense matrices (whole and tp2 half)]
+//
+// STRATA_TSUM=1 in the environment gives A (and B) the TSUM epilogues, as the served config runs them.
 //
 // The decode's dense projections at the model's own shapes and formats (qwen3.8-flash-next GSQ-RCO IQ3_XXS:
 // GDN qkv / gate / out, QSA q / out, shared expert, the head; the BF16 router), called with ncols = 1..5 and 8 as a
@@ -56,7 +59,19 @@ const Case CASES[] = {
     {"router BF16", 30, 2560, 512, 1, 2, {-1, -1}},
     {"head Q5_K", 13, 2560, 248320, 256, 176, {0, 2}},
 };
-const int WIDTHS[] = {1, 2, 3, 4, 5, 8};
+// Flash-Next (qwen4exp) YST-Q4K-imat: every dense projection that is Q6_K (comparative timing 8c): whole heads (one
+// card) and the tp2 half; the lm head; the shared expert's gate / up.
+const Case FN_CASES[] = {
+    {"fn qkv Q6_K", 14, 2560, 10240, 256, 210, {208, -1}},
+    {"fn qkv/2 Q6_K", 14, 2560, 5120, 256, 210, {208, -1}},
+    {"fn gate Q6_K", 14, 2560, 6144, 256, 210, {208, -1}},
+    {"fn gate/2 Q6_K", 14, 2560, 3072, 256, 210, {208, -1}},
+    {"fn attn q Q6_K", 14, 2560, 12288, 256, 210, {208, -1}},
+    {"fn attn q/2 Q6_K", 14, 2560, 6144, 256, 210, {208, -1}},
+    {"fn shexp Q6_K", 14, 2560, 640, 256, 210, {208, -1}},
+    {"fn head Q6_K", 14, 2560, 248320, 256, 210, {208, -1}},
+};
+const int WIDTHS[] = {1, 2, 3, 4, 5, 6, 7, 8};
 
 bool ck(cudaError_t e, const char* what) {
     if (e == cudaSuccess) return true;
@@ -123,6 +138,11 @@ int main(int argc, char** argv) {
     if (!ck(cudaGetDeviceCount(&n_dev), "device count")) return 1;
     const int only = argc > 2 ? std::atoi(argv[2]) : -1;
     const int bmode = argc > 3 ? std::atoi(argv[3]) : 1;
+    const int set = argc > 4 ? std::atoi(argv[4]) : 0;
+    auto b_on = [&] { K::native_mmvq_set_b6_rows(bmode); };
+    auto b_off = [&] { K::native_mmvq_set_b6_rows(0); };
+    const char* tsum = std::getenv("STRATA_TSUM");
+    std::printf("B = B6, STRATA_TSUM=%s, cases %s\n", tsum ? tsum : "(unset)", set ? "Flash-Next Q6_K" : "GSQ-RCO");
     long long bad = 0;
     for (int dev = 0; dev < n_dev; ++dev) {
         if (only >= 0 && dev != only) continue;
@@ -131,13 +151,16 @@ int main(int argc, char** argv) {
         cudaGetDeviceProperties(&pr, dev);
         std::printf("\n=== device %d: %s (sm_%d%d, L2 %d KB), %d reps, median ms per call, B = rows mode %d ===\n", dev, pr.name,
                     pr.major, pr.minor, pr.l2CacheSize / 1024, reps, bmode);
-        std::printf("%-18s %4s %9s %9s %8s %8s  %s\n", "case", "cols", "A ms", "B ms", "A +col", "B +col",
-                    "bitwise B=A, A=1col, B=1col");
+        std::printf("%-18s %4s %9s %9s %8s %8s %7s %7s  %s\n", "case", "cols", "A ms", "B ms", "A +col", "B +col", "A GB/s",
+                    "B GB/s", "bitwise B=A, A=1col, B=1col");
         cudaStream_t s;
         if (!ck(cudaStreamCreate(&s), "stream")) return 1;
         std::vector<cudaEvent_t> ev((size_t) 2 * reps);
         for (auto& e : ev) cudaEventCreate(&e);
-        for (const Case& c : CASES) {
+        std::vector<Case> cases;
+        if (set == 1) cases.assign(std::begin(FN_CASES), std::end(FN_CASES));
+        else cases.assign(std::begin(CASES), std::end(CASES));
+        for (const Case& c : cases) {
             if (c.type != 30 && !K::native_mmvq_supported(c.type)) {
                 std::printf("%-18s unsupported type %d\n", c.name, c.type);
                 continue;
@@ -184,14 +207,14 @@ int main(int argc, char** argv) {
             double a1 = 0, b1 = 0;
             for (int T : WIDTHS) {
                 std::vector<uint32_t> ha((size_t) T * c.n_out), hb(ha.size()), h1(ha.size());
-                K::native_mmvq_set_b6_rows(0);
+                b_off();
                 const double ta = median_ms(c, b, T, reps, s, ev);
                 call(c, b, 0, T, ya, s);
                 for (int j = 0; j < T; ++j) call_col(c, b, j, y1, s);
-                K::native_mmvq_set_b6_rows(bmode);
+                b_on();
                 const double tb = median_ms(c, b, T, reps, s, ev);
                 call(c, b, 0, T, yb, s);
-                K::native_mmvq_set_b6_rows(0);
+                b_off();
                 if (!ck(cudaStreamSynchronize(s), "run")) return 1;
                 cudaMemcpy(ha.data(), ya, ha.size() * 4, cudaMemcpyDeviceToHost);
                 cudaMemcpy(hb.data(), yb, hb.size() * 4, cudaMemcpyDeviceToHost);
@@ -203,8 +226,9 @@ int main(int argc, char** argv) {
                 for (uint32_t u : ha) { float f; std::memcpy(&f, &u, 4); if (!std::isfinite(f)) ++nonfinite; }
                 if (!ba || !b_1 || nonfinite) ++bad;
                 if (T == 1) { a1 = ta; b1 = tb; }
-                std::printf("%-18s %4d %9.4f %9.4f %8.4f %8.4f  %s %s %s%s\n", c.name, T, ta, tb,
-                            T > 1 ? (ta - a1) / (T - 1) : 0.0, T > 1 ? (tb - b1) / (T - 1) : 0.0, ba ? "ok" : "DIFF",
+                std::printf("%-18s %4d %9.4f %9.4f %8.4f %8.4f %7.0f %7.0f  %s %s %s%s\n", c.name, T, ta, tb,
+                            T > 1 ? (ta - a1) / (T - 1) : 0.0, T > 1 ? (tb - b1) / (T - 1) : 0.0,
+                            (double) b.wbytes / (ta * 1e6), (double) b.wbytes / (tb * 1e6), ba ? "ok" : "DIFF",
                             a_1 ? "ok" : "diff", b_1 ? "ok" : "DIFF", nonfinite ? " NONFINITE" : "");
             }
             for (void* d : b.w) cudaFree(d);

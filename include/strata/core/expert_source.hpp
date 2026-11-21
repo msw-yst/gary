@@ -53,6 +53,10 @@ namespace strata::core {
 
 class PeerExperts;   // multi-GPU: the second GPU's expert tier (peer_experts.hpp)
 class RemoteExperts;
+
+/// The most helper-GPU expert caches one engine runs (--expert-cache-device1..N, RemoteExperts): CUDA0 keeps the
+/// dense layers / state / MTP, CUDA1..N hold experts.  Every per-helper array and loop is sized by this one constant.
+inline constexpr int kMaxRemoteExperts = 5;
 struct LoadStats;
 
 namespace detail {
@@ -498,9 +502,32 @@ struct ExpertDispatch {
     strata::kernels::cpu::ExpertPool* pool = nullptr;
     ExpertSource* src = nullptr;
     RouterLookahead* lookahead = nullptr;   ///< CS-T: warms the next layer's predicted file-tier experts
-    RemoteExperts* remote[3] = {}; ///< optional CUDA1..3 tiers for otherwise CPU-served rows
+    RemoteExperts* remote[kMaxRemoteExperts] = {}; ///< optional CUDA1..N helper tiers for otherwise CPU-served rows
     int remote_count = 0;
+    /// STRATA_ROUTE_TAIL_SKIP beside the helper tiers (STRATA_HELPER_TAIL_SKIP, set by the serve loop): a skipped tail
+    /// expert is skipped whether or not a helper holds it - the same skip set as a run with the same stage caches and no
+    /// helpers.  Its row is kind -2, which RemoteExperts::begin never claims, so no helper writes it.  False: no tail
+    /// skip while remote_count > 0 (the behaviour before it).
+    bool tail_skip_helpers = false;
     int64_t n_expert = strata::kernels::cpu::NE;
+    /// --tensor-parallel N: this dispatch serves card `tp_card` of `tp`.  Another card's expert is no miss here: its row
+    /// is zero (kind -3) and it is neither copied nor computed - the card that owns it adds it in, through the window's
+    /// all-reduce.  Ownership (tp 2):
+    ///   tp_peer_res == nullptr on card 0 / tp_res_own false on card 1: by parity, e % tp == tp_card (step 1);
+    ///   by residency (the default): card 1 owns exactly the experts in its own VRAM (host_res >= 0, its table), card 0
+    ///   everything else - its VRAM experts and every expert in neither card's VRAM, which the host then computes in
+    ///   one pool pass for card 0 (the MoE input is the same bits on both cards after the first all-reduce), never for
+    ///   card 1.  `tp_peer_res` is card 1's host residency table [layer][expert], read at this dispatch's layer.
+    int tp = 1, tp_card = 0;
+    const int32_t* tp_peer_res = nullptr;   ///< card 0, by residency: the peer's residency table
+    bool tp_res_own = false;                 ///< card 1, by residency: owns its VRAM experts only
+    bool tp_owns(int64_t e) const {
+        if (tp <= 1) return true;
+        const size_t at = (size_t) layers * (size_t) n_expert + (size_t) e;
+        if (tp_card == 0 && tp_peer_res != nullptr) return tp_peer_res[at] < 0;
+        if (tp_card != 0 && tp_res_own) return host_res != nullptr && host_res[at] >= 0;
+        return e % tp == tp_card;
+    }
 
     /// Counters, for the driver to report rather than for control flow.
     int64_t layers = 0;
@@ -615,6 +642,15 @@ struct ExpertDispatch {
     int pcie_num = 0;
     PcieModel pcie_model;          ///< Verifier::set_pcie_balance: the PCIe count from measured costs
     int64_t pcie_experts = 0;      ///< distinct experts the GPU read over PCIe in verify windows
+    /// STRATA_BATCH_LENT_GPU=1 (prefill cycle 2, opt-in): while a prompt read holds a loan of cache slots, `lent`
+    /// (n_layers x n_expert, 1 = this residency entry is lent) sends a lent expert a verify window routes to the GPU
+    /// instead of the CPU: a VRAM group pointing at its blob's device alias in the pinned arena (the hit kernel, in the
+    /// hit launch), or without an alias the PCIe share's staging, so a slot decoding beside a read computes what it
+    /// computes alone.  `lent_gpu` counts those experts; `lent_cpu` the ones that still went to the CPU (no alias and
+    /// the staging, 16 per group, full).
+    const uint8_t* lent = nullptr;
+    int64_t lent_gpu = 0;
+    int64_t lent_cpu = 0;
     /// #588: routed (token, expert) entries the GPU computed from outside its cache in verify windows: read over PCIe
     /// (--pcie-frac, kind 1) or on another GPU (kind 2).  In neither cache_hits nor cache_refused.
     int64_t offload_entries = 0;

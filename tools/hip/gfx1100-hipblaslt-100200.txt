@@ -26,3 +26,16 @@ f16 10240 2560 10240 4096 1147
 f16 10240 2560 10240 8192 1147
 f16 12288 2560 12288 4096 1147
 f16 12288 2560 12288 8192 1147
+# prefill cycle 2 (2026-11-21, RX 7900 XTX; docs/flashnext/PREFILL.md): the FP16 expert path's per-expert
+# gate/up GEMM (N 1280, K 2560) on hipBLASLt's matrix-core kernels, fastest per rows-per-expert M (1145 to M 136, 1146 to
+# 200, 1147 above; bucket pairs so the nearest-bucket rule switches exactly there).  This is the exactness reference since
+# 2026-11-21 (maintainer decision); STRATA_PF_GU_LEGACY=1 ignores these rows (hipblasGemmEx's default kernel, the old bits).
+f16 1280 2560 1280 136 1145
+f16 1280 2560 1280 137 1146
+f16 1280 2560 1280 200 1146
+f16 1280 2560 1280 201 1147
+f16 1280 2560 1280 4096 1147
+f16 1280 2560 1280 8192 1147
+# the down GEMM (N 2560, K 640) at M <= 32 on 1145: bit-identical to 1147 there (8.5 against 15.5 us); M >= 33 stays 1147
+f16 2560 640 2560 32 1145
+f16 2560 640 2560 33 1147

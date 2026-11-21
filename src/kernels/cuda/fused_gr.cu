@@ -469,9 +469,12 @@ constexpr int UPW_BLOCKS = N / UPW_COLS;
 /// the produced token ids identical in 6/6 runs; the isolated read (fused_gr_bench) is bitwise the old kernel's.
 bool gr_up_wide_on() {
 #if defined(__HIPCC__)
-    // A HIP build never takes it: gfx1200 / gfx1201 report compute capability 12.0 too, and sm120_default() would turn the
-    // CUDA-measured kernel on there (unmeasured on AMD).  The persistent HC read is the HIP card's own opt-in.
-    return false;
+    // A HIP build never takes it BY DEFAULT: gfx1200 / gfx1201 report compute capability 12.0 too, and sm120_default() would
+    // turn the CUDA-measured kernel on there (unmeasured on AMD).  The persistent HC read is the HIP card's own opt-in.
+    // Flash-Next on HIP (2026-11-18): STRATA_GR_UP_WIDE=1 forces it on HIP for an A/B on gfx1100 (the XTX's up read runs
+    // 160 blocks on 96 CUs); the kernel is the same dots, xor tree and epilogue as gr_up_multi_kernel, so the same bits.
+    static const bool hip_env = [] { const char* v = std::getenv("STRATA_GR_UP_WIDE"); return v != nullptr && std::atoi(v) != 0; }();
+    return hip_env;
 #else
     static const int env = [] {
         const char* v = std::getenv("STRATA_GR_UP_WIDE");
@@ -1348,8 +1351,12 @@ bool up75_on() {
 // STRATA_GR_DOWN_TG=n forces n where it divides the launch (0 = off).
 int down_tg(int ct) {
 #if defined(__HIPCC__)
-    (void) ct;
-    return 0;
+    // Flash-Next on HIP (2026-11-18): off by default on HIP as before; STRATA_GR_DOWN_TG=n (1..3, dividing the launch)
+    // splits the staged down kernel's grid by token groups on HIP too, for an A/B on gfx1100 (41 blocks on 96 CUs today).
+    // Each block still runs the same dots in the same order for its tokens, so the same bits.
+    static const int hip_env = [] { const char* v = std::getenv("STRATA_GR_DOWN_TG"); return v ? std::atoi(v) : 0; }();
+    if (ct < 2) return 0;
+    return hip_env > 0 && hip_env <= 3 && ct % hip_env == 0 ? hip_env : 0;
 #else
     static const int env = [] { const char* v = std::getenv("STRATA_GR_DOWN_TG"); return v ? std::atoi(v) : -1; }();
     if (ct < 2) return 0;

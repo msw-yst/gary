@@ -12,6 +12,11 @@
 
 namespace strata::kernels {
 
+/// STRATA_XTX_FAST_PERM (src/kernels/cuda/xtx_fast_perm.cuh): call once at process start, before any graph capture.
+/// Env unset: nothing.  Present: one stderr line per visible device ("engaged" or "not engaged" and why); "1" sets
+/// the IQ4 v_perm_b32 flag of iq_kernels.cu and native_mmvq.cu on each gfx1100.  A no-op outside the wave32 HIP build.
+void xtx_fast_perm_startup();
+
 /// ggml type ids handled here.
 bool iq_supported(int ggml_type) noexcept;
 /// The token-embedding types iq_embed_rows and iq_dequant_f32 read: the i-quants above and BF16 (30).
@@ -39,6 +44,19 @@ void iq_embed_rows(int ggml_type, const void* table, size_t row_bytes, const int
 /// the up weights would sit near 1e-8, deep in FP16's subnormals).
 void iq_dequant_gu_f16(int ggml_type, const void* gate, const void* up, int64_t n_ff, int64_t n_embd, uint16_t* dst,
                        void* stream, const float* tail = nullptr);
+/// STRATA_PF_DQ_BATCH: up to kMax experts' iq_dequant_gu_f16 (gate, up -> gu_dst) and iq_dequant_f16 (down, n_embd *
+/// n_ff values -> d_dst, times tail[2] when tail is set) in one launch; bit-identical to those per-expert calls.
+struct DqExperts {
+    static constexpr int kMax = 16;
+    int n = 0;
+    const void* gate[kMax] = {};
+    const void* up[kMax] = {};
+    const void* down[kMax] = {};
+    uint16_t* gu_dst[kMax] = {};
+    uint16_t* d_dst[kMax] = {};
+    const float* tail[kMax] = {};
+};
+void iq_dequant_experts_f16(int gu_type, int d_type, int64_t n_ff, int64_t n_embd, const DqExperts& g, void* stream);
 
 /// The layout of one native expert blob: [gate rows | up rows | down rows], raw GGUF blocks.
 struct NativeExpertLayout {

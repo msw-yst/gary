@@ -42,6 +42,17 @@ struct QsaAttnPoolsRows {
 /// Scratch floats for `cap` selected cells: partial accumulators, maxima and sums.
 uint64_t qsa_decode_attn_scratch_floats(int64_t cap, const QsaShapes& s);
 
+/// The geometry qsa_decode_attn_step / _batch run (`s.n_head` and `s.n_head_kv` are the CALL's heads: a tensor-parallel
+/// card passes its own, its q / KV / output slices holding them as heads 0..): head_dim 256 and n_head / n_head_kv = 12
+/// query heads a KV head - the whole model (24 / 2) and a tp2 card (12 / 1) - or 6, a tp4 card (6 / 1: half a KV head's
+/// query group, that KV head held by two cards).  Any other shape is refused (the kernels exit with "unsupported
+/// geometry"); the slots / rows / parity entry points take 12 only.
+inline bool qsa_decode_attn_geometry_ok(const QsaShapes& s) {
+    if (s.head_dim != 256 || s.n_head_kv <= 0 || s.n_head <= 0 || s.n_head % s.n_head_kv != 0) return false;
+    const int64_t g = s.n_head / s.n_head_kv;
+    return g == 12 || g == 6;
+}
+
 void qsa_decode_attn_step(const float* q, const QsaAttnPools& pools, const int32_t* ids, const int32_t* step,
                           int64_t cap, const QsaShapes& s, float* scratch, float* attn, void* stream);
 

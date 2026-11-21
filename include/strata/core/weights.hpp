@@ -139,6 +139,11 @@ public:
     bool read_bf16_host(const std::string& name, std::vector<uint16_t>& out, std::string& err) const;
 
     const WeightRef* find(const std::string& name) const;
+    /// --tensor-parallel (tp_slice.hpp): a row to repoint at the card's slice of it.
+    WeightRef* find_mut(const std::string& name) {
+        auto it = table_.find(name);
+        return it == table_.end() ? nullptr : &it->second;
+    }
     /// STRATA_HC_Q8: the hyper-connection projections (`blk.*.hc_{attn,ffn}_{down,up}.weight`) the loader SKIPPED
     /// are read from the pack, quantized to int8 + one fp32 scale per 32 values, and uploaded to their own device
     /// allocation (`q8_scale` set).  Returns the bytes uploaded in `bytes`.

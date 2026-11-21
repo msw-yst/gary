@@ -12,6 +12,7 @@
 #include "strata/kernels/dp4a.hpp"
 #include "strata/kernels/q8_1_finite.hpp"
 #include "s26_tsum.cuh"
+#include "xtx_fast_perm.cuh"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -53,6 +54,12 @@ __device__ __forceinline__ uint32_t unpack_ksigns(const uint8_t v) {
     const uint32_t s = v ^ p << 7;
     return s * 0x01010101;
 }
+#if defined(__HIPCC__) && !defined(STRATA_HIP_GFX906)
+// (YST xtx-fast-perm) STRATA_XTX_FAST_PERM=1: 1 on a gfx1100 once xtx_fast_perm_startup ran, else 0 (xtx_fast_perm.cuh)
+__constant__ int g_xtx_fast_perm = 0;
+#endif
+// IQ4: the IQ4_NL / IQ4_XS codebook's call sites; they alone may take the STRATA_XTX_FAST_PERM form (gfx1100 pass only)
+template <bool IQ4 = false>
 __device__ __forceinline__ int2 get_int_from_table_16(const int& q4, const int8_t* table) {
 #if defined(STRATA_HIP_GFX906) || defined(__gfx906__)
     // AMD: llama.cpp's HIP lookup (vecdotq.cuh) - v_perm_b32 takes 3-bit byte indices, so the low and high halves
@@ -68,6 +75,11 @@ __device__ __forceinline__ int2 get_int_from_table_16(const int& q4, const int8_
     return make_int2((int) __builtin_amdgcn_perm(eh, el, 0x03020100u | ((q_even & 0x08080808u) >> 1)),
                      (int) __builtin_amdgcn_perm(oh, ol, 0x03020100u | ((q_odd & 0x08080808u) >> 1)));
 #else
+#if defined(__gfx1100__) && !defined(STRATA_HIP_GFX906)
+    if constexpr (IQ4) {
+        if (g_xtx_fast_perm) return xtx_perm::table16_perm((uint32_t) q4, table);   // (uniform) bitwise the form below
+    }
+#endif
     const uint32_t* table32 = (const uint32_t*) table;
     uint32_t tmp[2];
     const uint32_t low_high_selection_indices = (0x32103210 | ((q4 & 0x88888888) >> 1));
@@ -291,7 +303,7 @@ __device__ __forceinline__ float vec_dot_iq4_nl_q8_1(const void* __restrict__ vb
 #pragma unroll
     for (int l = 0; l < 2; ++l) {
         const int aux_q4 = get_int_b2(bq4->qs, iqs + l);
-        const int2 v = get_int_from_table_16(aux_q4, kvalues_iq4nl);
+        const int2 v = get_int_from_table_16<true>(aux_q4, kvalues_iq4nl);
         sumi = ggml_cuda_dp4a(v.x, q8[l + 0], sumi);
         sumi = ggml_cuda_dp4a(v.y, q8[l + 4], sumi);
     }
@@ -309,7 +321,7 @@ __device__ __forceinline__ float vec_dot_iq4_xs_q8_1(const void* __restrict__ vb
 #pragma unroll
     for (int j = 0; j < 4; ++j) {
         const int aux_q4 = get_int_b4(bq4->qs, iqs + j);
-        const int2 v = get_int_from_table_16(aux_q4, kvalues_iq4nl);
+        const int2 v = get_int_from_table_16<true>(aux_q4, kvalues_iq4nl);
         const int u0 = get_int_b4(bq8_1[iqs / 4].qs, j + 0);
         const int u1 = get_int_b4(bq8_1[iqs / 4].qs, j + 4);
         sumi = ggml_cuda_dp4a(v.x, u0, sumi);
@@ -1191,7 +1203,7 @@ template<> struct Split<20> {   // IQ4_NL
         const block_iq4_nl* bq4 = (const block_iq4_nl*) vbq + kbx;
         W r;
 #pragma unroll
-        for (int l = 0; l < 2; ++l) r.v[l] = get_int_from_table_16(get_int_b2(bq4->qs, iqs + l), kvalues_iq4nl);
+        for (int l = 0; l < 2; ++l) r.v[l] = get_int_from_table_16<true>(get_int_b2(bq4->qs, iqs + l), kvalues_iq4nl);
         r.dw = __half2float(bq4->d);
         return r;
     }
@@ -1225,7 +1237,7 @@ template<> struct Split<23> {   // IQ4_XS
         const block_iq4_xs* bq4 = (const block_iq4_xs*) vbq + kbx;
         W r;
 #pragma unroll
-        for (int j = 0; j < 4; ++j) r.v[j] = get_int_from_table_16(get_int_b4(bq4->qs, iqs + j), kvalues_iq4nl);
+        for (int j = 0; j < 4; ++j) r.v[j] = get_int_from_table_16<true>(get_int_b4(bq4->qs, iqs + j), kvalues_iq4nl);
         r.ls = ((bq4->scales_l[iqs / 8] >> (iqs & 0x04)) & 0x0F) | (((bq4->scales_h >> (iqs / 2)) & 0x03) << 4);
         r.dw = __half2float(bq4->d);
         return r;
@@ -3569,7 +3581,7 @@ template<bool NT> struct S26Split<20, NT> {   // IQ4_NL
         const block_iq4_nl* bq4 = (const block_iq4_nl*) vbq + kbx;
         W r;
 #pragma unroll
-        for (int l = 0; l < 2; ++l) r.v[l] = get_int_from_table_16(ldb2<NT>(bq4->qs, iqs + l), kvalues_iq4nl);
+        for (int l = 0; l < 2; ++l) r.v[l] = get_int_from_table_16<true>(ldb2<NT>(bq4->qs, iqs + l), kvalues_iq4nl);
         r.dw = ldhalf<NT>(&bq4->d);
         return r;
     }
@@ -5300,6 +5312,64 @@ constexpr bool nib_layout(const NativeExpertLayout& L) {
 
 }  // namespace
 
+#if defined(__HIPCC__) && !defined(STRATA_HIP_GFX906)
+cudaError_t xtx_fast_perm_write_native_mmvq(int v);   // native_mmvq.cu: that TU's g_xtx_fast_perm on the current device
+
+// (YST xtx-fast-perm) See iq_kernels.hpp.  Env unset: returns at once (no device call, no line).  Present: one stderr
+// line per visible device.  "1" on a gfx1100: both TUs' flags written with a synchronous copy on this (non-capturing)
+// thread, then cudaDeviceSynchronize, so every later launch and every graph captured after it reads 1.
+void xtx_fast_perm_startup() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        const char* v = xtx_perm::env_value();
+        if (v == nullptr) return;   // OFF, unset: 04fcd5673's default, nothing written, nothing printed
+        const bool on = xtx_perm::requested();
+        int n = 0, prev = 0;
+        if (cudaGetDeviceCount(&n) != cudaSuccess || n <= 0) {
+            std::fprintf(stderr, "strata: STRATA_XTX_FAST_PERM=%s not engaged: no GPU device (%s)\n", v,
+                         cudaGetErrorString(cudaGetLastError()));
+            return;
+        }
+        if (cudaGetDevice(&prev) != cudaSuccess) { (void) cudaGetLastError(); prev = 0; }
+        for (int dev = 0; dev < n; ++dev) {
+            cudaDeviceProp prop{};
+            if (cudaGetDeviceProperties(&prop, dev) != cudaSuccess) {
+                std::fprintf(stderr, "strata: STRATA_XTX_FAST_PERM=%s not engaged on device %d: device properties failed (%s)\n",
+                             v, dev, cudaGetErrorString(cudaGetLastError()));
+                continue;
+            }
+            if (!on) {
+                std::fprintf(stderr, "strata: STRATA_XTX_FAST_PERM=%s not engaged on device %d (%s): off (only \"1\" engages)\n",
+                             v, dev, prop.gcnArchName);
+                continue;
+            }
+            if (!gfx_arch_is(prop.gcnArchName, "gfx1100")) {
+                std::fprintf(stderr, "strata: STRATA_XTX_FAST_PERM=1 not engaged on device %d (%s): not gfx1100\n", dev,
+                             prop.gcnArchName);
+                continue;
+            }
+            const int one = 1;
+            cudaError_t e = cudaSetDevice(dev);
+            if (e == cudaSuccess) e = cudaMemcpyToSymbol(g_xtx_fast_perm, &one, sizeof one);
+            if (e == cudaSuccess) e = xtx_fast_perm_write_native_mmvq(1);
+            if (e == cudaSuccess) e = cudaDeviceSynchronize();
+            if (e != cudaSuccess) {
+                (void) cudaGetLastError();
+                // a flag left at 0 (or one TU at 1 and one at 0) is bitwise the same output, only slower
+                std::fprintf(stderr, "strata: STRATA_XTX_FAST_PERM=1 not engaged on device %d (gfx1100): setting the flag "
+                                     "failed (%s)\n", dev, cudaGetErrorString(e));
+                continue;
+            }
+            std::fprintf(stderr, "strata: STRATA_XTX_FAST_PERM=1 engaged on device %d (gfx1100): IQ4_NL/IQ4_XS lookup by "
+                                 "v_perm_b32 (iq_kernels, native_mmvq)\n", dev);
+        }
+        if (cudaSetDevice(prev) != cudaSuccess) (void) cudaGetLastError();
+    });
+}
+#else
+void xtx_fast_perm_startup() {}
+#endif
+
 void iq_set_old_kernels(bool old) { g_old_kernels = old; }
 bool iq_old_kernels() { return g_old_kernels; }
 
@@ -5399,6 +5469,59 @@ void iq_dequant_gu_f16(int t, const void* gate, const void* up, int64_t n_ff, in
     dequant_gu_kernel<<<dim3((unsigned) (n_ff * per_row), 2), 32, 0, (cudaStream_t) stream>>>(t, gate, up, per_row,
                                                                                            (__half*) dst, tail);
     check("iq_dequant_gu_f16");
+}
+
+// STRATA_PF_DQ_BATCH (prefill cycle 2): several experts' gate/up and down dequantized in ONE launch.  Each block does
+// exactly what one block of dequant_gu_kernel (blockIdx.x < 2 * gu_blocks: parity = x / gu_blocks) or of
+// dequant_flat_kernel<__half> (the rest) does for expert blockIdx.y - the same statements on the same bytes, copied
+// verbatim from those two kernels - so the FP16 weights are bit-identical to the per-expert launches.
+namespace {
+__global__ void dequant_experts_kernel(int gu_t, int d_t, int64_t per_row, int64_t gu_blocks, DqExperts g) {
+    const int x = blockIdx.y;
+    const int64_t b = blockIdx.x;
+    if (b < 2 * gu_blocks) {
+        const int64_t i = b % gu_blocks;
+        const int parity = (int) (b / gu_blocks);
+        const float* __restrict__ tail = g.tail[x];
+        const int64_t r = i / per_row, c = i % per_row;
+        __half* dst = (__half*) g.gu_dst[x] + ((2 * r + parity) * per_row + c) * QK_K;
+        dq_dispatch<__half>(gu_t, parity ? g.up[x] : g.gate[x], i, dst, threadIdx.x);
+        if (tail != nullptr) {
+            __syncwarp();
+            const float sc = parity ? tail[1] : tail[0];
+            for (int k = 0; k < 8; ++k) {
+                const int j = threadIdx.x * 8 + k;
+                dst[j] = __float2half(__half2float(dst[j]) * sc);
+            }
+        }
+    } else {
+        const int64_t i = b - 2 * gu_blocks;
+        __half* __restrict__ y = (__half*) g.d_dst[x];
+        const float* __restrict__ scale = g.tail[x] != nullptr ? g.tail[x] + 2 : nullptr;
+        dq_dispatch<__half>(d_t, g.down[x], i, y + i * QK_K, threadIdx.x);
+        if (scale != nullptr) {
+            __syncwarp();
+            const float sc = *scale;
+            for (int k = 0; k < 8; ++k) {
+                const int j = threadIdx.x * 8 + k;
+                y[i * QK_K + j] = cvt<__half>((float) y[i * QK_K + j] * sc);
+            }
+        }
+    }
+}
+}  // namespace
+
+void iq_dequant_experts_f16(int gu_t, int d_t, int64_t n_ff, int64_t n_embd, const DqExperts& g, void* stream) {
+    if (g.n <= 0) return;
+    if (g.n > DqExperts::kMax || n_embd % 256 != 0 || (n_embd * n_ff) % 256 != 0 || !is_iq(gu_t) || !is_iq(d_t)) {
+        std::fprintf(stderr, "iq_dequant_experts_f16: types %d/%d, %lld x %lld, %d experts\n", gu_t, d_t, (long long) n_ff,
+                     (long long) n_embd, g.n);
+        std::exit(1);
+    }
+    const int64_t per_row = n_embd / 256, gu_blocks = n_ff * per_row, d_blocks = n_embd * n_ff / 256;
+    dequant_experts_kernel<<<dim3((unsigned) (2 * gu_blocks + d_blocks), (unsigned) g.n), 32, 0, (cudaStream_t) stream>>>(
+        gu_t, d_t, per_row, gu_blocks, g);
+    check("iq_dequant_experts_f16");
 }
 
 // A bad block is a pack or caller error (expert_layout_load already refuses a block that does not divide the expert

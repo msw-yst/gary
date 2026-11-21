@@ -26,6 +26,7 @@
 #include <cfloat>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <stdexcept>
 
 namespace strata::kernels {
@@ -148,6 +149,85 @@ __global__ void route_multi(const float* __restrict__ logits, int32_t* __restric
     const float inverse_selected_sum = 1.0f / selected_sum;
     if (lane < 10) weights[lane] = selected * inverse_selected_sum;
 }
+// Flash-Next on HIP (2026-11-18), STRATA_ROUTE_RANK=1: route_multi with the top-10 found by rank instead of ten
+// rounds of warp argmax.  On gfx1100 route_multi is one wave per token doing 10 x 5 levels of (value, id) xor shuffles -
+// ~115 ds_bpermute round trips and ~400 selects (llvm-objdump) - ~13 us a layer, on the critical path before the doorbell.
+// Here: one 512-thread block per token.
+//  1. Wave 0 runs route_multi's softmax unchanged (same lane mapping lane + i*32, same warp_max / warp_sum trees, same NaN
+//     rule), so the probabilities are bit-identical, and writes them to LDS.
+//  2. Every thread ranks its own expert in the total order route_multi's selection uses (value descending, then id
+//     ascending: `other > best || (other == best && other_id < expert)`); ranks are unique, so rank < 10 is the pick.
+//  3. Wave 0 rebuilds selected_sum exactly as route_multi does: the lane owning expert id (id & 31) adds the picked values
+//     in rank order, then the same warp_sum tree and clamp; weights[r] = value_r * inverse.  So ids and weights are the
+//     same bits as route_multi's.
+__launch_bounds__(512, 1)
+__global__ void route_multi_rank(const float* __restrict__ logits, int32_t* __restrict__ ids,
+                                 float* __restrict__ weights, int n_tok) {
+    __shared__ __align__(16) float prob[512];
+    __shared__ int sel_id[10];
+    __shared__ float sel_v[10];
+    const int tk = (int) blockIdx.x;
+    if (tk >= n_tok) return;
+    logits += (size_t) tk * 512; ids += (size_t) tk * 10; weights += (size_t) tk * 10;
+    const int t = (int) threadIdx.x;
+    if (t < 32) {
+        const int lane = t;
+        float values[16];
+#pragma unroll
+        for (int i = 0; i < 16; ++i) values[i] = logits[lane + i * 32];
+        float maximum = -INFINITY;
+#pragma unroll
+        for (int i = 0; i < 16; ++i) maximum = max(maximum, values[i]);
+        maximum = warp_max(maximum);
+        float sum = 0.0f;
+#pragma unroll
+        for (int i = 0; i < 16; ++i) {
+            values[i] = expf(values[i] - maximum);
+            sum += values[i];
+        }
+        const float reciprocal = 1.0f / warp_sum(sum);
+#pragma unroll
+        for (int i = 0; i < 16; ++i) {
+            values[i] *= reciprocal;
+            if (__isnanf(values[i])) values[i] = -FLT_MAX;
+            prob[lane + i * 32] = values[i];
+        }
+    }
+    __syncthreads();
+    const float v = prob[t];
+    int rank = 0;
+    const float4* p4 = reinterpret_cast<const float4*>(prob);
+#pragma unroll 8
+    for (int q = 0; q < 128; ++q) {
+        const float4 o = p4[q];
+        const int k = q * 4;
+        rank += (o.x > v || (o.x == v && k + 0 < t)) ? 1 : 0;
+        rank += (o.y > v || (o.y == v && k + 1 < t)) ? 1 : 0;
+        rank += (o.z > v || (o.z == v && k + 2 < t)) ? 1 : 0;
+        rank += (o.w > v || (o.w == v && k + 3 < t)) ? 1 : 0;
+    }
+    if (rank < 10) {
+        sel_id[rank] = t;
+        sel_v[rank] = v;
+    }
+    __syncthreads();
+    if (t < 32) {
+        const int lane = t;
+        float selected = 0.0f, selected_sum = 0.0f;
+        for (int r = 0; r < 10; ++r) {
+            if ((sel_id[r] & 31) == lane) selected_sum += sel_v[r];
+            if (r == lane) selected = sel_v[r];
+        }
+        if (lane < 10) ids[lane] = sel_id[lane];
+        selected_sum = max(warp_sum(selected_sum), 6.103515625e-5f);
+        const float inverse_selected_sum = 1.0f / selected_sum;
+        if (lane < 10) weights[lane] = selected * inverse_selected_sum;
+    }
+}
+bool route_rank_on() {
+    static const bool on = [] { const char* v = std::getenv("STRATA_ROUTE_RANK"); return v != nullptr && std::atoi(v) != 0; }();
+    return on;
+}
 // The same contract for other (experts, top-k) shapes - Qwen3.6-35B-A3B's 256 / 8 - one warp per token, n_tok tokens
 // (8 per block).  The 512 / 10 path keeps its own kernels above (the Flash-Next bits), this template is only used
 // for the other shapes.
@@ -229,6 +309,9 @@ void native_router_top10_multi(const float* logits, int32_t* ids, float* weights
     if (!stream || n_tok < 1 || !valid(logits, (size_t) n_tok * 512 * 4) || !valid(ids, (size_t) n_tok * 10 * 4) ||
         !valid(weights, (size_t) n_tok * 10 * 4))
         throw std::invalid_argument("native router (multi) requires a stream and aligned [n,512]/[n,10] buffers");
+    if (route_rank_on())
+        route_multi_rank<<<(unsigned) n_tok, 512, 0, static_cast<cudaStream_t>(stream)>>>(logits, ids, weights, n_tok);
+    else
     route_multi<<<(unsigned) ((n_tok + 7) / 8), dim3(32, 8), 0, static_cast<cudaStream_t>(stream)>>>(logits, ids, weights, n_tok);
     const auto error = cudaGetLastError();
     if (error != cudaSuccess) throw std::runtime_error(cudaGetErrorString(error));

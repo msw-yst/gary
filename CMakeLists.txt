@@ -495,6 +495,7 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
                           src/kernels/cuda/fused_gr.cu
                           src/kernels/cuda/cvec.cu
                           src/kernels/cuda/qsa_decode_attn.cu
+                          src/kernels/cuda/tp_allreduce.cu
                           src/kernels/cuda/qsa_prompt_attn.cu
                           src/kernels/cuda/fused_gdn.cu
                           src/kernels/cuda/dequant_bf16.cu
@@ -661,6 +662,7 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
     if(STRATA_HIP_HELPER_OFFLOAD_OPTIONS AND NOT STRATA_HIP_HELPER_ALLTU)
       set_property(SOURCE src/kernels/cuda/iq_kernels.cu src/kernels/cuda/s2_expert_grouped.cu
                           src/kernels/cuda/quantize_act.cu src/core/remote_expert_opt.cu
+                          src/core/remote_helper_fast.cu   # STRATA_HELPER_FAST: the helper's transport kernels
                    APPEND PROPERTY COMPILE_OPTIONS ${STRATA_HIP_HELPER_OFFLOAD_OPTIONS})
     endif()
   endif()
@@ -696,8 +698,8 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   # library is the honest shape of the dependency graph: core knows about devices and weights, kernels know
   # about arithmetic, and this one knows the ORDER the arithmetic happens in.
   add_library(strata_engine STATIC src/core/layer.cpp src/core/session.cpp src/core/expert_source.cpp src/core/remote_experts.cpp
-    src/core/remote_expert_opt.cu
-    src/core/expert_cache.cpp src/core/native_head.cpp src/core/native_dense.cpp src/core/verify.cpp src/core/mtp.cpp src/core/dflash2.cpp
+    src/core/remote_expert_opt.cu src/core/remote_helper_fast.cu
+    src/core/expert_cache.cpp src/core/native_head.cpp src/core/native_dense.cpp src/core/tp_slice.cpp src/core/verify.cpp src/core/mtp.cpp src/core/dflash2.cpp
     src/core/conversation_snapshot.cpp src/core/conversation_state.cpp src/core/conversation_memory.cpp src/core/peer_experts.cpp
     src/core/arch_defaults.cpp src/core/nv_defaults.cpp src/core/vmm.cpp src/core/conversation_file.cpp)
   target_include_directories(strata_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -1472,12 +1474,26 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   add_executable(router_chain_bench src/kernels/router_chain_bench.cpp)
   target_include_directories(router_chain_bench PRIVATE ${_strata_gpu_include_directories})
   target_link_libraries(router_chain_bench PRIVATE strata_kernels ${_strata_gpu_runtime_target})
-  # B6: the dense projections' time per verify row at the model's shapes, default vs STRATA_B6_MMVQ_ROWS, bitwise
+  # Flash-Next tensor-parallel experiment 0 (split-time / ar-time / exact): the verify window's kernels on sliced real
+  # layers, and an in-graph host-staged all-reduce (its own kernels: compiled as HIP).  A measurement tool, not built by
+  # default: `cmake --build build --target tp_proof_bench`.
+  if(STRATA_ENABLE_HIP AND NOT STRATA_HIP_GFX906)
+    set_source_files_properties(src/kernels/tp_proof_bench.cpp PROPERTIES LANGUAGE HIP)
+    find_package(Threads REQUIRED)
+    add_executable(tp_proof_bench EXCLUDE_FROM_ALL src/kernels/tp_proof_bench.cpp)
+    set_target_properties(tp_proof_bench PROPERTIES HIP_STANDARD 20 HIP_STANDARD_REQUIRED ON)
+    target_include_directories(tp_proof_bench PRIVATE ${_strata_gpu_include_directories})
+    target_link_libraries(tp_proof_bench PRIVATE strata_kernels ${_strata_gpu_runtime_target} Threads::Threads)
+  endif()
+  # B6: the dense projections' time per verify row at the model's shapes, default vs STRATA_B6_MMVQ_ROWS / STRATA_MMVQ_WR,
+  # bitwise.  On HIP too (decode A/B 2026-11-21), not built by default there: `--target b6_mmvq_bench`.
   if(STRATA_ENABLE_CUDA)
     add_executable(b6_mmvq_bench src/kernels/b6_mmvq_bench.cpp)
-    target_include_directories(b6_mmvq_bench PRIVATE ${_strata_gpu_include_directories})
-    target_link_libraries(b6_mmvq_bench PRIVATE strata_kernels ${_strata_gpu_runtime_target})
+  else()
+    add_executable(b6_mmvq_bench EXCLUDE_FROM_ALL src/kernels/b6_mmvq_bench.cpp)
   endif()
+  target_include_directories(b6_mmvq_bench PRIVATE ${_strata_gpu_include_directories})
+  target_link_libraries(b6_mmvq_bench PRIVATE strata_kernels ${_strata_gpu_runtime_target})
   add_executable(gr_parity src/kernels/gr_parity.cpp)
   target_include_directories(gr_parity PRIVATE ${_strata_gpu_include_directories})
   target_link_libraries(gr_parity PRIVATE strata_kernels ${_strata_gpu_runtime_target})
@@ -2152,6 +2168,13 @@ if(STRATA_NATIVE_EXPERTS)
     target_link_libraries(pool_tasks_test PRIVATE strata_kernels_cpu)
     add_test(NAME pool_tasks_test COMMAND pool_tasks_test)
     set_tests_properties(pool_tasks_test PROPERTIES TIMEOUT 180)
+    # STRATA_POOL_WAIT futex / nap: decode's native phases with random gaps, bitwise, a hang fails it
+    add_executable(pool_wait_stress src/kernels/cpu/pool_wait_stress.cpp)
+    target_link_libraries(pool_wait_stress PRIVATE strata_kernels_cpu)
+    add_test(NAME pool_wait_stress_futex COMMAND ${CMAKE_COMMAND} -E env STRATA_POOL_WAIT=futex STRATA_POOL_SPIN_US=5 $<TARGET_FILE:pool_wait_stress> 8)
+    add_test(NAME pool_wait_stress_nap COMMAND ${CMAKE_COMMAND} -E env STRATA_POOL_WAIT=nap STRATA_POOL_SPIN_US=5 $<TARGET_FILE:pool_wait_stress> 8)
+    add_test(NAME pool_wait_stress_pred COMMAND ${CMAKE_COMMAND} -E env STRATA_POOL_WAIT=pred STRATA_POOL_SPIN_US=5 $<TARGET_FILE:pool_wait_stress> 8)
+    add_test(NAME pool_wait_stress_pred_fanout COMMAND ${CMAKE_COMMAND} -E env STRATA_POOL_WAIT=pred STRATA_POOL_WAKE_FANOUT=2 $<TARGET_FILE:pool_wait_stress> 8)
     add_test(NAME router_dot_parity COMMAND router_dot_parity)
     add_test(NAME router_dot_parity_avx COMMAND ${CMAKE_COMMAND} -E env STRATA_FORCE_ISA=avx $<TARGET_FILE:router_dot_parity>)
   endif()

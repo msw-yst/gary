@@ -70,6 +70,7 @@
 #include "strata/kernels/qsa.hpp"
 #include "strata/core/native_head.hpp"
 #include "strata/core/verify.hpp"
+#include "strata/core/tp_slice.hpp"
 #include "strata/core/mtp.hpp"
 #include "strata/core/gated_proposal.hpp"
 #if defined(STRATA_HAVE_DFLASH2)
@@ -533,6 +534,10 @@ bool resident_stage_swaps(strata::core::FileExpertSource& src, const std::vector
     return true;
 }
 
+/// helper-GPU expert caches (--expert-cache-device1..N): one constant for every per-helper array and loop below
+constexpr int kMaxHelpers = strata::core::kMaxRemoteExperts;
+static_assert(kMaxHelpers >= 3 && kMaxHelpers <= 9, "--expert-cache-deviceN parses a single digit");
+
 struct Options {
     std::string pack = "pack/full";
     std::vector<int64_t> tokens;      // the prompt, PRE-TOKENIZED
@@ -674,10 +679,15 @@ struct Options {
     /// true is that the ADMISSION POLICY gave every slot to the first position, which is why the earlier
     /// measurement found nothing - see `expert_cache_per_layer`.
     int expert_cache = 0;
-    std::array<int, 3> expert_cache_remote{}; ///< CUDA1..3 slots; CUDA0 keeps dense/state/MTP
-    std::array<bool, 3> expert_cache_remote_auto{};
+    std::array<int, kMaxHelpers> expert_cache_remote{}; ///< CUDA1..N slots; CUDA0 keeps dense/state/MTP
+    std::array<bool, kMaxHelpers> expert_cache_remote_auto{};
+    /// any helper expert cache asked for (--expert-cache-device1..N with N > 0 slots)
+    bool any_helper_cache() const {
+        for (const int slots : expert_cache_remote) if (slots > 0) return true;
+        return false;
+    }
     bool remote_expert_opt = false; ///< optional optimization of the existing remote-expert decode path
-    std::string expert_cache_remote_placement = "stripe"; ///< stripe experts or assign complete layers to CUDA1..3
+    std::string expert_cache_remote_placement = "stripe"; ///< stripe experts or assign complete layers to CUDA1..N
     bool expert_cache_cpu_order = false;
     /// **R4.2g.  ROUND 328 MEASURED THAT THE GLOBAL ADMISSION POLICY CANNOT WORK, AND THIS IS THE FIX.**
     /// The default policy hands out slots in arrival order from one counter shared by all 48 layers, so the
@@ -887,6 +897,11 @@ struct Options {
     /// result) goes through the verify windows, S tokens at a time, instead of the batched prompt path (0 = always
     /// the batched path)
     int64_t short_read = 64;
+    /// --tensor-parallel N (STRATA_TP=N; opt-in, default 1 = off): decode with every layer split over N cards
+    /// (tp_slice.hpp: GDN by head group, attention by query heads, whole experts by owner e % N, two all-reduces a
+    /// layer).  Step 1: N = 2, --serve, one request at a time, every prompt read through the verify windows on both
+    /// cards (no batched prompt path), no MTP drafter, no layer split / helper caches.
+    int tensor_parallel = 1;
     bool prefill_head_alias = false;   // lend the native output head's VRAM to prompt buffers between request phases
     /// --pipeline-windows N (--serve, a layer split on exactly two GPUs; opt-in): 1 = a prompt's short reads through
     /// the verify windows run with the stages overlapped (stage 0 reads window K+1 while stage 1 reads window K);
@@ -1127,12 +1142,14 @@ void usage() {
                  "  --expert-cache-device1 N|auto  fill CUDA1 with N experts or as many as fit\n"
                  "  --expert-cache-device2 N|auto  fill CUDA2 with more experts\n"
                  "  --expert-cache-device3 N|auto  fill CUDA3 with more experts\n"
+                 "  --expert-cache-device4 N|auto  fill CUDA4 with more experts\n"
+                 "  --expert-cache-device5 N|auto  fill CUDA5 with more experts\n"
                  "  --remote-expert-opt   enable remote-expert decode optimizations (serve mode)\n"
                  "  --expert-cache-remote-placement stripe|layer  distribute expert ranks or whole\n"
-                 "                       layers across CUDA1..3 (default: stripe)\n"
+                 "                       layers across CUDA1..5 (default: stripe)\n"
                  "  --peer-device N      a second GPU as an adaptive expert-cache tier (rows over P2P; it also\n"
                  "                       computes its experts' prompt rows).  Not with --layer-split or\n"
-                 "                       --expert-cache-device1..3.  Default output unchanged without it.\n"
+                 "                       --expert-cache-device1..5.  Default output unchanged without it.\n"
                  "  --peer-reserve-mib N  VRAM the peer tier leaves free on its card (default 600)\n"
                  "  --peer-slots N       expert slots on the peer (default: what fits)\n"
                  "  --peer-adapt-swaps N  peer cache swaps per adaptation step (default: --adapt-swaps)\n"
@@ -2708,7 +2725,7 @@ std::string nibble_refusal(const Options& o) {
     if (o.peer_device >= 1) return "--peer-device (its cache holds GGUF blobs)";
     for (size_t r = 0; r < o.expert_cache_remote.size(); ++r)
         if (o.expert_cache_remote[r] > 0 || o.expert_cache_remote_auto[r])
-            return "remote expert caches (--expert-cache-device1..3 hold GGUF blobs)";
+            return "remote expert caches (--expert-cache-device1..5 hold GGUF blobs)";
     if (o.kv_grow) return "--kv-grow (the elastic K/V moves slots at their GGUF size)";
     if (o.vram_elastic) return "--vram-elastic (it refills slots with GGUF blobs)";
     if (o.expert_profile.empty())
@@ -2898,6 +2915,15 @@ int main(int argc, char** argv) {
     // pipe or a file is block-buffered, so a program that dies loses every line it had already printed - which
     // turns "it crashed at step 7" into "it crashed somewhere", and the difference is a debugging session.
     std::setvbuf(stdout, nullptr, _IONBF, 0);
+#if !defined(_WIN32)
+    // --tensor-parallel: STRATA_TP_HIP_VISIBLE=<list> replaces HIP_VISIBLE_DEVICES before the runtime starts (a launcher
+    // that picks one card for the engine still lets it see both); said once on stderr
+    if (const char* v = std::getenv("STRATA_TP_HIP_VISIBLE"); v != nullptr && v[0] != 0) {
+        const char* was = std::getenv("HIP_VISIBLE_DEVICES");
+        std::fprintf(stderr, "strata: STRATA_TP_HIP_VISIBLE: HIP_VISIBLE_DEVICES=%s (was %s)\n", v, was ? was : "unset");
+        setenv("HIP_VISIBLE_DEVICES", v, 1);
+    }
+#endif
 #if defined(STRATA_USE_HIP) && defined(_WIN32)
     {   // 0.2.1.2: hipblas / libhipblaslt / rocblas are delay-loaded (CMakeLists.txt) and live in <exe folder>\rocm\bin, which only the
         // launcher puts on PATH; make the folder part of this process's DLL search, so `strata.exe --version` run straight from the
@@ -2977,6 +3003,12 @@ int main(int argc, char** argv) {
 #endif
         break;
     }
+#if defined(STRATA_USE_HIP) && !defined(STRATA_HIP_GFX906)
+    // STRATA_XTX_FAST_PERM: set the gfx1100 IQ4 lookup flag on every device now, before either engine path makes a
+    // context of its own or captures a graph (the decode layers only run inside captures), and say so per device.
+    // Env unset: nothing happens here.
+    strata::kernels::xtx_fast_perm_startup();
+#endif
 #if defined(STRATA_HAVE_QWEN35)
     // **THE FAMILY SWITCH.**  A Qwen3.6-35B-A3B file (GGUF architecture qwen35moe) runs on its own engine path
     // (src/qwen35), decided here from the file's header before any of this engine's state exists; every other file
@@ -3146,7 +3178,8 @@ int main(int argc, char** argv) {
             const std::string v = next("--expert-cache");
             o.expert_cache = (v == "auto") ? -1 : std::atoi(v.c_str());
         }
-        else if (a == "--expert-cache-device1" || a == "--expert-cache-device2" || a == "--expert-cache-device3") {
+        else if (a == "--expert-cache-device1" || a == "--expert-cache-device2" || a == "--expert-cache-device3" ||
+                 a == "--expert-cache-device4" || a == "--expert-cache-device5") {
             const size_t r = (size_t) (a.back() - '1');
             const std::string v = next(a.c_str());
             o.expert_cache_remote_auto[r] = v == "auto";
@@ -3254,6 +3287,7 @@ int main(int argc, char** argv) {
         else if (a == "--turn-token") o.turn_token = std::atoll(next("--turn-token"));
         else if (a == "--tail-role-token") o.tail_role_token = std::atoll(next("--tail-role-token"));
         else if (a == "--short-read") o.short_read = std::max(0LL, std::atoll(next("--short-read")));
+        else if (a == "--tensor-parallel") o.tensor_parallel = std::max(1, std::atoi(next("--tensor-parallel")));
         else if (a == "--prefill-head-alias") o.prefill_head_alias = true;
         else if (a == "--pipeline-windows") o.pipeline_windows = std::max(0, std::min(2, std::atoi(next("--pipeline-windows"))));
         else if (a == "--suffix-draft") o.suffix_draft = std::max(0, std::atoi(next("--suffix-draft")));
@@ -3652,27 +3686,32 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "strata generate: --resident-cpu-experts requires --mmap-experts and a static --expert-profile\n");
         return 2;
     }
-    const bool remote_caches = o.expert_cache_remote[0] > 0 || o.expert_cache_remote[1] > 0 ||
-                               o.expert_cache_remote[2] > 0;
+    const bool remote_caches = o.any_helper_cache();
     // A layer split keeps the resident RAM mode: every stage's GPU cache is left out of the RAM copy, and an adaptive
     // swap copies an evicted expert back from the card that owns its layer (resident_stage_swaps).
     // The helper-GPU caches are allowed beside the resident RAM mode too: their experts are left out of the RAM copy
     // like a stage's (below), the helpers' refills read through the source (the RAM copy when it holds the bytes),
     // and the two adaptive tiers already keep each other's experts out (helper_holds in the primary's candidates,
     // RemoteExpertOpt::adapt's resident table).  Measured on RX 6800 + RX 6600, Windows (docs/SECOND_GPU.md).
-    // the helper-GPU expert caches (--expert-cache-remote, docs/SECOND_GPU.md): CUDA1..3 on one GPU; with a layer
+    // the helper-GPU expert caches (--expert-cache-remote, docs/SECOND_GPU.md): CUDA1..N on one GPU; with a layer
     // split, the visible GPUs no stage runs on, in order
-    int remote_dev[3] = {1, 2, 3};
+    int remote_dev[kMaxHelpers];
+    for (int r = 0; r < kMaxHelpers; ++r) remote_dev[r] = r + 1;   // CUDA1..N
     if (primary_device != 0) {
         // STRATA_PRIMARY_DEVICE: the helpers are the visible devices except the primary, in order
         int n_vis = 1;
         if (cudaGetDeviceCount(&n_vis) != cudaSuccess || n_vis < 1) n_vis = 1;
         cudaGetLastError();
         int k = 0;
-        for (int d = 0; d < n_vis && k < 3; ++d)
+        for (int d = 0; d < n_vis && k < kMaxHelpers; ++d)
             if (d != primary_device) remote_dev[k++] = d;
-        for (; k < 3; ++k) remote_dev[k] = -1;
+        for (; k < kMaxHelpers; ++k) remote_dev[k] = -1;
     }
+    // --tensor-parallel 2 (cycle 5): CUDA1 is the second tensor-parallel card, so the helper caches are the GPUs after it -
+    // --expert-cache-device1..4 = CUDA2..5 (decided here, before any helper context; the tp block below re-checks the rest)
+    if (const bool tp_req = o.tensor_parallel > 1 || [] { const char* v = std::getenv("STRATA_TP"); return v != nullptr && std::atoi(v) > 1; }();
+        tp_req && primary_device == 0)
+        for (int r = 0; r < kMaxHelpers; ++r) remote_dev[r] = r + 2;   // the fifth (CUDA6) is refused in the tp block
     if (multi_gpu) {
         if (o.expert_profile.empty()) {
             std::fprintf(stderr, "strata generate: a layer split across GPUs needs --expert-profile\n");
@@ -3736,7 +3775,7 @@ int main(int argc, char** argv) {
         if (cudaGetDeviceCount(&n_vis) != cudaSuccess || n_vis < 1) n_vis = 1;
         cudaGetLastError();
         int next_free = 1;
-        for (int r = 0; r < 3; ++r) {
+        for (int r = 0; r < kMaxHelpers; ++r) {
             if (o.expert_cache_remote[(size_t) r] <= 0) continue;
             while (next_free < n_vis &&
                    std::find(split_devs.begin(), split_devs.end(), next_free) != split_devs.end()) ++next_free;
@@ -3758,12 +3797,12 @@ int main(int argc, char** argv) {
         // card would otherwise fail later with "invalid device function")
         // gfx906 helper: each by its role.  The primary and the layer-split stages are checked strictly (they run the
         // prefill / dense kernels, which exist for STRATA_HIP_ARCHS only); the helper expert caches
-        // (--expert-cache-device1..3) as helpers, which in a build with STRATA_HIP_HELPER_ARCHS may be wave64 cards.
+        // (--expert-cache-device1..5) as helpers, which in a build with STRATA_HIP_HELPER_ARCHS may be wave64 cards.
         enum class Role { primary, stage, helper };
         std::vector<std::pair<int, Role>> used{{primary_device, Role::primary}};   // STRATA_PRIMARY_DEVICE: not always 0
         if (multi_gpu)
             for (const int d : split_devs) used.emplace_back(d, Role::stage);
-        for (int r = 0; r < 3; ++r)
+        for (int r = 0; r < kMaxHelpers; ++r)
             if (o.expert_cache_remote[(size_t) r] > 0) used.emplace_back(remote_dev[r], Role::helper);
         for (const auto& [d, role] : used) {
             if (const std::string why = strata::core::gpu_arch_problem(d, role == Role::helper); !why.empty()) {
@@ -3772,14 +3811,14 @@ int main(int argc, char** argv) {
                     std::fprintf(stderr, "strata generate: --layer-split: CUDA%d is a wave64 %s card, which this engine runs "
                                          "only as a helper expert cache: a layer-split stage runs prefill and dense-layer "
                                          "kernels that need wave32.  Leave it out of the split (--split-device; "
-                                         "--layer-split auto takes every visible GPU) and give it --expert-cache-device1..3 "
+                                         "--layer-split auto takes every visible GPU) and give it --expert-cache-device1..5 "
                                          "instead\n", d, h.c_str());
                     return 1;
                 } else if (!h.empty() && role == Role::primary) {
                     std::fprintf(stderr, "strata generate: the primary GPU (CUDA%d) is a wave64 %s card, which this engine "
                                          "runs only as a helper expert cache: make a wave32 card the primary "
                                          "(STRATA_PRIMARY_DEVICE, or its place in HIP_VISIBLE_DEVICES) and give this one "
-                                         "--expert-cache-device1..3\n", d, h.c_str());
+                                         "--expert-cache-device1..5\n", d, h.c_str());
                     return 1;
                 }
 #endif
@@ -3990,8 +4029,11 @@ int main(int argc, char** argv) {
         o.top_p <= 0 || o.top_p > 1 || o.top_k < 0 || o.expert_cache < -1 ||
         o.pool_workers < 0 || std::any_of(o.expert_cache_remote.begin(), o.expert_cache_remote.end(),
                                            [](int slots) { return slots < 0; }) ||
-        (o.expert_cache_remote[1] > 0 && o.expert_cache_remote[0] == 0) ||
-        (o.expert_cache_remote[2] > 0 && o.expert_cache_remote[1] == 0)) {
+        [&o] {   // the helper caches are enabled in order: CUDA r+1 only beside CUDA r
+            for (int r = 1; r < kMaxHelpers; ++r)
+                if (o.expert_cache_remote[(size_t) r] > 0 && o.expert_cache_remote[(size_t) r - 1] == 0) return true;
+            return false;
+        }()) {
         std::fprintf(stderr, "strata generate: invalid sampling or resource parameter\n");
         return 2;
     }
@@ -4008,7 +4050,7 @@ int main(int argc, char** argv) {
     if (o.peer_device >= 1 && (!o.layer_split.empty() || o.expert_cache_remote[0] > 0)) {
         std::fprintf(stderr, "strata generate: --peer-device cannot be combined with %s\n",
                      !o.layer_split.empty() ? "--layer-split (use one or the other)"
-                                            : "--expert-cache-device1..3 (the peer tier already caches experts there)");
+                                            : "--expert-cache-device1..5 (the peer tier already caches experts there)");
         return 2;
     }
 #if defined(STRATA_USE_HIP) && defined(STRATA_HIP_HELPER_ARCHS)
@@ -4019,7 +4061,7 @@ int main(int argc, char** argv) {
         if (const std::string h = strata::core::gpu_helper_arch(o.peer_device); !h.empty()) {
             std::fprintf(stderr, "strata generate: --peer-device %d is a wave64 %s card, which this engine runs only as a "
                                  "helper expert cache: the peer tier runs prefill rows, which need wave32.  Give it a "
-                                 "helper expert cache instead (--expert-cache-device1..3, docs/SECOND_GPU.md)\n", o.peer_device, h.c_str());
+                                 "helper expert cache instead (--expert-cache-device1..5, docs/SECOND_GPU.md)\n", o.peer_device, h.c_str());
             return 2;
         }
     }
@@ -4238,7 +4280,7 @@ int main(int argc, char** argv) {
     // and a new context then fails with cudaErrorMemoryAllocation (CUDA2: "cudaSetDevice(2) failed: out of memory").
     const char* early_env = std::getenv("STRATA_EARLY_REMOTE_CONTEXTS");
     const bool early_remote = early_env && early_env[0] == '1';
-    for (int r = 0; r < 3; ++r) if (o.expert_cache_remote[(size_t) r] > 0 && (r == 0 || early_remote)) {
+    for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0 && (r == 0 || early_remote)) {
         // Keep CUDA1's proven startup order: initialise its context before
         // allocating GPU0 weights or mapping the large host expert arena.
         double free_gib = 0;
@@ -4455,6 +4497,64 @@ int main(int argc, char** argv) {
                              rope_cfg.type == RST::YaRN ? "YaRN" : "--yarn-attn-factor", rope_cfg.mscale());
         }
     }
+    // ---- --tensor-parallel N (tp_slice.hpp): decided once, before any weight is loaded.  From here on `g` is the
+    // geometry ONE card runs (its share of the heads); the slices are cut from the whole model's shape in tp_slice().
+    if (o.tensor_parallel <= 1)
+        if (const char* v = std::getenv("STRATA_TP"); v != nullptr && std::atoi(v) > 1) o.tensor_parallel = std::atoi(v);
+    // STRATA_NO_MTP=1 (A/B only): no MTP drafter even when --mtp is given (the one-card arm of the tensor-parallel compare)
+    if (const char* v = std::getenv("STRATA_NO_MTP"); v != nullptr && std::atoi(v) != 0 && !o.mtp.empty()) {
+        std::fprintf(stderr, "strata generate: STRATA_NO_MTP=1: the MTP drafter is off\n");
+        o.mtp.clear();
+    }
+    if (o.tensor_parallel > 1) {
+        int n_dev = 0;
+        if (cudaGetDeviceCount(&n_dev) != cudaSuccess) { (void) cudaGetLastError(); n_dev = 0; }
+        bool helpers = false;
+        for (size_t r = 0; r < o.expert_cache_remote.size(); ++r)
+            helpers = helpers || o.expert_cache_remote[r] > 0 || o.expert_cache_remote_auto[r];
+        const char* why = o.tensor_parallel != 2 ? "only 2 cards for now"
+                        : !o.serve ? "it needs --serve"
+                        : n_dev < 2 ? "it needs two visible GPUs"
+                        : !split_devs.empty() || split_same ? "not with --layer-split"
+                        : helpers && o.remote_expert_opt ? "not with --remote-expert-opt"
+                        : helpers && o.expert_cache_remote[(size_t) kMaxHelpers - 1] > 0 ? "at most 4 helper expert caches (CUDA2..5)"
+                        : helpers && n_dev < 2 + [&] { int n = 0; for (const int s : o.expert_cache_remote) n += s > 0; return n; }()
+                            ? "a helper expert cache names a GPU that is not visible (CUDA2.. are the helpers)"
+                        : o.peer_device >= 0 ? "not with --peer-device"
+                        : o.native_preset.empty() || o.native_dense_gguf.empty() ? "it needs a GGUF model (--native)"
+                        : g.ssm_k_heads % 2 != 0 || g.n_head % 2 != 0 || g.ssm_v_heads % 2 != 0 ? "the heads do not split in two"
+                        : nullptr;
+        if (why != nullptr) {
+            std::fprintf(stderr, "strata generate: --tensor-parallel %d refused: %s\n", o.tensor_parallel, why);
+            return 1;
+        }
+        strata::core::TpSlice& tps = strata::core::tp_slice();
+        tps.tp = o.tensor_parallel;
+        tps.card = 0;
+        tps.HK = g.ssm_k_heads; tps.HV = g.ssm_v_heads; tps.S = g.ssm_state_size;
+        tps.NH = g.n_head; tps.NKV = g.n_head_kv; tps.HD = g.head_dim; tps.n_layers = g.n_layers;
+        // what the step-1 mode does not do yet is switched off here, each said once
+        if (!o.mtp.empty()) { std::fprintf(stderr, "strata generate: --tensor-parallel: the MTP drafter is off (step 1)\n"); o.mtp.clear(); }
+        if (o.vision) { std::fprintf(stderr, "strata generate: --tensor-parallel: --vision is off (a picture takes the batched prompt path)\n"); o.vision = false; }
+        o.prompt_cache = 0;            // no conversation checkpoints: they hold one card's state
+        // cycle 4: a batch window with one row per slot keeps its rows itself (no commit graph after it): window time -1.0 ms
+        // at 4 users, -1.3 ms at 8, outputs unchanged (docs/flashnext/data/2026-11-20-tp2-cycle4-step2-cpu-experts.txt);
+        // STRATA_BATCH_SELF_COMMIT=0 keeps the commit graph
+        strata::core::Verifier::default_batch_self_commit(true);
+        o.short_read = (int64_t) 1 << 40;   // every prompt through the verify windows (both cards); no batched prompt path
+        o.pipeline_windows = 0;
+        o.kv_grow = false;
+        g = strata::core::tp_geometry(g, tps);
+        std::fprintf(stderr, "strata: tensor parallel %d: CUDA0 + CUDA1 each run all %lld layers: GDN %lld of %lld key groups "
+                             "(%lld of %lld value heads, state split), attention %lld of %lld query heads + %lld of %lld KV "
+                             "heads (KV split), whole experts by owner (expert %% %d), shared expert on layer %% %d, router / "
+                             "indexer / norms / embedding / head replicated, 2 all-reduces a layer (host-staged, in the graph); "
+                             "decode and prompt windows on both cards, no MTP drafter, no prompt cache\n",
+                     o.tensor_parallel, (long long) g.n_layers, (long long) g.ssm_k_heads, (long long) tps.HK,
+                     (long long) g.ssm_v_heads, (long long) tps.HV, (long long) g.n_head, (long long) tps.NH,
+                     (long long) g.n_head_kv, (long long) tps.NKV, o.tensor_parallel, o.tensor_parallel);
+    }
+    const bool tensor_par = o.tensor_parallel > 1;
     strata::core::NativeEmbed native_embed;
     if (native_pack) {
         if (o.native_preset.empty() || o.spec < 2 || o.keep_canonical ||
@@ -4631,6 +4731,13 @@ int main(int argc, char** argv) {
         }
         std::fprintf(stderr, "strata generate: %zu native projection matrices, %.2f MiB of weights, in %.1f s\n",
                      native_dense.tensor_count(), (double) native_dense.weight_bytes() / (1024.0 * 1024.0), load_s());
+    }
+    if (tensor_par) {   // CUDA0's rows of the arena's split tensors (the native projections were sliced as they loaded)
+        uint64_t tb = 0;
+        if (!strata::core::tp_slice_arena(wt, strata::core::tp_slice(), tb, err)) {
+            std::fprintf(stderr, "strata generate: %s\n", err.c_str());
+            return 1;
+        }
     }
 
     strata::kernels::gr_set_fp32_activations(o.gr_fp32_activations);
@@ -4961,7 +5068,7 @@ int main(int argc, char** argv) {
         std::vector<std::pair<int32_t, int32_t>> prof;
         int64_t pslots = 0;
         std::string perr;
-        const bool remote = o.expert_cache_remote[0] > 0 || o.expert_cache_remote[1] > 0 || o.expert_cache_remote[2] > 0;
+        const bool remote = o.any_helper_cache();
         if (remote || o.expert_profile.empty() ||
             !strata::core::read_expert_profile(o.expert_profile, g.n_layers, g.n_expert, prof, pslots, perr)) {
             std::fprintf(stderr, "strata generate: --split-skip-if-fits: %s; the split stays\n",
@@ -5017,6 +5124,17 @@ int main(int argc, char** argv) {
                                          : std::filesystem::exists(o.mtp_draft_vocab, ec);
     }();
     const bool pw_auto = o.pipeline_windows < 0;
+    // STRATA_HELPER_PIPELINE (default on; =0 keeps --pipeline-windows off beside the helper caches, as before): the helper
+    // caches beside the pipelined windows.  Safe because a helper request never outlives one pool call: the pipelined loop
+    // serves every window's layers on its one thread, and expert_pool_dispatch_multi runs RemoteExperts::begin and
+    // ::finish inside the same call, so two windows (or two stages) never hold a helper's staging, stream or row map at
+    // once (RemoteExperts::begin also drains a request left unfinished).  --remote-expert-opt stays off: its reduce lives
+    // in the Verifier's graphs, which capture_all refuses.
+    const bool helper_pipe_ok = [&] {
+        const char* v = std::getenv("STRATA_HELPER_PIPELINE");
+        return !(v != nullptr && std::atoi(v) == 0) && !o.remote_expert_opt;
+    }();
+    const bool helpers_block_pipe = o.any_helper_cache() && !helper_pipe_ok;
     if (pw_auto) {
         static const char* ae = std::getenv("STRATA_PIPELINE_AUTO");
         static const char* am = std::getenv("STRATA_PIPELINE_AUTO_MIN_STAGES");
@@ -5029,15 +5147,13 @@ int main(int argc, char** argv) {
 #else
         on = false;
 #endif
-        const bool helpers_a = o.expert_cache_remote[0] > 0 || o.expert_cache_remote[1] > 0 || o.expert_cache_remote[2] > 0;
-        on = on && !o.mtp.empty() && o.spec >= 2 && o.batch == 0 && o.peer_device < 0 && !helpers_a && !o.adapt_async;
+        on = on && !o.mtp.empty() && o.spec >= 2 && o.batch == 0 && o.peer_device < 0 && !helpers_block_pipe && !o.adapt_async;
         o.pipeline_windows = on ? 2 : 0;
         if (on)
             std::fprintf(stderr, "strata generate: --pipeline-windows 2 is on by default for a layer split of %zu stages "
                                  "(--pipeline-windows 0 or STRATA_PIPELINE_AUTO=0 turns it off)\n", split_devs.size() + 1);
     }
     if (o.pipeline_windows > 0) {
-        const bool helpers = o.expert_cache_remote[0] > 0 || o.expert_cache_remote[1] > 0 || o.expert_cache_remote[2] > 0;
         const char* off = !o.serve ? "it needs --serve"
                         : split_same ? "it needs each stage of the layer split on its own GPU"
                         : !multi_gpu ? "it needs a layer split on two GPUs"
@@ -5047,7 +5163,8 @@ int main(int argc, char** argv) {
                         : o.mtp.empty() || o.spec < 2 ? "it needs the MTP drafter (--mtp, --spec)"
                         : o.batch != 0 ? "not with --batch slots"
                         : o.peer_device >= 1 ? "not with --peer-device"
-                        : helpers ? "not with the helper caches (--expert-cache-device1..3, --remote-expert-opt)"
+                        : helpers_block_pipe && o.remote_expert_opt ? "not with --remote-expert-opt beside the helper caches"
+                        : helpers_block_pipe ? "not with the helper caches (STRATA_HELPER_PIPELINE=0)"
                         : nullptr;
         if (off != nullptr) {
             std::fprintf(stderr, "strata generate: --pipeline-windows %d is off: %s\n", o.pipeline_windows, off);
@@ -5185,6 +5302,8 @@ int main(int argc, char** argv) {
     }();
 
     std::vector<std::pair<int32_t, int32_t>> profile;
+    std::vector<std::pair<int32_t, int32_t>> tp_profile1;   ///< --tensor-parallel: CUDA1's experts of the profile
+    std::vector<std::pair<int32_t, int32_t>> tp_profile_all;   ///< --tensor-parallel with helpers: the whole ranking (cycle 5)
     if (!o.expert_profile.empty()) {
         int64_t pslots = 0;
         if (!strata::core::read_expert_profile(o.expert_profile, g.n_layers, g.n_expert, profile, pslots, err)) {
@@ -5195,6 +5314,13 @@ int main(int argc, char** argv) {
         // file).  `--expert-cache 0` used to take the count the profile was built for; the profile now ranks
         // every pair (issue #46: a card that holds more than the old 8,000 used to stop there), so it means auto.
         if (o.expert_cache == 0) o.expert_cache = -1;
+        if (tensor_par) {   // --tensor-parallel: each card's cache holds only its own experts (e % tp), hottest first
+            const int tpn = o.tensor_parallel;
+            if (o.any_helper_cache()) tp_profile_all = profile;
+            std::vector<std::pair<int32_t, int32_t>> mine;
+            for (const auto& pr : profile) (pr.second % tpn == 0 ? mine : tp_profile1).push_back(pr);
+            profile.swap(mine);
+        }
         // Multi-GPU: STRATA_PEER_HOT=<f> gives the peer card a share f of the HOT pairs, so both cards
         // compute routed experts every layer (the primary alone did ~25 of ~30 per layer-window).  Of the first
         // STRATA_PEER_HOT_AT (default 8700, ~ the primary's slots) ranks, every pair with floor((r+1)f) > floor(rf)
@@ -6461,7 +6587,7 @@ int main(int argc, char** argv) {
     }
     // Create the additional contexts after MTP has secured CUDA0 memory, but
     // before the host arena maps its expert pages into their address spaces.
-    for (int r = 1; r < 3; ++r) if (o.expert_cache_remote[(size_t) r] > 0 && !early_remote) {
+    for (int r = 1; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0 && !early_remote) {
         double free_gib = 0;
         if (!strata::core::RemoteExperts::preflight(remote_dev[r], free_gib, err)) {
             std::fprintf(stderr, "strata generate: %s\n", err.c_str());
@@ -7634,17 +7760,23 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::array<strata::core::RemoteExperts, 3> remote_experts;
+    std::array<strata::core::RemoteExperts, kMaxHelpers> remote_experts;
     std::unique_ptr<strata::core::RemoteExpertOpt> remote_opt;
     if (o.remote_expert_opt && o.expert_cache_remote[0] > 0) remote_opt = std::make_unique<strata::core::RemoteExpertOpt>();
-    const bool multi_remote = o.expert_cache_remote[1] > 0 || o.expert_cache_remote[2] > 0;
-    if (o.expert_cache_remote[0] > 0) {
+    // the helpers are enabled in order (checked above), so CUDA2's cache is the sign of more than one
+    const bool multi_remote = o.expert_cache_remote[1] > 0;
+    // The helper caches' fill.  Without tensor parallel it runs here, as before.  --tensor-parallel 2 (cycle 5) runs it
+    // later, once CUDA1's cache is filled (the serve block): `tp_ranked` is then the whole ranking (both cards' experts)
+    // and `tp_held` CUDA1's residency [layer][expert], so the helpers take exactly the experts neither card holds.
+    // Returns 0, or the exit code.
+    auto open_helper_caches = [&](const std::vector<std::pair<int32_t, int32_t>>* tp_ranked,
+                                  const std::vector<int32_t>* tp_held) -> int {
         if (o.expert_cache <= 0 || profile.empty() || o.no_pool) {
             std::fprintf(stderr, "strata generate: remote experts need --expert-profile, "
                                  "a CUDA0 expert cache and the expert pool\n");
             return 2;
         }
-        std::vector<std::pair<int32_t, int32_t>> ranked = profile;
+        std::vector<std::pair<int32_t, int32_t>> ranked = tp_ranked != nullptr ? *tp_ranked : profile;
         if (!stages.empty()) {   // a layer split: CUDA0's share of the profile, then the later stages' pairs no cache holds
             for (auto& st : stages)
                 for (const auto& pr : st->profile)
@@ -7663,20 +7795,33 @@ int main(int argc, char** argv) {
                 for (int64_t l = 0; l < g.n_layers; ++l)
                     if (!seen[(size_t) l * (size_t) g.n_expert + (size_t) e])
                         ranked.emplace_back((int32_t) l, (int32_t) e);
+            int n_helpers = 0;
+            for (const int slots : o.expert_cache_remote) n_helpers += slots > 0;
             std::fprintf(stderr, "strata generate: remote ranking: %zu profiled pairs, "
-                                 "%zu other pairs to fill CUDA1..3\n", profile.size(), ranked.size() - profile.size());
+                                 "%zu other pairs to fill CUDA1..%d\n", profile.size(), ranked.size() - profile.size(),
+                         std::max(3, n_helpers));   // "1..3" up to three helpers, as before
         }
-        std::array<std::vector<std::pair<int32_t, int32_t>>, 3> by_device;
+        std::vector<uint8_t> claimed((size_t) g.n_layers * (size_t) g.n_expert, 0);
+        for (auto& st : stages)   // a layer split: what a stage's cache holds is no helper's
+            for (const auto& pr : st->profile)
+                if (st->cache.slot_of(pr.first, pr.second) >= 0)
+                    claimed[(size_t) pr.first * (size_t) g.n_expert + (size_t) pr.second] = 1;
+        if (tp_held != nullptr)   // --tensor-parallel: what CUDA1's cache holds is no helper's either
+            for (size_t i = 0; i < claimed.size() && i < tp_held->size(); ++i)
+                if ((*tp_held)[i] >= 0) claimed[i] = 1;
+        std::array<std::vector<std::pair<int32_t, int32_t>>, kMaxHelpers> by_device;
         if (multi_remote) {
             // Either stripe experts for parallel GPU work, or give each layer one
             // secondary GPU to reduce switches and transfers over shared USB4.
             std::vector<uint8_t> assigned((size_t) g.n_layers * (size_t) g.n_expert, 0);
-            const int devices = 1 + (o.expert_cache_remote[1] > 0) + (o.expert_cache_remote[2] > 0);
+            int devices = 0;   // the helpers in use: a prefix of CUDA1..N (enabled in order, checked above)
+            while (devices < kMaxHelpers && o.expert_cache_remote[(size_t) devices] > 0) ++devices;
             int next = 0;
+            int64_t stripe_skipped = 0;   // held by CUDA0 or a split stage: never a helper's, so never counted in its quota
             for (const auto& pair : ranked) {
-                if (pair.first < 0 || pair.first >= g.n_layers || pair.second < 0 || pair.second >= g.n_expert ||
-                    xcache.slot_of(pair.first, pair.second) >= 0) continue;
+                if (pair.first < 0 || pair.first >= g.n_layers || pair.second < 0 || pair.second >= g.n_expert) continue;
                 const size_t index = (size_t) pair.first * (size_t) g.n_expert + (size_t) pair.second;
+                if (xcache.slot_of(pair.first, pair.second) >= 0 || claimed[index]) { ++stripe_skipped; continue; }
                 if (assigned[index]) continue;
                 int target = -1;
                 if (o.expert_cache_remote_placement == "layer") {
@@ -7698,17 +7843,14 @@ int main(int argc, char** argv) {
                 by_device[(size_t) target].push_back(pair);
                 next = (target + 1) % devices;
             }
-            std::fprintf(stderr, "strata generate: remote ranks %s across %d CUDA devices\n",
-                         o.expert_cache_remote_placement == "layer" ? "grouped by layer" : "striped", devices);
+            std::fprintf(stderr, "strata generate: remote ranks %s across %d CUDA devices (%lld ranked pairs skipped: "
+                                 "held by CUDA0 or a split stage)\n",
+                         o.expert_cache_remote_placement == "layer" ? "grouped by layer" : "striped", devices,
+                         (long long) stripe_skipped);
         } else {
             by_device[0] = std::move(ranked);
         }
-        std::vector<uint8_t> claimed((size_t) g.n_layers * (size_t) g.n_expert, 0);
-        for (auto& st : stages)   // a layer split: what a stage's cache holds is no helper's
-            for (const auto& pr : st->profile)
-                if (st->cache.slot_of(pr.first, pr.second) >= 0)
-                    claimed[(size_t) pr.first * (size_t) g.n_expert + (size_t) pr.second] = 1;
-        for (int r = 0; r < 3; ++r) if (o.expert_cache_remote[(size_t) r] > 0) {
+        for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0) {
             if (remote_opt) remote_opt->attach(remote_experts[(size_t) r]);
             if (!remote_experts[(size_t) r].open(remote_dev[r], o.expert_cache_remote[(size_t) r],
                      g.n_layers, g.n_expert, by_device[(size_t) r], xcache, *srcp, claimed, err,
@@ -7716,11 +7858,46 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "strata generate: %s\n", err.c_str());
                 return 1;
             }
-            std::fprintf(stderr, "strata generate: CUDA%d: %lld additional experts, %.2f GiB; "
-                                 "results return through pinned host rows\n", remote_dev[r],
-                         (long long) remote_experts[(size_t) r].resident(), remote_experts[(size_t) r].gib());
+            std::fprintf(stderr, "strata generate: CUDA%d: %lld additional experts, %.2f GiB (%lld candidates skipped: "
+                                 "held by another device); results return through pinned host rows; transport %s\n",
+                         remote_dev[r], (long long) remote_experts[(size_t) r].resident(), remote_experts[(size_t) r].gib(),
+                         (long long) remote_experts[(size_t) r].skipped_held(), remote_experts[(size_t) r].transport().c_str());
         }
-    }
+        int64_t on_gpus = xcache.resident();
+        for (const auto& st : stages) on_gpus += st->cache.resident();
+        for (int r = 0; r < kMaxHelpers; ++r)
+            if (o.expert_cache_remote[(size_t) r] > 0) on_gpus += remote_experts[(size_t) r].resident();
+        if (tp_held != nullptr) {   // cycle 5: the fill per device, CUDA1 included (the line below counts it too)
+            int64_t on1 = 0, cpu_left = 0;
+            for (int64_t l = 0; l < g.n_layers; ++l)
+                for (int64_t e = 0; e < g.n_expert; ++e) {
+                    const size_t at = (size_t) (l * g.n_expert + e);
+                    const bool c1 = at < tp_held->size() && (*tp_held)[at] >= 0;
+                    on1 += c1;
+                    bool h = false;
+                    for (int r = 0; r < kMaxHelpers && !h; ++r)
+                        h = o.expert_cache_remote[(size_t) r] > 0 && remote_experts[(size_t) r].holds(l, (int32_t) e);
+                    if (!c1 && !h && xcache.slot_of(l, e) < 0) ++cpu_left;
+                }
+            on_gpus += on1;
+            std::string per;
+            for (int r = 0; r < kMaxHelpers; ++r)
+                if (o.expert_cache_remote[(size_t) r] > 0) {
+                    char b[64];
+                    std::snprintf(b, sizeof b, ", CUDA%d %lld (%.2f GiB)", remote_dev[r],
+                                  (long long) remote_experts[(size_t) r].resident(), remote_experts[(size_t) r].gib());
+                    per += b;
+                }
+            std::fprintf(stderr, "strata: tensor parallel: expert fill: CUDA0 %lld, CUDA1 %lld%s; CPU path %lld of %lld\n",
+                         (long long) xcache.resident(), (long long) on1, per.c_str(), (long long) cpu_left,
+                         (long long) (g.n_layers * g.n_expert));
+        }
+        std::fprintf(stderr, "strata generate: expert caches: %lld of %lld experts on the GPUs (CUDA0, split stages, "
+                             "helpers; disjoint)\n", (long long) on_gpus, (long long) (g.n_layers * g.n_expert));
+        return 0;
+    };
+    if (o.expert_cache_remote[0] > 0 && !tensor_par)
+        if (const int rc = open_helper_caches(nullptr, nullptr); rc != 0) return rc;
 
     // ---- Multi-GPU: the second GPU's expert tier, filled with the ranked pairs the primary does not hold
     strata::core::PeerExperts peer;
@@ -7743,17 +7920,21 @@ int main(int argc, char** argv) {
 
     if (remote_opt && !remote_opt->init(err)) { std::fprintf(stderr, "strata generate: %s\n", err.c_str()); return 1; }
     Drive drive;
-    // #731 (opt-in, STRATA_DISJOINT_ADAPT=1): the adaptive tiers leave an expert a helper GPU holds out of the primary's
-    // promotion candidates (it would sit in both caches).  Asked live, from the helper's own cache (RemoteExperts::holds,
-    // #854), so an expert the helper's tier swaps in or out later is followed - never a copy taken at load.
-    const bool disjoint_adapt = [] { const char* v = std::getenv("STRATA_DISJOINT_ADAPT"); return v != nullptr && std::atoi(v) != 0; }();
+    // #731: the adaptive tiers leave an expert a helper GPU holds out of the primary's promotion candidates (it would
+    // sit in both caches).  Asked live, from the helper's own cache (RemoteExperts::holds, #854), so an expert the
+    // helper's tier swaps in or out later is followed - never a copy taken at load.  On by default whenever a helper
+    // cache is enabled; STRATA_DISJOINT_ADAPT=0 opts out (=1 is a no-op then: without helpers nothing is held).
+    const bool disjoint_adapt = [&o] {
+        const char* v = std::getenv("STRATA_DISJOINT_ADAPT");
+        return v != nullptr ? std::atoi(v) != 0 : o.expert_cache_remote[0] > 0;
+    }();
     auto helper_holds = [&](int64_t l, int32_t e) -> bool {
         if (!disjoint_adapt) return false;
         for (int r = 0; r < drive.d.remote_count; ++r)
             if (drive.d.remote[r]->holds(l, e)) return true;
         return false;
     };
-    for (int r = 0; r < 3; ++r) if (o.expert_cache_remote[(size_t) r] > 0)
+    for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0)
         drive.d.remote[drive.d.remote_count++] = &remote_experts[(size_t) r];
     drive.d.peer = peer.valid() ? &peer : nullptr;
     drive.d.hit_cpu_order = o.expert_cache_cpu_order;
@@ -7762,6 +7943,7 @@ int main(int argc, char** argv) {
     drive.d.src = srcp;
     drive.d.n_expert = g.n_expert;
     drive.d.jobs.resize((size_t) K);
+    if (tensor_par) { drive.d.tp = o.tensor_parallel; drive.d.tp_card = 0; }
     // CS-T: routing-aware prefetch of the file tier (the GGUF in place): the next layer's router on this layer's MoE
     // input predicts its experts and their pages are warmed meanwhile.  It only warms pages; STRATA_LOOKAHEAD=0 is
     // the A/B arm, STRATA_LOOKAHEAD_K the experts per token (default 10).
@@ -9140,7 +9322,7 @@ int main(int argc, char** argv) {
                     if (st->cache.slot_of(l, e) >= 0) stage_pairs.emplace_back((int32_t) l, (int32_t) e);
         // A helper GPU's experts are left out of the RAM copy as a stage's are - the RAM
         // that duplication would take goes to colder experts instead.
-        for (int r = 0; r < 3; ++r) {
+        for (int r = 0; r < kMaxHelpers; ++r) {
             if (o.expert_cache_remote[(size_t) r] <= 0) continue;
             for (int64_t l = 0; l < g.n_layers; ++l)
                 for (int64_t e = 0; e < g.n_expert; ++e)
@@ -9650,7 +9832,7 @@ int main(int argc, char** argv) {
                     std::fprintf(stderr, "strata serve:   a card this small can serve as a helper expert cache "
                                          "instead of a split stage: without --layer-split, with %s "
                                          "(docs/SECOND_GPU.md)\n",
-                                 dev == 1 ? "--expert-cache-device1 N" : "--expert-cache-device1..3 N, in order");
+                                 dev == 1 ? "--expert-cache-device1 N" : "--expert-cache-device1..5 N, in order");
                 }
             }
             if (chunk > 0) {
@@ -10001,6 +10183,18 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "strata serve: the penalty-history allocation failed\n");
             return 1;
         }
+        // --batch: the batch windows' own penalty rows (one per window row, the slot's tail; Verifier::set_batch_history),
+        // apart from the solo request's buffer, which a request being admitted still uses between batch windows
+        int32_t* d_bhist = nullptr;
+        std::vector<int32_t> bhist_stage;
+        if (o.batch > 0) {
+            bhist_stage.assign((size_t) kPenaltyWindowCap * strata::kernels::kVerifyMaxT, -1);
+            if (const strata::core::OnDevice on_h(hist_dev);
+                cudaMalloc(&d_bhist, bhist_stage.size() * sizeof(int32_t)) != cudaSuccess) {
+                std::fprintf(stderr, "strata serve: the batch penalty-history allocation failed\n");
+                return 1;
+            }
+        }
         strata::core::Verifier ver;
         strata::core::VerifyHits vh;
         vh.d_res = thits.d_res;
@@ -10215,6 +10409,258 @@ int main(int argc, char** argv) {
             // the setters reach the later stages; the pipeline never chains run/commit
             for (int st = 0; st + 1 < n_stages; ++st) stage_ver_p(st, 1).set_next(&stage_ver_p(st + 1, 1), &split_drive_b);
         }
+        // ---- --tensor-parallel 2: CUDA1, the second card (tp_slice.hpp).  The same model as CUDA0 with the other half of
+        // the heads and the other experts: its own dense slices, head, session (its KV / GDN state), expert cache (the
+        // experts e % 2 == 1, hottest first from the profile), residency table, Drive (the dispatch of its CPU experts,
+        // with the one CPU pool) and verify window, all-reduced with CUDA0's in every layer.  `ver` drives it.
+        std::unique_ptr<GpuStage> tp1;
+        std::unique_ptr<Drive> tp_drive1;
+        std::vector<int32_t> tp_res1;
+        std::vector<std::unique_ptr<strata::core::SessionState>> tp_slot_ss;   // --batch: CUDA1's slot sessions (cycle 3)
+        strata::kernels::TpArGroup* tp_ar = nullptr;
+        if (tensor_par) {
+            const int dev1 = 1;
+            tp1 = std::make_unique<GpuStage>();
+            GpuStage& t1 = *tp1;
+            t1.dev = dev1;
+            t1.lb = 0;
+            t1.le = g.n_layers;
+            const auto vram_line = [](int dev) {
+                const strata::core::OnDevice on(dev);
+                size_t fb = 0, tb = 0;
+                if (cudaMemGetInfo(&fb, &tb) != cudaSuccess) { (void) cudaGetLastError(); return std::string("?"); }
+                char b[96];
+                std::snprintf(b, sizeof b, "CUDA%d %.2f GiB used of %.2f GiB", dev, (double) (tb - fb) / 1073741824.0,
+                              (double) tb / 1073741824.0);
+                return std::string(b);
+            };
+            std::fprintf(stderr, "strata: tensor parallel: CUDA0 is set up (%s); loading CUDA1\n", vram_line(0).c_str());
+            {
+                const strata::core::OnDevice on(dev1);
+                if (cudaStreamCreateWithFlags(&t1.stream, cudaStreamNonBlocking) != cudaSuccess) {
+                    std::fprintf(stderr, "strata serve: tensor parallel, CUDA1: its stream failed\n");
+                    return 1;
+                }
+                // the dense weights: the arena, the native projections sliced for card 1, the arena's split rows
+                strata::core::tp_slice().card = 1;
+                void* arena1 = nullptr;
+                const bool wok = cudaMalloc(&arena1, pool_bytes) == cudaSuccess &&
+                                 t1.wt.load(o.pack, arena1, pool_bytes, err, skip.empty() ? nullptr : &skip) &&
+                                 (!hc_q8 || [&] { uint64_t qb = 0; return t1.wt.load_hc_q8(o.pack, qb, err); }()) &&
+                                 t1.dense.load(o.native_dense_gguf, t1.wt, err, o.native_ple_key);
+                uint64_t sliced = 0;
+                const bool sok = wok && strata::core::tp_slice_arena(t1.wt, strata::core::tp_slice(), sliced, err);
+                strata::core::tp_slice().card = 0;
+                if (!wok || !sok) {
+                    (void) cudaGetLastError();
+                    std::fprintf(stderr, "strata serve: tensor parallel, CUDA1 weights: %s%s\n",
+                                 err.empty() ? "the weight arena does not fit" : err.c_str(), vram_free_note().c_str());
+                    return 1;
+                }
+                if (!o.native_head_gguf.empty() && !t1.head.load(o.native_head_shards, g.n_embd, n_vocab, err)) {
+                    std::fprintf(stderr, "strata serve: tensor parallel, CUDA1 head: %s%s\n", err.c_str(), vram_free_note().c_str());
+                    return 1;
+                }
+                // the session: its half of the KV and of the GDN state; the PLE on its own weights and buffers (the
+                // table and the host staging are CUDA0's: the host serves the cards one after the other)
+                void* sbuf1 = nullptr;
+                if (cudaMalloc(&sbuf1, strata::core::session_bytes(g, o.max_context, K)) != cudaSuccess ||
+                    strata::core::session_init(g, o.max_context, K, sbuf1, t1.ss) == 0) {
+                    (void) cudaGetLastError();
+                    std::fprintf(stderr, "strata serve: tensor parallel, CUDA1: the session state failed%s\n", vram_free_note().c_str());
+                    return 1;
+                }
+                if (ss.ple.table != nullptr) {
+                    t1.ss.ple = ss.ple;
+                    auto dptr = [&](const char* name) -> const strata::core::WeightRef* { return t1.wt.find(name); };
+                    const strata::core::WeightRef *wk = dptr("blk.1.ple_key.weight"), *wv = dptr("blk.1.ple_value.weight"),
+                                                  *wnk = dptr("blk.1.ple_norm_key.weight"), *wnq = dptr("blk.1.ple_norm_query.weight"),
+                                                  *wnc = dptr("blk.1.ple_norm_conv.weight"), *wc = dptr("blk.1.ple_conv1d.weight");
+                    if (!wk || !wv || !wnk || !wnq || !wnc || !wc) {
+                        std::fprintf(stderr, "strata serve: tensor parallel, CUDA1: the PLE weights are missing\n");
+                        return 1;
+                    }
+                    strata::kernels::PleWeights& w1 = t1.ss.ple.w;
+                    if (w1.key_bf16 != nullptr) w1.key_bf16 = (const uint16_t*) wk->data;
+                    if (w1.key_codes != nullptr) {
+                        w1.key_codes = (const uint8_t*) wk->data;
+                        w1.key_scales = (const float*) ((const uint8_t*) wk->data + wk->codes_bytes);
+                    }
+                    if (w1.key_native_data != nullptr) {
+                        w1.key_native_data = wk->native_data;
+                        w1.key_native_q8_1 = wk->native_q8_1;
+                    }
+                    w1.value_bf16 = (const uint16_t*) wv->data;
+                    w1.norm_key = (const float*) wnk->data;
+                    w1.norm_query = (const float*) wnq->data;
+                    w1.norm_conv = (const float*) wnc->data;
+                    w1.conv1d_f16 = (const uint16_t*) wc->data;
+                    t1.ss.ple.token = &t1.ss.ple_token;
+                    t1.ss.ple.prev = t1.ss.ple_prev;
+                    t1.ss.ple.hist = t1.ss.ple_hist;
+                    float* e1 = nullptr;
+                    float* s1 = nullptr;
+                    if (cudaMalloc((void**) &e1, (size_t) strata::kernels::NG_N_EMBD * 4) != cudaSuccess ||
+                        cudaMalloc((void**) &s1, strata::core::ple_run_scratch_bytes()) != cudaSuccess) {
+                        std::fprintf(stderr, "strata serve: tensor parallel, CUDA1: the PLE buffers failed\n");
+                        return 1;
+                    }
+                    t1.ss.ple.emb_dev = e1;
+                    t1.ss.ple.scratch = s1;
+                    if (!t1.ss.ple.ready()) {
+                        std::fprintf(stderr, "strata serve: tensor parallel, CUDA1: the PLE run is not ready\n");
+                        return 1;
+                    }
+                }
+                strata::core::session_zero(t1.ss, g, nullptr, (void*) t1.stream);
+                if (cudaStreamSynchronize(t1.stream) != cudaSuccess) {
+                    std::fprintf(stderr, "strata serve: tensor parallel, CUDA1: zeroing the session failed\n");
+                    return 1;
+                }
+                // --batch (cycle 3): CUDA1's half of every slot's state, as many slots as CUDA0 carved
+                if (o.batch > 0 && !bslot_ss.empty()) {
+                    const uint64_t sb = strata::core::session_bytes(g, o.max_context, K);
+                    for (size_t b = 0; b < bslot_ss[0].size(); ++b) {
+                        auto u = std::make_unique<strata::core::SessionState>();
+                        void* buf = nullptr;
+                        if (cudaMalloc(&buf, sb) != cudaSuccess || strata::core::session_init(g, o.max_context, K, buf, *u) == 0) {
+                            (void) cudaGetLastError();
+                            std::fprintf(stderr, "strata serve: tensor parallel, CUDA1: slot %zu's session does not fit%s\n", b,
+                                         vram_free_note().c_str());
+                            return 1;
+                        }
+                        strata::core::session_zero(*u, g, nullptr, nullptr);
+                        tp_slot_ss.push_back(std::move(u));
+                    }
+                    cudaDeviceSynchronize();
+                    std::fprintf(stderr, "strata: tensor parallel: --batch %zu: CUDA1's slot sessions (%.2f GiB each)\n",
+                                 tp_slot_ss.size(), (double) sb / 1073741824.0);
+                }
+                // the expert cache: CUDA1's experts, hottest first, in the room left after the reserve and the window's
+                // buffers (STRATA_TP_RESERVE_MIB, default --vram-reserve-mib + 1500)
+                const char* rv = std::getenv("STRATA_TP_RESERVE_MIB");
+                const uint64_t keep = (uint64_t) (rv != nullptr ? std::max(0, std::atoi(rv)) : o.vram_reserve_mib + 1500) << 20;
+                const uint64_t free1 = (uint64_t) strata::core::device_free_bytes();
+                const uint64_t room = free1 > keep ? free1 - keep : 0;
+                std::vector<int64_t> sized1;
+                uint64_t used = 0;
+                for (const auto& pr : tp_profile1) {
+                    const uint64_t b = (uint64_t) strata::core::ExpertCache::slot_stride((int64_t) nib::slot_bytes(pr.first), slot_guard);
+                    if (used + b > room) break;
+                    used += b;
+                    sized1.push_back((int64_t) nib::slot_bytes(pr.first));
+                }
+                t1.cache.set_slot_guard(slot_guard);
+                if (sized1.empty() || !t1.cache.open_sized(sized1, g.n_layers, g.n_expert, err)) {
+                    std::fprintf(stderr, "strata serve: tensor parallel, CUDA1 expert cache (%zu slots): %s%s\n", sized1.size(),
+                                 sized1.empty() ? "no room" : err.c_str(), vram_free_note().c_str());
+                    return 1;
+                }
+                int64_t filled = 0;
+                const auto& lay = strata::kernels::cpu::expert_layout();
+                for (size_t i = 0; i < sized1.size(); ++i) {
+                    const auto& pr = tp_profile1[i];
+                    const int32_t slot = t1.cache.admit(pr.first, pr.second);
+                    if (slot == strata::core::kNotResident) break;
+                    const uint8_t* b = srcp != nullptr ? srcp->blob_stable(pr.first, pr.second) : nullptr;
+                    if (b == nullptr || !t1.cache.fill_slot_blocking(slot, b, err, (int64_t) lay.blob_bytes(pr.first))) {
+                        std::fprintf(stderr, "strata serve: tensor parallel, CUDA1: the profile fill failed at pair %zu: %s\n", i,
+                                     err.c_str());
+                        return 1;
+                    }
+                    ++filled;
+                }
+                // its residency table (host and device)
+                tp_res1.assign((size_t) (g.n_layers * g.n_expert), strata::core::kNotResident);
+                for (int64_t l = 0; l < g.n_layers; ++l)
+                    for (int64_t e = 0; e < g.n_expert; ++e) tp_res1[(size_t) (l * g.n_expert + e)] = t1.cache.slot_of(l, e);
+                if (cudaMalloc((void**) &t1.d_res, tp_res1.size() * sizeof(int32_t)) != cudaSuccess ||
+                    cudaMemcpy(t1.d_res, tp_res1.data(), tp_res1.size() * sizeof(int32_t), cudaMemcpyHostToDevice) != cudaSuccess ||
+                    cudaStreamSynchronize(nullptr) != cudaSuccess) {
+                    std::fprintf(stderr, "strata serve: tensor parallel, CUDA1: the residency table failed\n");
+                    return 1;
+                }
+                // its dispatch: the shared CPU pool and expert source, its own cache, plan and residency
+                tp_drive1 = std::make_unique<Drive>();
+                strata::core::ExpertDispatch& d1 = tp_drive1->d;
+                d1.pool = &pool;
+                d1.src = srcp;
+                d1.n_expert = g.n_expert;
+                d1.jobs.resize((size_t) K);
+                d1.hit_cpu_order = drive.d.hit_cpu_order;
+                d1.split_rows = drive.d.split_rows;
+                d1.cache = &t1.cache;
+                d1.cache_stream = t1.stream;
+                d1.cache_base = (const uint8_t*) t1.cache.device_slot(0);
+                d1.cache_blob = (int64_t) lay.max_blob;
+                d1.cache_slot_off = t1.cache.slot_offsets();
+                d1.host_res = tp_res1.data();
+                d1.pcie_num = 0;
+                d1.tp = o.tensor_parallel;
+                d1.tp_card = 1;
+                // ownership by residency (expert_source.hpp tp_owns; STRATA_TP_OWN=parity: step 1's e % 2): card 1 runs
+                // only its VRAM experts, card 0 its own and every CPU expert (one host pool pass a layer, for card 0)
+                static const bool tp_parity = [] { const char* v = std::getenv("STRATA_TP_OWN"); return v != nullptr && std::string(v) == "parity"; }();
+                if (!tp_parity) {
+                    d1.tp_res_own = true;
+                    drive.d.tp_peer_res = tp_res1.data();
+                }
+                std::fprintf(stderr, "strata: tensor parallel: expert ownership %s\n",
+                             tp_parity ? "by parity (expert %% 2; STRATA_TP_OWN=parity)"
+                                       : "by residency: CUDA1 runs its VRAM experts, CUDA0 its own and every CPU expert (one host pass a layer)");
+                int64_t own0 = 0, res0 = 0, own1 = 0;
+                for (int64_t l = 0; l < g.n_layers; ++l)
+                    for (int64_t e = 0; e < g.n_expert; ++e) {
+                        if (e % 2 == 0) { ++own0; res0 += (!host_res.empty() && host_res[(size_t) (l * g.n_expert + e)] >= 0) ? 1 : 0; }
+                        else ++own1;
+                    }
+                std::fprintf(stderr, "strata: tensor parallel: CUDA0 holds %lld of its %lld experts in VRAM, CUDA1 %lld of its %lld "
+                                     "(%.2f GiB of slots); the rest are the CPU pool's\n",
+                             (long long) res0, (long long) own0, (long long) filled, (long long) own1, (double) used / 1073741824.0);
+                // the all-reduce group, then CUDA1's window (records the all-reduce as member 1)
+                tp_ar = strata::kernels::tp_ar_open({0, dev1}, (size_t) strata::kernels::kVerifyMaxT * (size_t) g.n_embd, err);
+                if (tp_ar == nullptr) {
+                    std::fprintf(stderr, "strata serve: %s\n", err.c_str());
+                    return 1;
+                }
+                t1.ver.set_tp(tp_ar, 1, o.tensor_parallel, nullptr, nullptr);
+                // cycle 3: by residency, card 1 plans every layer itself (no host doorbell); card 0 the layers with no
+                // CPU expert (STRATA_TP_DEVPLAN=0: the host plans every layer of both, as in cycle 2)
+                if (!tp_parity) {
+                    t1.ver.set_tp_plan(true, nullptr);
+                    ver.set_tp_plan(false, tp_res1.data());
+                }
+                strata::core::VerifyHits vh1;
+                vh1.d_res = t1.d_res;
+                vh1.h_res = tp_res1.data();
+                vh1.cache_base = d1.cache_base;
+                vh1.blob = d1.cache_blob;
+                vh1.slot_off = t1.cache.slot_offsets();
+                vh1.n_slots = t1.cache.slots();
+                if (!t1.ver.init(t1.wt, g, t1.ss, vh1, t1.head.loaded() ? &t1.head : nullptr, batch_max_t(), err)) {
+                    std::fprintf(stderr, "strata serve: tensor parallel, CUDA1 verifier: %s%s\n", err.c_str(), vram_free_note().c_str());
+                    return 1;
+                }
+                d1.plan = t1.ver.plan_sink();
+                if (!tp_slot_ss.empty()) {
+                    std::vector<strata::core::SessionState*> ptrs;
+                    for (auto& u : tp_slot_ss) ptrs.push_back(u.get());
+                    if (!t1.ver.init_slots(ptrs, err)) {
+                        std::fprintf(stderr, "strata serve: tensor parallel, CUDA1 --batch: %s\n", err.c_str());
+                        return 1;
+                    }
+                }
+            }
+            // cycle 5: the helper caches (CUDA2..5) take the experts neither card's cache holds, hottest first, striped; they
+            // are card 0's (it owns every expert outside CUDA1's VRAM): the host pass hands their rows to the helpers and
+            // their results return through card 0's mapped rows like the CPU's
+            if (o.expert_cache_remote[0] > 0) {
+                if (const int rc = open_helper_caches(&tp_profile_all, &tp_res1); rc != 0) return rc;
+            }
+            ver.set_tp(tp_ar, 0, o.tensor_parallel, &t1.ver, tp_drive1.get());
+            std::fprintf(stderr, "strata: tensor parallel 2: VRAM after loading: %s; %s (the verify graphs are captured on the "
+                                 "first window)\n", vram_line(0).c_str(), vram_line(1).c_str());
+        }
         ver.set_remote_expert_opt(remote_opt.get());
         if (pcie_balance() && n_stages == 1) ver.set_pcie_balance(&drive.d.pcie_model);
         if (batch_mtp) ver.set_batch_graph_limit(64);   // --batch-mtp only: slot rotation makes many layouts (LRU); 0.1.39 keeps all
@@ -10291,6 +10737,10 @@ int main(int argc, char** argv) {
         void* const win_pool_user = n_stages > 1 ? (void*) &split_drive : (void*) &drive;
         mem_mark("the verifier and the drafter's binding");
         ver.set_split(o.spec_split);
+        if (tp1) {   // --tensor-parallel: CUDA1's window is cut into the same groups, its PCIe share copied the same way
+            tp1->ver.set_split(o.spec_split);
+            tp1->ver.set_pcie_mode(o.pcie_mode == "dma" ? 0 : o.pcie_mode == "direct" ? 1 : 2);
+        }
         // auto: the copy kernel for every pack.  DMA (the native packs' default until 0.1.13) has the host call
         // cudaMemcpyAsync + cudaLaunchHostFunc inside a verify window while the GPU spins on the flag they raise;
         // issue #31's thread dumps show the host stuck in that cudaMemcpyAsync on a driver lock for good.  The copy
@@ -11211,6 +11661,37 @@ int main(int argc, char** argv) {
                                      "lower is skipped (+10..20%% decode on 12-16 GB cards that miss experts, answers differ slightly from 0.1.41); "
                                      "STRATA_ROUTE_TAIL_SKIP=0 turns it off\n", strata::core::tail_skip_rank(),
                              tse == nullptr ? " (default)" : "", strata::core::tail_skip_rank());
+        }
+        // The helper caches: whether the pipelined windows and the tail skip run beside them (until 2026-11 both were off
+        // with any helper, while the line above still said ON).  STRATA_HELPER_TAIL_SKIP (default on with a layer split; =0 off as before):
+        // the tail skip applies to the misses of the stage caches whether or not a helper holds them, so its skip set is the
+        // one a run with the same stage caches and no helpers makes; a skipped row is kind -2, which no helper claims.
+        // Not with --remote-expert-opt (its helper-side reduce builds its own row map) or --peer-device (the dispatch's rule).
+        if (drive.d.remote_count > 0) {
+            // (default: on a layer split only, so one GPU with helpers decodes as before; =1 also there, =0 never)
+            const char* hts = std::getenv("STRATA_HELPER_TAIL_SKIP");
+            const bool hts_env_on = hts != nullptr && hts[0] != '\0' ? std::atoi(hts) != 0 : n_stages > 1;
+            drive.d.tail_skip_helpers = hts_env_on && remote_opt == nullptr && drive.d.peer == nullptr;
+            const int tr = strata::core::tail_skip_rank();
+            const char* ts_why = tr <= 0 || all_experts_resident ? "off (STRATA_ROUTE_TAIL_SKIP is off for this run)"
+                               : !hts_env_on ? (n_stages > 1 ? "off (STRATA_HELPER_TAIL_SKIP=0)"
+                                                             : "off (one GPU: STRATA_HELPER_TAIL_SKIP=1 turns it on)")
+                               : remote_opt != nullptr ? "off (not with --remote-expert-opt)"
+                               : drive.d.peer != nullptr ? "off (not with --peer-device)"
+                               : nullptr;
+            const char* pw_why = pipe ? nullptr
+                               : n_stages < 2 ? "off (no layer split)"
+                               : o.pipeline_windows <= 0 ? "off (--pipeline-windows is off for this run; see its line above)"
+                               : "off";
+            char ts_on[64];
+            std::snprintf(ts_on, sizeof ts_on, "ON (rank >= %d, helper-held tail experts skipped too)", tr);
+            std::fprintf(stderr, "strata serve: helper caches (%d GPU%s): pipelined windows %s%s; route tail skip %s\n",
+                         drive.d.remote_count, drive.d.remote_count == 1 ? "" : "s",
+                         pw_why == nullptr ? "ON" : pw_why,
+                         pw_why == nullptr ? (o.pipeline_windows >= 2 ? " (--pipeline-windows 2, STRATA_HELPER_PIPELINE=0 turns it off)"
+                                                                      : " (--pipeline-windows 1, STRATA_HELPER_PIPELINE=0 turns it off)")
+                                           : "",
+                         ts_why == nullptr ? ts_on : ts_why);
         }
         if (o.adapt_every > 0 && o.adapt_swaps > 0 && !all_experts_resident)
             drive.d.usage.assign((size_t) (g.n_layers * g.n_expert), 0.0f);
@@ -12286,7 +12767,7 @@ int main(int argc, char** argv) {
                 slots_all += (int64_t) st->cache.slots();
                 mib_all += (int64_t) (st->cache.bytes() >> 20);
             }
-            for (int r = 0; r < 3; ++r)
+            for (int r = 0; r < kMaxHelpers; ++r)
                 if (o.expert_cache_remote[(size_t) r] > 0) {
                     slots_all += remote_experts[(size_t) r].resident();
                     mib_all += (int64_t) (remote_experts[(size_t) r].gib() * 1024.0);
@@ -12539,6 +13020,7 @@ int main(int argc, char** argv) {
             int n_drafts = 1;              ///< STRATA_PIPED_MTP: how many of `draft` its next window checks
             int64_t p = 0;                 ///< its position
             int64_t produced = 0, max_new = 0;
+            int pen_n = 0;                 ///< its request's penalty window (penalty_last_n; 0 = no penalties)
             Clock::time_point t0;
             // the slot's own conversation cache: the tokens its sessions hold (the prompt, then every token a window
             // fed).  Kept when the request ends (`cached`), so the next turn of that conversation continues from it
@@ -12570,6 +13052,14 @@ int main(int argc, char** argv) {
         // (token, expert) entries the CPU and the PCIe share had served by then (bt_hits0 holds the VRAM entries)
         std::vector<double> bt_stage_wait0, bt_stage_pool0;
         int64_t bt_cpu_ent0 = 0, bt_off_ent0 = 0;
+        // --tensor-parallel with helper caches (cycle 5): each helper's counters when the timed windows began
+        struct HelperSnap { int64_t entries = 0, launches = 0, groups = 0; double begin = 0, wait = 0, in = 0, kern = 0, out = 0, rt = 0; };
+        auto helper_snap = [&](int r) {
+            const strata::core::RemoteExperts& h = remote_experts[(size_t) r];
+            return HelperSnap{h.computed(), h.launched_layers(), h.groups_launched(), h.ms_begin(), h.ms_wait(),
+                              h.ms_gpu_in(), h.ms_gpu_kernels(), h.ms_gpu_out(), h.ms_round_trip()};
+        };
+        std::array<HelperSnap, kMaxHelpers> bt_helper0{};
         // the adaptive VRAM tier in batch windows: windows seen since the engine started (--adapt-every counts them), and,
         // since the last timing line, its rounds, the experts it swapped in and the ms a window waited for it
         int64_t ba_window = 0, bt_adapt_rounds = 0, bt_adapt_swaps = 0;
@@ -12655,6 +13145,27 @@ int main(int argc, char** argv) {
             if (!sync_all()) { e = "batch slot copy: device sync failed"; return false; }
             return true;
         };
+        // --tensor-parallel (cycle 3): CUDA1's half of the same copy (its main session <-> its slot session b), the host path
+        auto tp_slot_copy = [&](bool into_slot, int b, const std::vector<int32_t>& ids, std::string& e) -> bool {
+            if (!tp1 || tp_slot_ss.empty()) return true;
+            const int64_t upto = (int64_t) ids.size();
+            strata::core::SessionState& from = into_slot ? tp1->ss : *tp_slot_ss[(size_t) b];
+            strata::core::SessionState& to = into_slot ? *tp_slot_ss[(size_t) b] : tp1->ss;
+            const strata::core::OnDevice on1(tp1->dev);
+            if (cudaDeviceSynchronize() != cudaSuccess) { e = "batch slot copy (CUDA1): device sync failed"; return false; }
+            strata::core::ConversationCheckpoint ck;
+            ck.ids = ids;
+            if (!strata::core::conversation_checkpoint_save(ck, from, g, e) || !strata::core::conversation_checkpoint_restore(ck, to, g, e))
+                return false;
+            for (int64_t j = 0; j < from.qsa_alloc; ++j) {
+                strata::core::ConversationKv img;
+                if (!strata::core::conversation_kv_save(img, from.qsa_states[from.qsa_ord0 + j], g, upto, true, e)) return false;
+                if (cudaDeviceSynchronize() != cudaSuccess) { e = "batch slot copy (CUDA1): device sync failed"; return false; }
+                if (!strata::core::conversation_kv_restore(img, to.qsa_states[to.qsa_ord0 + j], g, upto, true, e)) return false;
+            }
+            if (cudaDeviceSynchronize() != cudaSuccess) { e = "batch slot copy (CUDA1): device sync failed"; return false; }
+            return true;
+        };
         auto copy_to_slot = [&](int b, const std::vector<int32_t>& ids, std::string& e) -> bool {
             const int64_t upto = (int64_t) ids.size();
 #if defined(STRATA_GPU_METAL)
@@ -12684,6 +13195,7 @@ int main(int argc, char** argv) {
                 }
                 if (cudaDeviceSynchronize() != cudaSuccess) { e = "batch admission: device sync failed"; return false; }
             }
+            if (!tp_slot_copy(true, b, ids, e)) return false;
             if (batch_mtp) {
                 // Admission first builds the solo draft KV; copy it into the slot before drafting.  Both drafters' K/V
                 // are on the drafter's device (the last stage's GPU with a layer split): the copy's ring refill is a
@@ -12739,6 +13251,10 @@ int main(int argc, char** argv) {
                         return false;
                 }
                 if (cudaDeviceSynchronize() != cudaSuccess) { e = "batch slot restore: device sync failed"; return false; }
+            }
+            if (tp1 && !tp_slot_ss.empty()) {
+                if (at != nullptr) { e = "tensor parallel: no conversation checkpoints"; return false; }
+                if (!tp_slot_copy(false, b, bs[(size_t) b].ids, e)) return false;
             }
             if (batch_mtp) {
                 // A returning solo request resumes from its slot's draft KV (on the drafter's device, as above).
@@ -12881,10 +13397,35 @@ int main(int argc, char** argv) {
                     bt_stage_pool0[k] = stage_verifier((int) k).ms_pool;
                 }
                 bt_cpu_ent0 = drive.d.multi_entries; bt_off_ent0 = drive.d.offload_entries;
+                if (tp1) for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0) bt_helper0[(size_t) r] = helper_snap(r);
                 if (pc.on()) pc.begin(pc_ex(), (int) g.n_layers);
                 bt_a_rounds0 = a_rounds; bt_a_swapped0 = a_swapped;
             }
             const Clock::time_point w0 = Clock::now();
+            {   // the penalized slots' histories, one row per window row (what the solo window stages for that position): the
+                // slot's consumed tokens (`ids`), then its fed token and its proposal before the row; the widest window of
+                // the active slots, so each row's last penalty_last_n are its own.  None: the sampler skips them.
+                int hn = 0;
+                for (int a = 0; a < A; ++a) hn = std::max(hn, bs[(size_t) active[a]].pen_n);
+                hn = std::min(hn, kPenaltyWindowCap);
+                if (hn > 0 && d_bhist != nullptr && S <= strata::kernels::kVerifyMaxT) {
+                    const int per = batch_mtp ? 2 : 1;
+                    for (int a = 0; a < A; ++a) {
+                        const BSlot& sl = bs[(size_t) active[a]];
+                        strata::kernels::penalty_rows(sl.ids.data(), (int64_t) sl.ids.size(), tok + first[a], per, hn,
+                                                      bhist_stage.data() + (size_t) first[a] * (size_t) hn);
+                    }
+                    const strata::core::OnDevice on_h(hist_dev);
+                    if (cudaMemcpy(d_bhist, bhist_stage.data(), (size_t) S * (size_t) hn * sizeof(int32_t),
+                                   cudaMemcpyHostToDevice) != cudaSuccess) {
+                        std::printf("ERR the batch penalty histories could not be copied\n");
+                        return false;
+                    }
+                    ver.set_batch_history(d_bhist, hn);
+                } else {
+                    ver.set_batch_history(nullptr, 0);
+                }
+            }
             if (!ver.run_slot_rows(rows, S, tok, pos, win_pool_fn, win_pool_user, outb, err) || drive.d.failed) {
                 std::printf("ERR %s\n", drive.d.failed && drive.d.fail ? drive.d.fail : err.c_str());
                 return false;
@@ -13033,6 +13574,29 @@ int main(int argc, char** argv) {
                 for (size_t k = 0; k <= stages.size(); ++k) {
                     const std::string pr = (k == 0 ? ver : stages[k - 1]->ver).profile_report();
                     if (!pr.empty()) std::fprintf(stderr, "strata batch GPU stages, stage %zu (ms/window):%s\n", k + 1, pr.c_str());
+                }
+                if (tp1 && drive.d.remote_count > 0) {   // cycle 5: the helper caches' share of these windows, per helper
+                    std::string hl;
+                    for (int r = 0; r < kMaxHelpers; ++r) {
+                        if (o.expert_cache_remote[(size_t) r] <= 0) continue;
+                        const HelperSnap a = bt_helper0[(size_t) r], b = helper_snap(r);
+                        const double nl = (double) std::max<int64_t>(b.launches - a.launches, 1);
+                        char hb[400];
+                        std::snprintf(hb, sizeof hb, "%sCUDA%d entries %.1f, launches %.1f (experts %.2f each), host issue %.3f + wait %.3f ms",
+                                      hl.empty() ? "" : "; ", remote_dev[r], (b.entries - a.entries) / w, (b.launches - a.launches) / w,
+                                      (b.groups - a.groups) / nl, (b.begin - a.begin) / w, (b.wait - a.wait) / w);
+                        hl += hb;
+                        if (b.rt > a.rt) {
+                            std::snprintf(hb, sizeof hb, ", GPU in %.3f kernels %.3f out %.3f ms, round trip %.1f us/launch",
+                                          (b.in - a.in) / w, (b.kern - a.kern) / w, (b.out - a.out) / w, 1000.0 * (b.rt - a.rt) / nl);
+                            hl += hb;
+                        }
+                    }
+                    std::fprintf(stderr, "strata batch helpers (per window): %s\n", hl.c_str());
+                }
+                if (tp1) {   // STRATA_TP_TIMING=1/2: the batch windows since the last report, per card (cycle 3)
+                    const std::string tr = ver.tp_timing_report();
+                    if (!tr.empty()) std::fprintf(stderr, "strata batch tensor parallel timing (avg %.2f rows):\n%s", bt_rows / w, tr.c_str());
                 }
                 if (batch_mtp)   // each slot-window offers one proposal and yields 1 + (accepted) tokens
                     std::fprintf(stderr, "strata batch: MTP proposals accepted %lld of %lld (%.1f%%)\n",
@@ -14123,13 +14687,13 @@ int main(int argc, char** argv) {
             bool bad = false;
             for (int64_t t : ids) bad = bad || t < 0 || t >= n_vocab;
             if (bad) { std::printf("ERR a token id is outside the vocabulary\n"); continue; }
-            std::array<int64_t, 3> remote_before{};
-            std::array<int64_t, 3> launches_before{};
-            std::array<uint64_t, 3> compact_before{}, full_before{};
+            std::array<int64_t, kMaxHelpers> remote_before{};
+            std::array<int64_t, kMaxHelpers> launches_before{};
+            std::array<uint64_t, kMaxHelpers> compact_before{}, full_before{};
             // ms_begin/ms_wait are cumulative since boot; the log line used to print them next to per-request deltas,
             // so the host time read as if it belonged to this request.  Take deltas here like every other column.
-            std::array<double, 3> begin_before{}, wait_before{};
-            for (int r = 0; r < 3; ++r) if (o.expert_cache_remote[(size_t) r] > 0)
+            std::array<double, kMaxHelpers> begin_before{}, wait_before{};
+            for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0)
             {
                 remote_before[(size_t) r] = remote_experts[(size_t) r].computed();
                 launches_before[(size_t) r] = remote_experts[(size_t) r].launched_layers();
@@ -14138,6 +14702,8 @@ int main(int argc, char** argv) {
                 begin_before[(size_t) r] = remote_experts[(size_t) r].ms_begin();
                 wait_before[(size_t) r] = remote_experts[(size_t) r].ms_wait();
             }
+            std::array<HelperSnap, kMaxHelpers> req_helper0{};   // cycle 5 (tensor parallel): the GPU-side helper clocks
+            if (tp1) for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0) req_helper0[(size_t) r] = helper_snap(r);
             cur = ids;
             const Clock::time_point r0 = Clock::now();
             tr("r0");
@@ -14679,6 +15245,13 @@ int main(int argc, char** argv) {
             if (resume == 0) {
                 strata::core::session_zero(ss, g, nullptr, main_cs);
                 cudaStreamSynchronize(main_stream);
+                if (tp1) {   // --tensor-parallel: CUDA1's half of the state too
+                    const strata::core::OnDevice on(tp1->dev);
+                    strata::core::session_zero(tp1->ss, g, nullptr, (void*) tp1->stream);
+                    cudaStreamSynchronize(tp1->stream);
+                    tp1->ss.ple_prev[0] = ss.ple_prev[0];
+                    tp1->ss.ple_prev[1] = ss.ple_prev[1];
+                }
                 for (auto& st : stages) {
                     const strata::core::OnDevice on(st->dev);
                     strata::core::session_zero(st->ss, g, nullptr, (void*) st->stream);
@@ -14994,6 +15567,16 @@ int main(int argc, char** argv) {
             // STRATA_REFILL_PARTS=1 (gfx1151's table): a lent slot of a GGUF read in place is refilled from the pieces in the mapping.
             // The default assembles the blob in a staging buffer first (a 4 MB copy on this thread), then copies that.
             static const bool refill_parts = [] { const char* v = std::getenv("STRATA_REFILL_PARTS"); return v != nullptr && std::atoi(v) != 0; }();
+            // STRATA_BATCH_LENT_GPU=1 (prefill cycle 2, opt-in): the residency entries a loan holds, for the pool's
+            // verify-window plan (ExpertDrive::lent): a lent expert goes to the GPU's PCIe share instead of the CPU
+            static const bool lent_gpu_on = [] { const char* v = std::getenv("STRATA_BATCH_LENT_GPU"); return v != nullptr && v[0] == '1'; }();
+            static std::vector<uint8_t> lent_mask;
+            if (lent_gpu_on && lent_mask.size() != host_res.size()) {
+                lent_mask.assign(host_res.size(), 0);
+                drive.d.lent = lent_mask.data();
+                std::fprintf(stderr, "strata serve: STRATA_BATCH_LENT_GPU=1: an expert in a slot a prompt read borrowed is computed "
+                                     "by the GPU (PCIe share) in the decoding slots' windows, not by the CPU\n");
+            }
             auto refill_issue = [&](PfPart& p, std::string& e) -> bool {
                 tr("refill start", (long long) p.lent.size());
                 const strata::core::OnDevice on(p.dev);
@@ -15003,6 +15586,7 @@ int main(int argc, char** argv) {
                     if (np > 0) {   // the GGUF read in place: the tensors' pieces go from the mapping to the slot, no assembled copy
                         if (!p.cache->fill_slot_queued_parts(slot, parts, np, e)) return false;
                         host_res[(size_t) i] = slot;
+                        if (lent_gpu_on) lent_mask[(size_t) i] = 0;
                         continue;
                     }
                     const uint8_t* b = srcp->blob_stable(i / g.n_expert, i % g.n_expert);
@@ -15012,6 +15596,7 @@ int main(int argc, char** argv) {
                         return false;
                     if (!refill_blocking()) srcp->note_async_read(b, nullptr);   // #1237
                     host_res[(size_t) i] = slot;
+                    if (lent_gpu_on) lent_mask[(size_t) i] = 0;
                 }
                 return true;
             };
@@ -15050,6 +15635,9 @@ int main(int argc, char** argv) {
                         if (!p.lent.empty() && !refill_one(p, e)) return false;
                 }
                 if (n_parts > 0) res_upload();
+                if (lent_gpu_on && n_parts > 0)
+                    std::fprintf(stderr, "strata serve: STRATA_BATCH_LENT_GPU: %lld lent experts computed by the GPU so far, %lld "
+                                         "by the CPU (no staging room)\n", (long long) drive.d.lent_gpu, (long long) drive.d.lent_cpu);
                 if (trace && n_parts > 0) {
                     std::fprintf(stderr, "strata trace: refilled %lld slots on %lld stage(s) in %.1f ms\n",
                                  (long long) n_lent, (long long) n_parts,
@@ -15127,6 +15715,7 @@ int main(int argc, char** argv) {
                             const size_t i = (size_t) (l * g.n_expert + ex);
                             if (host_res[i] >= first) {
                                 p.lent.emplace_back((int32_t) i, host_res[i]);
+                                if (lent_gpu_on) lent_mask[i] = 1;
                                 host_res[i] = strata::core::kNotResident;
                                 any = true;
                             }
@@ -15291,14 +15880,23 @@ int main(int argc, char** argv) {
                 // stop for an admission.  The prompt writes the main session, the windows the slots' sessions; the prompt
                 // borrows no cache slots (--no-prefill-borrow), so the windows' experts stay where they are.  The same
                 // bytes are computed as in the serial form (a window's rows do not depend on what else is on the GPU).
-                static const bool conc1 = [] {
+                // STRATA_BATCH_CONCURRENT_READ=2 (opt-in, prefill study 2026-11-21): the same, also while the prompt
+                // borrows cache slots (the default).  The loan is taken before the read and given back after it, as in the
+                // serial form, so the windows between and beside the chunks see the same cache (the lent slots' experts
+                // on the CPU) and compute the same bytes; the prompt reads the same chunks into the same buffers on its
+                // own stream.  The slots decode only beside the chunks then: no serial decode share after each one.
+                static const int conc_mode = [] {
                     const char* v = std::getenv("STRATA_BATCH_CONCURRENT_READ");
-                    return v != nullptr && std::atoi(v) != 0;
+                    return v != nullptr ? std::max(0, std::atoi(v)) : 0;
                 }();
+                static const bool conc1 = conc_mode != 0;
+                bool conc_ran = false;   // the last piece was read beside the windows (mode 2: no serial share after it)
                 auto run_conc = [&](int64_t q, int64_t r) -> bool {
-                    if (!conc1 || piped || !stages.empty() || o.batch <= 0 || !o.no_prefill_borrow || !batch_on() ||
-                        !req_imgs.empty() || kvg.on)
+                    conc_ran = false;
+                    if (!conc1 || piped || !stages.empty() || o.batch <= 0 || (conc_mode == 1 && !o.no_prefill_borrow) ||
+                        !batch_on() || !req_imgs.empty() || kvg.on)
                         return run(q, r);
+                    conc_ran = conc_mode == 2;
                     std::atomic<bool> done{false};
                     bool read_ok = false;
                     in_prompt_read = true;
@@ -15428,7 +16026,7 @@ int main(int argc, char** argv) {
                     s.pcie_dma = o.pcie_mode == "dma";
                     // (--remote-expert-opt works only through a helper cache, so without one it does not count)
                     s.helper_caches = prefill_src != srcp;
-                    for (int r = 0; r < 3; ++r) s.helper_caches |= o.expert_cache_remote[(size_t) r] > 0;
+                    for (int r = 0; r < kMaxHelpers; ++r) s.helper_caches |= o.expert_cache_remote[(size_t) r] > 0;
                     s.staged_source = srcp == &src && src.stages_blobs();
                     s.other_source = srcp != &src && srcp != &arena_src;
                     if (const char* why = strata::program::concurrent_read_off(s)) {
@@ -15779,7 +16377,7 @@ int main(int argc, char** argv) {
                                      std::chrono::duration<double, std::milli>(Clock::now() - td).count());
                         continue;
                     }
-                    if (decode_share <= 0.0 || !batch_on()) continue;
+                    if (decode_share <= 0.0 || !batch_on() || conc_ran) continue;
                     const double budget = decode_share * std::chrono::duration<double, std::milli>(Clock::now() - tq).count();
                     const auto td = Clock::now();
                     in_prompt_read = true;
@@ -17208,6 +17806,10 @@ int main(int argc, char** argv) {
                     else std::fprintf(stderr, "strata decode GPU stages, stage %d (ms/window):%s\n", st, pr.c_str());
                 }
             }
+            if (tp1) {   // STRATA_TP_TIMING: this request's decode windows, per card (empty when off)
+                const std::string tr = ver.tp_timing_report();
+                if (!tr.empty()) std::fputs(tr.c_str(), stderr);
+            }
             if (drive.d.fs) std::fprintf(stderr, "strata serve: %s\n", drive.d.fs->report().c_str());
             if (!cancelled) {
                 // a prompt stopped halfway leaves the session somewhere between two chunks: nothing to continue from
@@ -17411,6 +18013,7 @@ int main(int argc, char** argv) {
                     sl.p = p;
                     sl.produced = 1;
                     sl.max_new = admit_max_new;
+                    sl.pen_n = std::max(req_sp.penalty_last_n, 0);
                     sl.t0 = Clock::now();
                     sl.ids = live;
                     if (batch_mtp) {
@@ -17670,16 +18273,33 @@ int main(int argc, char** argv) {
                                      "of %lld windows\n", (long long) t2_rej[0], (long long) t2_hit[0], (long long) t2_rej[1],
                              (long long) t2_hit[1], (long long) t2_rej[2], (long long) t2_hit[2], (long long) t2_rej[3],
                              (long long) t2_hit[3], (long long) dec_windows);
-            for (int r = 0; r < 3; ++r) if (o.expert_cache_remote[(size_t) r] > 0)
+            for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0)
                 std::fprintf(stderr, "strata serve: CUDA%d: %lld expert entries, %lld active layer launches, %.1f MiB returned "
                                      "(%.1f MiB with full rows) in this request; host %.0f ms staging+launching, %.0f ms "
-                                     "waiting for it in this request\n", r + 1,
+                                     "waiting for it in this request\n", tp1 ? remote_dev[r] : r + 1,
                              (long long) (remote_experts[(size_t) r].computed() - remote_before[(size_t) r]),
                              (long long) (remote_experts[(size_t) r].launched_layers() - launches_before[(size_t) r]),
                              (double) (remote_experts[(size_t) r].returned_bytes() - compact_before[(size_t) r]) / 1048576.0,
                              (double) (remote_experts[(size_t) r].full_row_bytes() - full_before[(size_t) r]) / 1048576.0,
                              remote_experts[(size_t) r].ms_begin() - begin_before[(size_t) r],
                              remote_experts[(size_t) r].ms_wait() - wait_before[(size_t) r]);
+            if (tp1)   // cycle 5, STRATA_HELPER_TIMING=1: the helper GPUs' own clocks in this request
+                for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0) {
+                    const HelperSnap a = req_helper0[(size_t) r], b = helper_snap(r);
+                    if (b.rt <= a.rt) continue;
+                    const double nl = (double) std::max<int64_t>(b.launches - a.launches, 1);
+                    std::fprintf(stderr, "strata serve: CUDA%d helper clocks: %lld launches, %.2f experts each; GPU in %.1f "
+                                         "kernels %.1f out %.1f ms; round trip %.1f us/launch (begin -> finish) in this request\n",
+                                 remote_dev[r], (long long) (b.launches - a.launches), (b.groups - a.groups) / nl,
+                                 b.in - a.in, b.kern - a.kern, b.out - a.out, 1000.0 * (b.rt - a.rt) / nl);
+                }
+            for (int r = 0; r < kMaxHelpers; ++r)   // cycle 6, STRATA_HELPER_GRAPH: cumulative replays / captures / direct
+                if (o.expert_cache_remote[(size_t) r] > 0 && remote_experts[(size_t) r].graph_captures() > 0)
+                    std::fprintf(stderr, "strata serve: CUDA%d helper graphs (so far): %lld replays, %lld captured, %lld "
+                                         "issued directly\n", remote_dev[r],
+                                 (long long) remote_experts[(size_t) r].graph_replays(),
+                                 (long long) remote_experts[(size_t) r].graph_captures(),
+                                 (long long) remote_experts[(size_t) r].graph_direct());
             if (prefill_helper_src) {
                 const uint64_t blobs = prefill_helper_src->helper_blobs(), bytes = prefill_helper_src->helper_bytes();
                 std::fprintf(stderr, "strata serve: prefill helper source: %lld blobs / %.1f MiB taken from a helper's "
@@ -19016,7 +19636,7 @@ int main(int argc, char** argv) {
                         "  pool phases", wp / per, dr / per, rp / per);
         }
         std::printf("%-24s %lld blobs read\n", "  expert blobs", (long long) srcp->reads());
-        for (int r = 0; r < 3; ++r) if (o.expert_cache_remote[(size_t) r] > 0)
+        for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0)
             std::printf("  CUDA%d experts           %lld routed entries computed\n",
                         r + 1, (long long) remote_experts[(size_t) r].computed());
         // ---- **R4's DISPATCH MEASUREMENT: h, ON THE ENGINE'S OWN ROUTING.**  No offline trace, no corpus

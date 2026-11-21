@@ -312,7 +312,9 @@ const bool g_no_batch_kv = env_on("STRATA_NO_BATCH_KV_STEP");   // #783 PR-d: pe
 // no commit graph runs after it.  Such a window's commit is unconditional (each slot keeps its one row), and the rest
 // of the commit graph only repeats what the window wrote: the indexer tails are put back and appended again from the
 // same rows, the PLE histories are put back to the window's own snapshot.
-const bool g_batch_self_commit = env_on("STRATA_BATCH_SELF_COMMIT");
+// --tensor-parallel 2 (cycle 4) turns it on by default (Verifier::default_batch_self_commit, before any graph is captured);
+// STRATA_BATCH_SELF_COMMIT set to any value keeps its own word (=0 off).
+bool g_batch_self_commit = env_on("STRATA_BATCH_SELF_COMMIT");
 // STRATA_QSA_SLOTS=1 (opt-in): in a batch window, a QSA layer's block scores, top-k and attention run as one launch
 // each over the window's rows (up to 8 per launch, each row reading its own slot's indexer keys and K/V) instead of
 // one call per row; every row is computed by the same kernel with the same arithmetic as its own call.  Not with a
@@ -595,6 +597,7 @@ bool Verifier::release_gpu_waits(int timeout_ms) {
         if (p != nullptr) *(volatile uint32_t*) p = UINT32_MAX;
     std::atomic_thread_fence(std::memory_order_seq_cst);
     strata_store_fence();
+    if (tp_peer_ != nullptr) (void) tp_peer_->release_gpu_waits(timeout_ms);   // --tensor-parallel: the peer's window too
     const OnDevice on_device(device_);
     const Clock::time_point t0 = Clock::now();
     for (cudaStream_t s : {cs_, copy_}) {
@@ -741,7 +744,8 @@ Verifier::~Verifier() {
     if (arena_) cudaFree(arena_);
     if (hcount_d_) cudaFree(hcount_d_);
     void* hosts[] = {h_tok_, h_step_, h_pos_, h_commit_, h_ple_, h_out_, h_x_, h_ids_, h_w_, h_seq_, h_flag_, h_ymiss_,
-                     h_flagA_, h_plan_, h_flagB_, h_plan_err_, h_nf_, herr_h_, hdrop_h_, h_bal_};
+                     h_flagA_, h_plan_, h_flagB_, h_plan_err_, h_nf_, herr_h_, hdrop_h_, h_bal_, h_skipm_};
+    if (tp_peer_res_d_) cudaFree(tp_peer_res_d_);
     for (void* h : hosts)
         if (h) cudaFreeHost(h);
 }
@@ -1019,7 +1023,21 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         std::fprintf(stderr, "strata verify trace (#649): on\n");
 #endif
     }
-    prof_on_ = std::getenv("STRATA_VERIFY_PROFILE") != nullptr;
+    // STRATA_TP_TIMING=1/2 turn the stage profiler on (GPU stamps); =3 is the light form: host clocks only (per-layer
+    // ring waits per card, the window's wall time), the graphs exactly the untimed ones
+    prof_on_ = std::getenv("STRATA_VERIFY_PROFILE") != nullptr || (tp_ar_ != nullptr && (tp_timing() == 1 || tp_timing() == 2));
+    tpt_on_ = tp_ar_ != nullptr && tp_timing() > 0;
+    if (tpt_on_) {   // STRATA_TP_TIMING: the all-reduces' stamps (not =3), and the per-layer sums
+        const size_t na = (size_t) g.n_layers * 8 + 8;
+        if (tp_timing() == 3) tp_ars_ = nullptr;
+        else if (cudaMalloc((void**) &tp_ars_, na * 8) != cudaSuccess) { (void) cudaGetLastError(); tp_ars_ = nullptr; }
+        else { cudaMemset(tp_ars_, 0, na * 8); tp_ars_h_.assign(na, 0); }
+        tpt_cls_.assign((size_t) g.n_layers * kTpCls, 0.0);
+        tpt_ar_.assign((size_t) g.n_layers * 6, 0.0);
+        tpt_hw_.assign((size_t) g.n_layers, 0.0);
+        tpt_hp_.assign((size_t) g.n_layers, 0.0);
+        tpt_last_.assign((size_t) g.n_layers, 0);
+    }
     if (const char* rs = std::getenv("STRATA_ROUTE_STATS"); rs != nullptr && rs[0] == '1') {
         const size_t nrs = (size_t) 9 * (size_t) g.n_layers * 8;
         if (cudaMalloc((void**) &rs_dev_, nrs * 8) == cudaSuccess) {
@@ -1172,6 +1190,34 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         const char* v = std::getenv("STRATA_VERIFY_DEVICE_PLAN");
         // (not with set_always_publish: the device table may lag the host's while windows are in flight)
         device_plan_ = !all_resident_ && !always_publish_ && (v != nullptr && std::atoi(v) != 0);
+    }
+    // --tensor-parallel, cycle 3 (set_tp_plan; STRATA_TP_DEVPLAN=0: off): card 1 runs the zero-doorbell graph with the
+    // experts it does not hold dropped; card 0 plans on the device every layer whose experts are all in one card's VRAM
+    {
+        static const bool tp_dp_env = [] { const char* e = std::getenv("STRATA_TP_DEVPLAN"); return e == nullptr || e[0] != '0'; }();
+        if (tp_ar_ != nullptr && tp_dp_env && hits.d_res != nullptr && hits.cache_base != nullptr) {
+            if (tp_gpu_only_req_) {
+                all_resident_ = true;
+                tp_gpu_only_ = true;
+            } else if (tp_peer_res_h_ != nullptr && !always_publish_ && !all_resident_ && (le_ - lb_) * 2 <= kTpMarks) {
+                const size_t nr = (size_t) g.n_layers * (size_t) g.n_expert;
+                if (cudaMalloc((void**) &tp_peer_res_d_, nr * sizeof(int32_t)) == cudaSuccess &&
+                    cudaMemcpy(tp_peer_res_d_, tp_peer_res_h_, nr * sizeof(int32_t), cudaMemcpyHostToDevice) == cudaSuccess &&
+                    mapped(kTpMarks * 4, (void**) &h_skipm_, (void**) &m_skipm_)) {
+                    std::memset(h_skipm_, 0, kTpMarks * 4);
+                    device_plan_ = true;
+                    tp_devplan_ = true;
+                } else {
+                    (void) cudaGetLastError();
+                    if (tp_peer_res_d_) cudaFree(tp_peer_res_d_);
+                    tp_peer_res_d_ = nullptr;
+                }
+            }
+            std::fprintf(stderr, "strata verify: tensor parallel card %d: %s\n", tp_member_,
+                         tp_gpu_only_ ? "every layer planned on the device, no host doorbell (the peer's experts dropped)"
+                         : tp_devplan_ ? "layers with no CPU expert planned on the device (no host wait there)"
+                                       : "every layer planned by the host");
+        }
     }
     // (halo's STRATA_VERIFY_RESIDENT=1 is this window's all_resident_ graph above, which 0.1.39 has on by default)
     if (g_qfuse() || g_qfuse_hc()) {   // S26: the HC read's q8_1 group counters, zeroed once (each launch leaves them zero)
@@ -1358,7 +1404,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         bool pending = l > 0 && !cvec().covers(l - 1);
         if (l == 1 && ple_on) {
             if (grp == 0) {
-                if (ar_on()) wait_flag_ge(m_flag_, 1, cs);
+                if (ar_on() || tp_devplan_) wait_flag_ge(m_flag_, 1, cs);   // (tp card 0: layer 0 may not wait for the host)
                 copy_from_mapped(ple_, m_ple_, (int64_t) T * N, cs);
             }
             float* normalized = (float*) ((uint8_t*) ss.ple.scratch + ple_block_scratch_bytes());
@@ -2037,6 +2083,12 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             return false;
         }
         stamp(l, 16, grp);
+        if (tp_ar_ != nullptr) {   // --tensor-parallel: the out-projection's partial (this card's heads) summed over the cards
+            try {
+                strata::kernels::tp_ar_call(tp_ar_, tp_member_, bo_ + tb * N, n * (int) N, cs,
+                                            tp_ars_ != nullptr && grp == 0 ? tp_ars_ + (size_t) l * 8 : nullptr);
+            } catch (const std::exception& e) { err = std::string("verify all-reduce: ") + e.what(); return false; }
+        }
         const bool q8_ffn = gr_read_group(1, true, inj_, inj2_);   // true: nat_xq_ holds the MoE input's q8_1 (STRATA_QFUSE)
         stamp(l, 32, grp);   // the profile only: the FFN-side read ends here, the router starts
         // with CPU experts in the window the shared expert forks off once the doorbell is published (it no longer
@@ -2104,9 +2156,36 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         if (rs_on_ && G == 1 && n <= 8 && T <= 8)
             strata::kernels::route_marginal_stats(ids_ + tb * K, n, (int) K, rs_dev_ + ((size_t) T * (size_t) g.n_layers + (size_t) l) * 8, cs);
         if (ar_on()) {
+            if (tp_gpu_only_) {   // --tensor-parallel card 1 (cycle 3): its VRAM experts; the others are the peer's
+                try {
+                    strata::kernels::tp_resident_plan(ids_ + tb * K, n * (int) K, (int) K, hits_.d_res + l * g.n_expert, nullptr,
+                                                      (int) g.n_expert, hits_.cache_base, slot_off_d_, (long long) hits_.blob,
+                                                      plan_ + (size_t) grp * (size_t) (plan_i32_ + 16), (long long) max_t_ * K,
+                                                      nullptr, 0, cs, m_plan_err_);
+                } catch (const std::exception& e) { err = std::string("verify: ") + e.what(); return false; }
+            } else
             resident_plan(ids_ + tb * K, n * (int) K, (int) K, hits_.d_res + l * g.n_expert, (int) g.n_expert,
                           hits_.cache_base, slot_off_d_, (long long) hits_.blob,
                           plan_ + (size_t) grp * (size_t) (plan_i32_ + 16), (long long) max_t_ * K, nullptr, 0, cs, m_plan_err_);
+        } else if (tp_devplan_) {
+            // --tensor-parallel card 0 (cycle 3): the device plans the step when no routed expert is the CPU's (each in
+            // this card's VRAM or the peer's); the doorbell then only marks the step and rings, and the host skips it
+            const uint32_t ring_s = (uint32_t) ((l - lb_) * G + grp + 1);
+            try {
+                strata::kernels::tp_resident_plan(ids_ + tb * K, n * (int) K, (int) K, hits_.d_res + l * g.n_expert,
+                                                  tp_peer_res_d_ + l * g.n_expert, (int) g.n_expert, hits_.cache_base,
+                                                  slot_off_d_, (long long) hits_.blob,
+                                                  plan_ + (size_t) grp * (size_t) (plan_i32_ + 16), (long long) max_t_ * K,
+                                                  skip_ + grp, ring_s, cs);
+                strata::kernels::tp_doorbell(xm, ids_ + tb * K, hits_.d_res + l * g.n_expert, (int) g.n_expert, (int64_t) n * N,
+                                             (int64_t) n * K, m_x_ + tb * N, m_ids_ + tb * K, m_seq_, skip_ + grp, ring_s,
+                                             m_skipm_ + (ring_s - 1), cs);
+            } catch (const std::exception& e) { err = std::string("verify: ") + e.what(); return false; }
+            if (sh_fork_late) {
+                note_prio_fork(cs);
+                cudaEventRecord(ev_fork_, cs);
+                cudaStreamWaitEvent(sh_cs_, ev_fork_, 0);
+            }
         } else {
             if (device_plan_)   // E-6: every routed expert resident: this group's plan without the host
                 resident_plan(ids_ + tb * K, n * (int) K, (int) K, hits_.d_res + l * g.n_expert, (int) g.n_expert,
@@ -2164,6 +2243,10 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                     qdedup ? (const void*) (nat_xq_ + (size_t) tb * (N / 32) * 36) : nullptr,
                                     (sg_ready ? 1 : 0) | (lfuse_on(n) && g_lfuse_pair() ? 2 : 0));
                 sg_gated_[grp] = sg_ready;
+                // --tensor-parallel: the shared expert counts once, on card l % tp; the others add a zero row
+                if (tp_ar_ != nullptr && l % tp_n_ != tp_member_ &&
+                    cudaMemsetAsync(shared_ + tb * N, 0, (size_t) n * (size_t) N * sizeof(float), sh_stream) != cudaSuccess)
+                    throw std::runtime_error("the shared expert's zero row failed");
             } catch (const std::exception& e) {
                 err = std::string("verify shared expert: ") + e.what();
                 return false;
@@ -2242,10 +2325,19 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         bool hits_in_combine = false;
         if (ar_on()) {
             stamp(l, 19, grp);
+            // tp card 1: the rows of the experts it dropped (the peer's) stay zero; the planned ones are written below
+            if (tp_gpu_only_ && cudaMemsetAsync(parts_out, 0, (size_t) n * (size_t) K * (size_t) N * sizeof(float), cs) != cudaSuccess) {
+                err = "verify: the tensor-parallel zero rows failed";
+                return false;
+            }
             grouped(p_ptr, p_start, p_counts, 0, parts_out, true);
             stamp(l, 20, grp);
+            if (tp_gpu_only_) stamp(l, 23, grp);   // (STRATA_TP_TIMING: no CPU wait; the combine class starts here)
         } else {
-            if (device_plan_) {   // E-6: skipped when the device planned this group (all its experts resident)
+            if (tp_devplan_) {   // tp card 0 (cycle 3): the host's plan only when the device did not plan the step
+                strata::kernels::tp_wait_copy_plan(m_flagA_, ring, pl, m_plan_ + (size_t) grp * (size_t) plan_i32_, plan_i32_,
+                                                   skip_ + grp, cs);
+            } else if (device_plan_) {   // E-6: skipped when the device planned this group (all its experts resident)
                 wait_flag_ge_or(m_flagA_, ring, skip_ + grp, cs);
                 copy_i32_from_mapped_unless(pl, m_plan_ + (size_t) grp * (size_t) plan_i32_, plan_i32_, skip_ + grp, ring, cs);
             } else {
@@ -2277,7 +2369,14 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             // pcie_frac 0), so its launch is kPcieGroupRows block rows striding over the groups, not cap of them
             grouped(p_ptr2, p_start2, p_counts + 2, kPcieGroupRows, hit_out, false);
             stamp(l, 22, grp);
-            if (device_plan_) {   // no CPU share when the device planned the group: its rows are zeros
+            if (tp_devplan_) {   // tp card 0: the CPU's rows (the hit rows zero), or all zero when the device planned it
+                if (prof_on_) wait_flag_ge_or(m_flag_, ring, skip_ + grp, cs);   // STRATA_TP_TIMING: the wait as its own class
+                stamp(l, 23, grp);
+                try {
+                    strata::kernels::tp_copy_rows(m_flag_, ring, parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
+                                                  p_dst, p_counts + 1, skip_ + grp, cs);
+                } catch (const std::exception& e) { err = std::string("verify: ") + e.what(); return false; }
+            } else if (device_plan_) {   // no CPU share when the device planned the group: its rows are zeros
                 wait_flag_ge_or(m_flag_, ring, skip_ + grp, cs);
                 copy_or_zero_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (long long) n * K * N,
                                          skip_ + grp, ring, cs);
@@ -2335,6 +2434,12 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         }
         if (remote_opt_) remote_opt_->combine(bo_ + tb * N, y_dummy_ + tb * N, tb, n,
                               device_plan_ ? skip_ + grp : nullptr, ring, cs);
+        if (tp_ar_ != nullptr) {   // --tensor-parallel: this card's experts (and its shared expert) summed over the cards
+            try {
+                strata::kernels::tp_ar_call(tp_ar_, tp_member_, bo_ + tb * N, n * (int) N, cs,
+                                            tp_ars_ != nullptr && grp == 0 ? tp_ars_ + (size_t) l * 8 + 4 : nullptr);
+            } catch (const std::exception& e) { err = std::string("verify all-reduce: ") + e.what(); return false; }
+        }
         stamp(l, 24, grp);
         if (tap_on_ && !batch_rec_ && l < (int64_t) tap_slot_.size() && tap_slot_[(size_t) l] >= 0) {
             // the layer's completed output: R with this FFN half's write applied (the next layer's read would fold it), the mean of
@@ -2572,7 +2677,7 @@ std::string Verifier::profile_report() {
 // (the host table is the one the device copy was uploaded from; a loan, a VRAM shrink or a swap in flight has
 // marked some -1).  Not: the doorbell graph, which asks the pool for what the device does not hold.
 void Verifier::refresh_ar() {
-    if (!all_resident_ || h_res_ == nullptr || g_ == nullptr) return;
+    if (!all_resident_ || h_res_ == nullptr || g_ == nullptr || tp_gpu_only_) return;   // (tp card 1: the peer's are dropped)
     const int64_t ne = g_->n_expert;
     const int32_t* r = h_res_ + lb_ * ne;
     const int64_t n = (le_ < 0 ? g_->n_layers : le_) * ne - lb_ * ne;
@@ -2890,6 +2995,7 @@ void Verifier::stage_inputs(int T, const int32_t* tokens, int64_t pos0) {
     *(volatile uint32_t*) h_flagB_ = 0;
     // the overlapped split: the next stage's graph is launched after this, and must see THIS window's raise
     if (hflag_out_h_ != nullptr) *(volatile uint32_t*) hflag_out_h_ = 0;
+    if (h_skipm_ != nullptr) std::memset(h_skipm_, 0, kTpMarks * 4);   // tp card 0: this window's device-planned steps only
     if (herr_h_ != nullptr) *(volatile uint32_t*) herr_h_ = 0;
     if (hdrop_h_ != nullptr) *(volatile uint32_t*) hdrop_h_ = (g_test_drop > 0 && windows + 1 == g_test_drop) ? 1u : 0u;
     std::atomic_thread_fence(std::memory_order_seq_cst);
@@ -3037,6 +3143,9 @@ bool Verifier::prelaunch(int T, const int32_t* tokens, int64_t pos0, std::string
     return true;
 }
 
+static void head_topk_dump(const float* d_logits, int64_t n_vocab, int nrows, int dev_row0, char tag, const int* slots,
+                           const int64_t* pos, const int32_t* picks);   // STRATA_HEAD_TOPK (below window_logprobs)
+
 bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool, void* user, int32_t* out,
                    std::string& err) {
     const bool measure = spec_measure_;
@@ -3076,6 +3185,15 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     // STRATA_SELECT_LONG: the select kernels this window's context pays off with (the same on every stage)
     sel_long_ = select_long_on() && pos0 + T >= select_long_at() ? 1 : 0;
     if (!capture(T, err) || !capture_commit(err)) return false;
+    // --tensor-parallel: the peer's window is captured here too, on this thread (its own device), before any launch
+    const bool tp = tp_peer_ != nullptr;
+    const Clock::time_point tpt_in = Clock::now();
+    if (tp) {
+        if (next_ != nullptr || remote_opt_ != nullptr || pre) { err = "verify: tensor parallel runs a whole-model window on each card"; return false; }
+        const OnDevice on_peer(tp_peer_->device_);
+        tp_peer_->sel_long_ = sel_long_;
+        if (!tp_peer_->capture(T, err) || !tp_peer_->capture_commit(err)) return false;
+    }
     const bool chain = chain_overlap();
     if (chain) {   // capture the next stage's window here, on this thread, so the helper only stages and launches
         const OnDevice on_next(next_->device_);
@@ -3141,6 +3259,14 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         trace_ev("LAUNCHED", -1, -1, (int64_t) le);
         graph_launched = true;
         if (le != cudaSuccess) { err = std::string("verify: launch: ") + cudaGetErrorString(le); return false; }
+        if (tp && !tp_peer_->tp_launch(T, tokens, pos0, err)) {
+            (void) release_gpu_waits(5000);
+            return false;
+        }
+        if (tp && T == 1 && tpt_on_) {   // STRATA_TP_TIMING: the host before the launches, and between windows
+            tpt_pre_ms_ += ms_since(tpt_in);
+            if (tpt_have_sync_) tpt_between_ms_ += std::chrono::duration<double, std::milli>(tpt_in - tpt_synced_).count();
+        }
 #if !defined(STRATA_USE_HIP) && !defined(STRATA_HIP_GFX906)
         (void) launch_o->query();
 #else
@@ -3177,7 +3303,51 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     const int G = groups_[T] > 0 ? groups_[T] : 1;
     const int gtb[2] = {0, (T + 1) / 2}, gte[2] = {G == 2 ? (T + 1) / 2 : T, T};
     const int64_t steps = (le_ - lb_) * G;
-    if (ar_on() && !test_stall) {
+    if (tp) {
+        // --tensor-parallel: both cards' windows in lockstep (each layer's all-reduces wait for the other card), so the
+        // host serves layer k of this card, then layer k of the peer, with one CPU pool
+        // (cycle 2) the peer first when it rang: with the experts owned by residency its step is the GPU plan only
+        // (no CPU experts), so it is published before this card's CPU work instead of after it; this card waits for
+        // the peer's ring at most kPeerFirstUs once it rang itself.  STRATA_TP_SERVE_ORDER=0: this card, then the peer.
+        static const bool peer_first = [] { const char* v = std::getenv("STRATA_TP_SERVE_ORDER"); return v == nullptr || v[0] != '0'; }();
+        constexpr int64_t kPeerFirstUs = 40;
+        volatile uint32_t* const pseq = tp_peer_->h_seq_;
+        // (cycle 3) a peer that plans every layer itself raises no doorbell: only this card is served (tp_launch raised
+        // the peer's PLE flag)
+        const bool peer_gpu = tp_peer_->ar_on();
+        for (int64_t k = 0; k < steps; ++k) {
+            const uint32_t want = (uint32_t) (k + 1);
+            bool s1 = peer_gpu;
+            if (peer_first && !peer_gpu) {
+                Clock::time_point own_at{};
+                bool own_rang = false;
+                uint32_t spins = 0;
+                const Clock::time_point t_in = Clock::now();
+                for (;;) {
+                    if (*pseq >= want) {
+                        strata_load_fence();
+                        if (!tp_peer_->tp_serve(k, T, pool, tp_peer_user_, tp_peer_->tp_do_ple_ ? tp_peer_->tp_ple_rows_ : nullptr, err)) {
+                            (void) release_gpu_waits(5000);
+                            return false;
+                        }
+                        s1 = true;
+                        break;
+                    }
+                    if (!own_rang && *seq >= want) { own_rang = true; own_at = Clock::now(); }
+                    strata_cpu_pause();
+                    if ((++spins & 255u) != 0) continue;
+                    const Clock::time_point now = Clock::now();
+                    if (own_rang && now - own_at > std::chrono::microseconds(kPeerFirstUs)) break;
+                    if (now - t_in > std::chrono::milliseconds(2)) break;   // the blocking waits below (their checks)
+                }
+            }
+            if (!tp_serve(k, T, pool, user, do_ple ? ple_rows : nullptr, err) ||
+                (!s1 && !tp_peer_->tp_serve(k, T, pool, tp_peer_user_, tp_peer_->tp_do_ple_ ? tp_peer_->tp_ple_rows_ : nullptr, err))) {
+                (void) release_gpu_waits(5000);
+                return false;
+            }
+        }
+    } else if (ar_on() && !test_stall) {
         if (flag_raised) {
             // up before the launch (early_ple_flag_mode)
         } else if (do_ple) {
@@ -3334,6 +3504,47 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     const cudaError_t se = cudaStreamSynchronize(cs_);
     trace_ev("SYNCED", -1, -1, (int64_t) se);
     if (se != cudaSuccess) { err = std::string("verify: ") + cudaGetErrorString(se); return false; }
+    if (tp) {
+        const OnDevice on_peer(tp_peer_->device_);
+        const cudaError_t pe = cudaStreamSynchronize(tp_peer_->cs_);
+        if (pe != cudaSuccess) { err = std::string("verify (tensor-parallel peer): ") + cudaGetErrorString(pe); return false; }
+        tp_peer_->commit_pending_ = false;
+        if (tp_peer_->ar_on() && tp_peer_->h_plan_err_ != nullptr && *(volatile uint32_t*) tp_peer_->h_plan_err_ != 0) {
+            *(volatile uint32_t*) tp_peer_->h_plan_err_ = 0;
+            err = "verify (tensor-parallel peer): its device plan met an expert id out of range";
+            return false;
+        }
+        if (tp_peer_->copy_used_) {
+            cudaStreamSynchronize(tp_peer_->copy_);
+            tp_peer_->copy_used_ = false;
+        }
+        ++tp_peer_->windows;
+        if (strata::kernels::tp_ar_failed(tp_ar_)) {
+            err = "verify: a tensor-parallel all-reduce timed out (a card stopped in the window; progress " +
+                  std::to_string(strata::kernels::tp_ar_progress(tp_ar_, 0)) + " / " +
+                  std::to_string(strata::kernels::tp_ar_progress(tp_ar_, 1)) + ")";
+            released_ = true;   // the window's sums are not valid: no later window runs on this state
+            return false;
+        }
+        tpt_synced_ = Clock::now();
+        tpt_have_sync_ = true;
+        if (T == 1 && tpt_on_) tpt_wall_.push_back((float) std::chrono::duration<double, std::milli>(tpt_synced_ - tpt_in).count());
+        if (T == 1 && G == 1 && tp_ars_ != nullptr && tp_peer_->tp_ars_ != nullptr) {   // STRATA_TP_TIMING
+            tp_collect();
+            {
+                const OnDevice on_peer(tp_peer_->device_);
+                tp_peer_->tp_collect();
+            }
+            // which card reached each layer's MoE all-reduce last: the one that waited less for the other
+            for (int64_t l = 0; l < g.n_layers; ++l) {
+                const unsigned long long* a = &tp_ars_h_[(size_t) l * 8 + 4];
+                const unsigned long long* b = &tp_peer_->tp_ars_h_[(size_t) l * 8 + 4];
+                if (a[1] == 0 || a[2] < a[1] || b[1] == 0 || b[2] < b[1]) continue;
+                if (a[2] - a[1] <= b[2] - b[1]) ++tpt_last_[(size_t) l];
+                else ++tp_peer_->tpt_last_[(size_t) l];
+            }
+        }
+    }
     if (handoff_failed(err)) return false;   // a stale hand-off: nothing of this window is used
     if (ar_on() && h_plan_err_ != nullptr && *(volatile uint32_t*) h_plan_err_ != 0) {   // #871: refresh_ar saw the table whole
         *(volatile uint32_t*) h_plan_err_ = 0;
@@ -3405,6 +3616,10 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
             }
     }
     for (int t = 0; t < T; ++t) out[t] = ((volatile int32_t*) h_out_)[t];
+    if (static const bool htk = std::getenv("STRATA_HEAD_TOPK") != nullptr; htk) {
+        const int64_t lp = pos0 + T - 1;
+        head_topk_dump(head_logits_, n_vocab_, 1, T - 1, 'S', nullptr, &lp, &out[T - 1]);
+    }
     if (tap_file_ != nullptr && !batch_rec_) tap_write(T, tokens, pos0);
     note_nonfinite(T, nullptr);
     // STRATA_LOGITS_DUMP=<path> (debug tap, off by default): the window's logits as the sampler saw them, written
@@ -3456,6 +3671,338 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     progress_at("decode");
     progress_beat();
     return true;
+}
+
+// --tensor-parallel: the peer's side of run() - the leader captured this window's graph; stage it and launch it.
+bool Verifier::tp_launch(int T, const int32_t* tokens, int64_t pos0, std::string& err) {
+    using namespace strata::kernels;
+    const OnDevice on_device(device_);
+    if (T < 1 || T > max_t_) { err = "verify (tensor-parallel peer): window size out of range"; return false; }
+    if (released_.load()) { err = "verify (tensor-parallel peer): an earlier window never finished on the GPU"; return false; }
+    SessionState& ss = *ss_;
+    if (pos0 + T > ss.qsa_states[ss.qsa_primary()].max_cells) { err = "verify (tensor-parallel peer): past the context"; return false; }
+    last_batch_ = false;
+    stage_inputs(T, tokens, pos0);
+    staged_ = false;
+    tp_do_ple_ = ss.ple.ready() && ple_stage();
+    if (tp_do_ple_) {
+        int32_t prev[2] = {ss.ple_prev[0], ss.ple_prev[1]};
+        for (int t = 0; t < T; ++t) {
+            ngram_rows(&tokens[t], prev, 1, ss.ple.consts, tp_ple_rows_ + t * PLE_N_HEADS);
+            prev[0] = prev[1];
+            prev[1] = tokens[t];
+        }
+    }
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    bool& graph_launched = ar_off_ ? launched_nr_[sel_long_][T] : launched_[sel_long_][T];
+    if (ar_on() && h_plan_err_ != nullptr) *(volatile uint32_t*) h_plan_err_ = 0;
+    const cudaError_t le = cudaGraphLaunch(ar_off_ ? exec_nr_[sel_long_][T] : exec_[sel_long_][T], cs_);
+    graph_launched = true;
+    if (le != cudaSuccess) { err = std::string("verify (tensor-parallel peer): launch: ") + cudaGetErrorString(le); return false; }
+    (void) cudaStreamQuery(cs_);
+    if (ar_on()) {   // (cycle 3) the zero-doorbell graph: no layer to serve; the PLE rows, then the flag its layer 1 waits on
+        if (tp_do_ple_) {
+            const Clock::time_point tp = Clock::now();
+            if (!ss.ple.table->gather_batch(tp_ple_rows_, (size_t) T, h_ple_, err)) return false;
+            std::atomic_thread_fence(std::memory_order_seq_cst);
+            strata_store_fence();
+            ms_host += ms_since(tp);
+        }
+        *(volatile uint32_t*) h_flag_ = 1;
+    }
+    return true;
+}
+
+// --tensor-parallel: one step of run()'s host loop for this card (the same order as there: wait for the layer-group to
+// ring, serve its CPU experts into the mapped rows, an empty GPU plan if the pool published none, layer 0's PLE rows,
+// then the flag the window waits on)
+bool Verifier::tp_serve(int64_t k, int T, PoolMultiFn pool, void* user, const uint32_t* ple_rows, std::string& err,
+                        int groups) {
+    const ModelGeometry& g = *g_;
+    SessionState& ss = *ss_;
+    const int G = groups > 0 ? groups : groups_[T] > 0 ? groups_[T] : 1;   // (a batch window: one group)
+    const int gtb[2] = {0, (T + 1) / 2}, gte[2] = {G == 2 ? (T + 1) / 2 : T, T};
+    const int64_t l = lb_ + k / G;
+    const int grp = (int) (k % G);
+    const uint32_t want = (uint32_t) (k + 1);
+    volatile uint32_t* const seq = h_seq_;
+    const Clock::time_point a = Clock::now();
+    auto last_flush = a;
+    uint32_t spins = 0;
+    double q_max_ms = 0;   // STRATA_TP_TIMING: the longest cudaStreamQuery of this wait (a host stall in the runtime shows here)
+    int64_t n_q = 0;
+    bool said_stall = false;
+    while (*seq < want) {
+        strata_cpu_pause();
+        if ((++spins & 1023u) != 0) continue;
+        const auto now = Clock::now();
+        if (now - last_flush > std::chrono::microseconds(2000)) {
+            last_flush = now;
+            const OnDevice on_device(device_);
+            const Clock::time_point qa = Clock::now();
+            const cudaError_t q = cudaStreamQuery(cs_);
+            if (tpt_on_) { q_max_ms = std::max(q_max_ms, ms_since(qa)); ++n_q; }
+            if (tpt_on_ && !said_stall && now - a > std::chrono::milliseconds(1000)) {   // for a watcher to sample the threads
+                said_stall = true;
+                std::fprintf(stderr, "strata tp stall in progress: card %d layer %lld (window %lld)\n", tp_member_, (long long) l,
+                             (long long) windows);
+                std::fflush(stderr);
+            }
+            if (q != cudaErrorNotReady && *seq < want) {
+                err = "verify (tensor parallel, card " + std::to_string(tp_member_) + "): layer " + std::to_string(l) +
+                      " never rang (" + (q == cudaSuccess ? std::string("graph finished") : std::string(cudaGetErrorString(q))) + ")";
+                return false;
+            }
+        }
+        if (now - a > std::chrono::seconds(20)) {
+            err = "verify (tensor parallel, card " + std::to_string(tp_member_) + "): timed out at layer " + std::to_string(l);
+            return false;
+        }
+    }
+    strata_load_fence();
+    const Clock::time_point b = Clock::now();
+    if (tpt_on_ && b - a > std::chrono::milliseconds(50))   // STRATA_TP_TIMING: a long wait for a card's doorbell, said as it happens
+        std::fprintf(stderr, "strata tp stall: card %d layer %lld (window %lld, T %d): %.1f ms waiting for its doorbell; %lld stream "
+                             "queries in it, the longest %.1f ms\n", tp_member_, (long long) l, (long long) windows, T,
+                     std::chrono::duration<double, std::milli>(b - a).count(), (long long) n_q, q_max_ms);
+    cur_layer_ = want - 1;
+    // (cycle 3) the device planned this step (no CPU expert): the window does not wait for it - nothing to serve but
+    // layer 0's PLE rows and the flag layer 1 waits on for them
+    const bool planned = h_skipm_ != nullptr && want - 1 < (uint32_t) kTpMarks && ((volatile uint32_t*) h_skipm_)[want - 1] == want;
+    if (T == 1) { ++tpd_steps_; if (planned) ++tpd_planned_; }
+    if (planned) {
+        if (k == 0) {   // (a batch window gathered its PLE rows before the launch: ple_rows null)
+            if (ple_rows != nullptr) {
+                const Clock::time_point tp = Clock::now();
+                if (!ss.ple.table->gather_batch(ple_rows, (size_t) T, h_ple_, err)) return false;
+                ms_host += ms_since(tp);
+            }
+            std::atomic_thread_fence(std::memory_order_seq_cst);
+            strata_store_fence();
+            *(volatile uint32_t*) h_flag_ = want;
+        }
+        ms_wait += std::chrono::duration<double, std::milli>(b - a).count();
+        if (T == 1 && tpt_on_ && l >= 0 && (size_t) l < tpt_hw_.size()) tpt_hw_[(size_t) l] += std::chrono::duration<double, std::milli>(b - a).count();
+        return true;
+    }
+    set_plan_slot(grp);
+    const int tb = gtb[grp], n = gte[grp] - gtb[grp];
+    if (pool != nullptr)
+        pool(user, h_x_ + (size_t) tb * g.n_embd, h_ids_ + (size_t) tb * ss.k, n, ss.k, h_ymiss_ + (size_t) tb * ss.k * g.n_embd, l);
+    progress_tick();
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    strata_store_fence();
+    if (*(volatile uint32_t*) h_flagA_ != want) {        // the pool did not publish a plan: an empty one
+        sink_.counts[0] = 0;
+        sink_.counts[1] = 0;
+        sink_.counts[2] = 0;
+        sink_.start[0] = 0;
+        sink_.start2[0] = 0;
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        *(volatile uint32_t*) h_flagA_ = want;
+        raise_flag(h_flagB_, want);
+    }
+    if (k == 0 && ple_rows != nullptr) {
+        const Clock::time_point tp = Clock::now();
+        if (!ss.ple.table->gather_batch(ple_rows, (size_t) T, h_ple_, err)) return false;
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        strata_store_fence();
+        ms_host += ms_since(tp);
+    }
+    *(volatile uint32_t*) h_flag_ = want;
+    ms_wait += std::chrono::duration<double, std::milli>(b - a).count();
+    ms_pool += ms_since(b);
+    if (T == 1 && tpt_on_ && l >= 0 && (size_t) l < tpt_hw_.size()) {   // STRATA_TP_TIMING
+        tpt_hw_[(size_t) l] += std::chrono::duration<double, std::milli>(b - a).count();
+        tpt_hp_[(size_t) l] += ms_since(b);
+    }
+    return true;
+}
+
+int Verifier::tp_timing() {
+    static const int v = [] { const char* e = std::getenv("STRATA_TP_TIMING"); return e != nullptr ? std::atoi(e) : 0; }();
+    return v;
+}
+
+// STRATA_TP_TIMING: this window's stage stamps (the profiler's, prof_) and all-reduce stamps into the per-layer sums.
+// Classes: 0 GDN projections (hc read, qkv, conv, a/b, z), 1 GDN recurrence, 2 attention (hc read, projections,
+// indexer, select, attention, gate), 3 out-projection, 4 hc read + router + plan + doorbell (the AR1 taken out),
+// 5 shared expert + quant, 6 waiting for the host's plan, 7 VRAM experts, 8 waiting for the CPU experts (+ PCIe share),
+// 9 combine (the AR2 taken out).  Stamps the window did not write count nothing.
+void Verifier::tp_collect() {
+    const ModelGeometry& g = *g_;
+    if (cudaMemcpy(prof_h_.data(), prof_, prof_h_.size() * 8, cudaMemcpyDeviceToHost) != cudaSuccess ||
+        cudaMemcpy(tp_ars_h_.data(), tp_ars_, tp_ars_h_.size() * 8, cudaMemcpyDeviceToHost) != cudaSuccess) {
+        (void) cudaGetLastError();
+        return;
+    }
+    const unsigned long long* st = prof_h_.data();
+    auto at = [&](int64_t l, int i) { return st[(size_t) (l * kProfPer + i)]; };
+    auto gap = [](unsigned long long to, unsigned long long from) {
+        return (from != 0 && to != 0 && to >= from) ? (double) (to - from) : 0.0;
+    };
+    for (int64_t l = 0; l < g.n_layers; ++l) {
+        double* c = &tpt_cls_[(size_t) l * kTpCls];
+        const unsigned long long* a = &tp_ars_h_[(size_t) l * 8];
+        const double ar1 = gap(a[3], a[0]), ar2 = gap(a[7], a[4]);
+        for (int k = 0; k < 2; ++k) {
+            const unsigned long long* x = a + 4 * k;
+            tpt_ar_[(size_t) l * 6 + 3 * k + 0] += gap(x[1], x[0]);
+            tpt_ar_[(size_t) l * 6 + 3 * k + 1] += gap(x[2], x[1]);
+            tpt_ar_[(size_t) l * 6 + 3 * k + 2] += gap(x[3], x[2]);
+        }
+        if (!is_qsa_layer(g, l)) {
+            c[0] += gap(at(l, 5), at(l, 0));
+            c[1] += gap(at(l, 6), at(l, 5));
+            c[3] += gap(at(l, 16), at(l, 6));
+        } else {
+            c[2] += gap(at(l, 14), at(l, 0));
+            c[3] += gap(at(l, 16), at(l, 14));
+        }
+        c[4] += std::max(0.0, gap(at(l, 17), at(l, 16)) - ar1);
+        c[5] += gap(at(l, 18), at(l, 17));
+        c[6] += gap(at(l, 19), at(l, 18));
+        c[7] += gap(at(l, 20), at(l, 19));
+        c[8] += gap(at(l, 23), at(l, 20));
+        c[9] += std::max(0.0, gap(at(l, 24), at(l, 23)) - ar2);
+    }
+    tpt_win_ns_ += gap(at(g.n_layers, 1), at(0, 0));
+    ++tpt_windows_;
+}
+
+std::string Verifier::tp_timing_report() {
+    if (!tpt_on_ || tp_peer_ == nullptr) return std::string();
+    const ModelGeometry& g = *g_;
+    if (tp_ars_ == nullptr) return tp_timing_lite_report();
+    if (tpt_windows_ == 0) return std::string();
+    static const char* cls[kTpCls] = {"gdn-proj", "gdn-rec", "attn", "out-proj", "hc1+router", "shared", "wait-plan",
+                                      "vram-exp", "wait-cpu-exp", "combine"};
+    std::string out;
+    char b[512];
+    const Verifier* v[2] = {this, tp_peer_};
+    const double w = (double) tpt_windows_;
+    for (int c = 0; c < 2; ++c) {
+        const Verifier& x = *v[c];
+        double tot[kTpCls] = {}, ar[6] = {}, hw = 0, hp = 0;
+        int64_t last = 0;
+        for (int64_t l = 0; l < g.n_layers; ++l) {
+            for (int k = 0; k < kTpCls; ++k) tot[k] += x.tpt_cls_[(size_t) l * kTpCls + k];
+            for (int k = 0; k < 6; ++k) ar[k] += x.tpt_ar_[(size_t) l * 6 + k];
+            hw += x.tpt_hw_[(size_t) l];
+            hp += x.tpt_hp_[(size_t) l];
+            last += x.tpt_last_[(size_t) l];
+        }
+        std::snprintf(b, sizeof b, "strata tp timing card %d: %lld decode windows, GPU %.3f ms/window:", c, (long long) tpt_windows_,
+                      x.tpt_win_ns_ / 1e6 / w);
+        out += b;
+        for (int k = 0; k < kTpCls; ++k) {
+            std::snprintf(b, sizeof b, " %s %.3f", cls[k], tot[k] / 1e6 / w);
+            out += b;
+        }
+        std::snprintf(b, sizeof b, " | AR1 xfer %.3f wait %.3f sum %.3f | AR2 xfer %.3f wait %.3f sum %.3f | host: ring-wait %.3f "
+                                   "cpu-experts %.3f", ar[0] / 1e6 / w, ar[1] / 1e6 / w, ar[2] / 1e6 / w, ar[3] / 1e6 / w,
+                      ar[4] / 1e6 / w, ar[5] / 1e6 / w, hw / w, hp / w);
+        out += b;
+        if (c == 0) {
+            std::snprintf(b, sizeof b, " pre-launch %.3f between-windows %.3f", tpt_pre_ms_ / w, tpt_between_ms_ / w);
+            out += b;
+        }
+        std::snprintf(b, sizeof b, " | last to the MoE all-reduce in %.1f%% of layer-windows (ms/window)\n",
+                      100.0 * (double) last / (w * (double) g.n_layers));
+        out += b;
+    }
+    if (tp_timing() >= 2) {   // the per-layer table, us per window
+        out += "strata tp timing table (us/window; per card: gdn-proj gdn-rec attn out-proj hc1+router shared wait-plan "
+               "vram-exp wait-cpu-exp combine | AR1 xfer/wait/sum | AR2 xfer/wait/sum | host ring-wait cpu-exp | last%)\n";
+        for (int64_t l = 0; l < g.n_layers; ++l) {
+            std::snprintf(b, sizeof b, "L%02lld %s", (long long) l, is_qsa_layer(g, l) ? "attn" : "gdn ");
+            out += b;
+            for (int c = 0; c < 2; ++c) {
+                const Verifier& x = *v[c];
+                out += c == 0 ? " || c0" : " || c1";
+                for (int k = 0; k < kTpCls; ++k) {
+                    std::snprintf(b, sizeof b, " %6.1f", x.tpt_cls_[(size_t) l * kTpCls + k] / 1e3 / w);
+                    out += b;
+                }
+                const double* a = &x.tpt_ar_[(size_t) l * 6];
+                std::snprintf(b, sizeof b, " | %.1f/%.1f/%.1f | %.1f/%.1f/%.1f | %.1f %.1f | %.0f%%", a[0] / 1e3 / w, a[1] / 1e3 / w,
+                              a[2] / 1e3 / w, a[3] / 1e3 / w, a[4] / 1e3 / w, a[5] / 1e3 / w, x.tpt_hw_[(size_t) l] * 1e3 / w,
+                              x.tpt_hp_[(size_t) l] * 1e3 / w, 100.0 * (double) x.tpt_last_[(size_t) l] / w);
+                out += b;
+            }
+            out += "\n";
+        }
+    }
+    for (Verifier* x : {this, tp_peer_}) {
+        std::fill(x->tpt_cls_.begin(), x->tpt_cls_.end(), 0.0);
+        std::fill(x->tpt_ar_.begin(), x->tpt_ar_.end(), 0.0);
+        std::fill(x->tpt_hw_.begin(), x->tpt_hw_.end(), 0.0);
+        std::fill(x->tpt_hp_.begin(), x->tpt_hp_.end(), 0.0);
+        std::fill(x->tpt_last_.begin(), x->tpt_last_.end(), 0);
+        x->tpt_win_ns_ = 0;
+        x->tpt_windows_ = 0;
+    }
+    tpt_pre_ms_ = tpt_between_ms_ = 0;
+    tpt_wall_.clear();
+    return out;
+}
+
+// STRATA_TP_TIMING=3: host clocks only.  The decode windows' wall time (the leader: from capture to both cards synced)
+// as a distribution, the host's time before / between them, and per card the host's ring wait per layer (how long the
+// host waited for that card's doorbell after serving the layer before; a card stalled before its doorbell shows here).
+std::string Verifier::tp_timing_lite_report() {
+    const ModelGeometry& g = *g_;
+    std::string out;
+    char b[512];
+    const size_t nw = tpt_wall_.size();
+    if (nw == 0) return out;
+    std::vector<float> w = tpt_wall_;
+    std::sort(w.begin(), w.end());
+    auto q = [&](double f) { return (double) w[std::min(nw - 1, (size_t) (f * (double) (nw - 1) + 0.5))]; };
+    double sum = 0;
+    for (float x : w) sum += x;
+    const double med = q(0.5);
+    size_t slow = 0;
+    for (float x : w) slow += x > 1.5 * med ? 1 : 0;
+    std::snprintf(b, sizeof b, "strata tp timing (light): %zu decode windows, wall ms: mean %.2f p10 %.2f p50 %.2f p90 %.2f p99 %.2f "
+                               "max %.2f, %zu over 1.5x the median; host pre-launch %.3f between-windows %.3f ms/window\n",
+                  nw, sum / (double) nw, q(0.1), med, q(0.9), q(0.99), (double) w[nw - 1], slow, tpt_pre_ms_ / (double) nw,
+                  tpt_between_ms_ / (double) nw);
+    out += b;
+    if (tp_devplan_ || tp_peer_->tp_gpu_only_) {   // cycle 3
+        std::snprintf(b, sizeof b, "strata tp timing (light): card 0 layer-steps planned on the device %lld of %lld (%.1f%%); card 1 %s\n",
+                      (long long) tpd_planned_, (long long) tpd_steps_, tpd_steps_ > 0 ? 100.0 * (double) tpd_planned_ / (double) tpd_steps_ : 0.0,
+                      tp_peer_->tp_gpu_only_ ? "every layer on the device (no doorbell)" : "the host's");
+        out += b;
+        tpd_planned_ = tpd_steps_ = 0;
+    }
+    const Verifier* v[2] = {this, tp_peer_};
+    for (int c = 0; c < 2; ++c) {
+        const Verifier& x = *v[c];
+        double hw = 0, hp = 0;
+        std::vector<std::pair<double, int64_t>> top;
+        for (int64_t l = 0; l < g.n_layers; ++l) {
+            hw += x.tpt_hw_[(size_t) l];
+            hp += x.tpt_hp_[(size_t) l];
+            top.emplace_back(x.tpt_hw_[(size_t) l], l);
+        }
+        std::sort(top.begin(), top.end(), [](const auto& a, const auto& bb) { return a.first > bb.first; });
+        std::snprintf(b, sizeof b, "strata tp timing (light) card %d: host ring-wait %.3f cpu-experts %.3f ms/window; largest ring "
+                                   "waits (us/window):", c, hw / (double) nw, hp / (double) nw);
+        out += b;
+        for (size_t i = 0; i < 6 && i < top.size(); ++i) {
+            std::snprintf(b, sizeof b, " L%02lld %.1f", (long long) top[i].second, top[i].first * 1e3 / (double) nw);
+            out += b;
+        }
+        out += "\n";
+    }
+    for (Verifier* x : {this, tp_peer_}) {
+        std::fill(x->tpt_hw_.begin(), x->tpt_hw_.end(), 0.0);
+        std::fill(x->tpt_hp_.begin(), x->tpt_hp_.end(), 0.0);
+    }
+    tpt_pre_ms_ = tpt_between_ms_ = 0;
+    tpt_wall_.clear();
+    return out;
 }
 
 // set_pcie_balance: each stamped step's times into the model's fits (PcieModel::sample), solved once a window.
@@ -3543,6 +4090,46 @@ void Verifier::publish_plan(void* ctx) {
     *(volatile uint32_t*) v->h_flagA_ = v->cur_layer_ + 1;
 }
 
+// STRATA_HEAD_TOPK=<path> (debug tap, off by default; cycle 4's batch-vs-solo check): per decoded row one text line
+// "<tag> <slot> <pos> <pick> <lse> id:logit ..." with the K (STRATA_HEAD_TOPK_K, default 32) largest raw head logits
+// and the full-vocab log-sum-exp, so a solo row and a batch row at the same position can be compared (top-2 margin,
+// KL over the top-K).  tag S = run() (solo window, its last row only), B = a batch window row.  Read after the
+// stream is synchronised (the picks are already out), so it changes nothing it observes.
+static void head_topk_dump(const float* d_logits, int64_t n_vocab, int nrows, int dev_row0, char tag, const int* slots,
+                           const int64_t* pos, const int32_t* picks) {
+    static std::FILE* f = [] {
+        const char* p = std::getenv("STRATA_HEAD_TOPK");
+        return p != nullptr ? std::fopen(p, "ab") : nullptr;
+    }();
+    if (f == nullptr || d_logits == nullptr || n_vocab <= 0 || nrows <= 0) return;
+    static const int K = [] {
+        const char* v = std::getenv("STRATA_HEAD_TOPK_K");
+        return v != nullptr ? std::max(2, std::min(256, std::atoi(v))) : 32;
+    }();
+    std::vector<float> h((size_t) nrows * (size_t) n_vocab);
+    if (cudaMemcpy(h.data(), d_logits + (size_t) dev_row0 * (size_t) n_vocab, h.size() * sizeof(float),
+                   cudaMemcpyDeviceToHost) != cudaSuccess) {
+        (void) cudaGetLastError();
+        return;
+    }
+    std::vector<int32_t> order((size_t) n_vocab);
+    for (int r = 0; r < nrows; ++r) {
+        const float* row = h.data() + (size_t) r * (size_t) n_vocab;
+        double mx = row[0];
+        for (int64_t v = 1; v < n_vocab; ++v) mx = std::max(mx, (double) row[v]);
+        double s = 0.0;
+        for (int64_t v = 0; v < n_vocab; ++v) s += std::exp((double) row[v] - mx);
+        for (int64_t v = 0; v < n_vocab; ++v) order[(size_t) v] = (int32_t) v;
+        std::partial_sort(order.begin(), order.begin() + K, order.end(),
+                          [&](int32_t a, int32_t b) { return row[a] > row[b] || (row[a] == row[b] && a < b); });
+        std::fprintf(f, "%c %d %lld %d %.7f", tag, slots != nullptr ? slots[r] : -1, (long long) pos[r], (int) picks[r],
+                     mx + std::log(s));
+        for (int j = 0; j < K; ++j) std::fprintf(f, " %d:%.7f", order[(size_t) j], (double) row[order[(size_t) j]]);
+        std::fprintf(f, "\n");
+    }
+    std::fflush(f);
+}
+
 bool Verifier::window_logprobs(const int32_t* targets, int T, int64_t pos0, int32_t extra_id, std::FILE* out,
                                std::string& err) {
     if (next_ != nullptr) return next_->window_logprobs(targets, T, pos0, extra_id, out, err);
@@ -3613,6 +4200,10 @@ bool Verifier::window_logprobs(const int32_t* targets, int T, int64_t pos0, int3
     return true;
 }
 
+void Verifier::default_batch_self_commit(bool on) {
+    if (std::getenv("STRATA_BATCH_SELF_COMMIT") == nullptr) g_batch_self_commit = on;
+}
+
 namespace { bool g_commit_async = false; }
 void Verifier::set_commit_async(bool on) { g_commit_async = on && std::getenv("STRATA_COMMIT_SYNC") == nullptr; }
 
@@ -3673,6 +4264,7 @@ bool Verifier::commit(int n_keep, std::string& err) {
             ss_->ple_prev[1] = last_tokens_[t];
         }
     ms_commit += ms_since(t0);
+    if (tp_peer_ != nullptr && !tp_peer_->commit(n_keep, err)) return false;
     return next_ == nullptr || next_->commit(n_keep, err);
 }
 
@@ -3687,6 +4279,7 @@ bool Verifier::wait_commit(std::string& err) {
         const cudaError_t se = cudaEventSynchronize(commit_done_);
         if (se != cudaSuccess) { err = std::string("verify: commit: ") + cudaGetErrorString(se); return false; }
     }
+    if (tp_peer_ != nullptr && !tp_peer_->wait_commit(err)) return false;
     return next_ == nullptr || next_->wait_commit(err);
 }
 
@@ -4374,6 +4967,8 @@ bool Verifier::stage_batch(const int* rows, int S, int hbase, const int32_t* tok
     *(volatile uint32_t*) h_flag_ = 0;
     *(volatile uint32_t*) h_flagA_ = 0;
     *(volatile uint32_t*) h_flagB_ = 0;
+    if (h_skipm_ != nullptr) std::memset(h_skipm_, 0, kTpMarks * 4);   // tp card 0: this window's device-planned steps only
+    if (ar_on() && h_plan_err_ != nullptr) *(volatile uint32_t*) h_plan_err_ = 0;
     std::atomic_thread_fence(std::memory_order_seq_cst);
     last_t_ = S;
     for (int t = 0; t < S; ++t) last_rows_[t] = rows[t];
@@ -4408,12 +5003,18 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
     const ModelGeometry& g = *g_;
     if (pre_launch_ && !pre_launch_(cs_, err)) return false;
     if (!stage_batch(rows, S, 0, tokens, pos, err)) return false;
+    if (tp_peer_ != nullptr) {   // --tensor-parallel (cycle 3): the peer's batch window over its own slot sessions
+        if (next_ != nullptr) { err = "verify: tensor parallel runs a whole-model window on each card"; return false; }
+        const OnDevice on_peer(tp_peer_->device_);
+        if (!tp_peer_->stage_batch(rows, S, 0, tokens, pos, err)) return false;
+    }
     const cudaError_t le = cudaGraphLaunch(exec_bm_[bkey(rows, S, 0)], cs_);
     if (le != cudaSuccess) { err = std::string("verify: batch launch: ") + cudaGetErrorString(le); return false; }
     (void) cudaStreamQuery(cs_);
     volatile uint32_t* const seq = h_seq_;
     volatile uint32_t* const flag = h_flag_;
     const int64_t steps = le_ - lb_;
+    if (tp_peer_ != nullptr) return tp_batch_rest(rows, S, tokens, pos, pool, user, out, err);
     // #646: a stage whose every expert is resident plans on the device and raises no host doorbells, so the
     // per-layer spin below has nothing to wait for: without the PLE flag the graph finishes with the ring silent
     // ("verify batch: layer K never rang (graph finished)" - K is that stage's first layer), and with it the graph
@@ -4436,6 +5037,8 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
         if (le_ < g.n_layers) return next_ == nullptr || next_->run_slot_rows(rows, S, tokens, pos, pool, next_user_, out, err);
         if (!sample_rows(S, err)) return false;
         for (int t = 0; t < S; ++t) out[t] = ((volatile int32_t*) h_out_)[t];
+    if (static const bool htk = std::getenv("STRATA_HEAD_TOPK") != nullptr; htk)
+        head_topk_dump(head_logits_, n_vocab_, S, 0, 'B', last_rows_, last_pos_b_, out);
         note_nonfinite(S, last_pos_b_);
         progress_at("decode");
         progress_beat();
@@ -4501,7 +5104,98 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
     if (le_ < g.n_layers) return next_ == nullptr || next_->run_slot_rows(rows, S, tokens, pos, pool, next_user_, out, err);
     if (!sample_rows(S, err)) return false;
     for (int t = 0; t < S; ++t) out[t] = ((volatile int32_t*) h_out_)[t];
+    if (static const bool htk = std::getenv("STRATA_HEAD_TOPK") != nullptr; htk)
+        head_topk_dump(head_logits_, n_vocab_, S, 0, 'B', last_rows_, last_pos_b_, out);
     note_nonfinite(S, last_pos_b_);
+    progress_at("decode");
+    progress_beat();
+    return true;
+}
+
+// --tensor-parallel (cycle 3): the rest of run_slot_rows once the leader's batch graph is launched.  The peer's graph
+// (staged and captured by run_slot_rows) goes out, its PLE flag when it plans every layer itself, then the host serves
+// the leader's layer-steps (its device-planned ones are skipped by tp_serve) and the peer's when it rings, in lockstep
+// as run() does; both streams are synced, and the picks are the leader's (the head is replicated).
+bool Verifier::tp_batch_rest(const int* rows, int S, const int32_t* tokens, const int64_t* pos, PoolMultiFn pool, void* user,
+                             int32_t* out, std::string& err) {
+    (void) tokens; (void) pos;
+    const ModelGeometry& g = *g_;
+    const bool ple = ss_->ple.ready() && ple_stage();
+    {
+        const OnDevice on_peer(tp_peer_->device_);
+        const cudaError_t pl = cudaGraphLaunch(tp_peer_->exec_bm_[tp_peer_->bkey(rows, S, 0)], tp_peer_->cs_);
+        if (pl != cudaSuccess) {
+            err = std::string("verify (tensor-parallel peer): batch launch: ") + cudaGetErrorString(pl);
+            (void) release_gpu_waits(5000);
+            return false;
+        }
+        (void) cudaStreamQuery(tp_peer_->cs_);
+    }
+    // the zero-doorbell graphs wait only for the PLE flag (stage_batch gathered the rows before the launch)
+    if (tp_peer_->ar_on()) {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        strata_store_fence();
+        *(volatile uint32_t*) tp_peer_->h_flag_ = 1;
+    }
+    if (ar_on()) {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        strata_store_fence();
+        *(volatile uint32_t*) h_flag_ = 1;
+    }
+    (void) ple;
+    const int64_t steps = le_ - lb_;
+    for (int64_t k = 0; k < steps; ++k) {
+        if ((!ar_on() && !tp_serve(k, S, pool, user, nullptr, err, 1)) ||
+            (!tp_peer_->ar_on() && !tp_peer_->tp_serve(k, S, pool, tp_peer_user_, nullptr, err, 1))) {
+            (void) release_gpu_waits(5000);
+            return false;
+        }
+    }
+    const cudaError_t se = cudaStreamSynchronize(cs_);
+    if (se != cudaSuccess) { err = std::string("verify batch: ") + cudaGetErrorString(se); return false; }
+    cudaStreamSynchronize(copy_);
+    {
+        const OnDevice on_peer(tp_peer_->device_);
+        const cudaError_t pe = cudaStreamSynchronize(tp_peer_->cs_);
+        if (pe != cudaSuccess) { err = std::string("verify batch (tensor-parallel peer): ") + cudaGetErrorString(pe); return false; }
+        cudaStreamSynchronize(tp_peer_->copy_);
+    }
+    if (strata::kernels::tp_ar_failed(tp_ar_)) {
+        err = "verify batch: a tensor-parallel all-reduce timed out (a card stopped in the window; progress " +
+              std::to_string(strata::kernels::tp_ar_progress(tp_ar_, 0)) + " / " +
+              std::to_string(strata::kernels::tp_ar_progress(tp_ar_, 1)) + ")";
+        released_ = true;
+        return false;
+    }
+    for (Verifier* x : {this, tp_peer_}) {
+        if (x->ar_on() && x->h_plan_err_ != nullptr && *(volatile uint32_t*) x->h_plan_err_ != 0) {
+            *(volatile uint32_t*) x->h_plan_err_ = 0;
+            err = "verify batch (tensor parallel): a device plan met an expert it could not place";
+            return false;
+        }
+    }
+    if (tp_ars_ != nullptr && tp_peer_->tp_ars_ != nullptr) {   // STRATA_TP_TIMING=1/2: the batch windows' classes too (cycle 3)
+        tp_collect();
+        {
+            const OnDevice on_peer(tp_peer_->device_);
+            tp_peer_->tp_collect();
+        }
+        for (int64_t l = 0; l < g.n_layers; ++l) {
+            const unsigned long long* a = &tp_ars_h_[(size_t) l * 8 + 4];
+            const unsigned long long* b = &tp_peer_->tp_ars_h_[(size_t) l * 8 + 4];
+            if (a[1] == 0 || a[2] < a[1] || b[1] == 0 || b[2] < b[1]) continue;
+            if (a[2] - a[1] <= b[2] - b[1]) ++tpt_last_[(size_t) l];
+            else ++tp_peer_->tpt_last_[(size_t) l];
+        }
+    } else if (prof_on_) collect_profile();
+    ++windows;
+    ++tp_peer_->windows;
+    if (!sample_rows(S, err)) return false;
+    for (int t = 0; t < S; ++t) out[t] = ((volatile int32_t*) h_out_)[t];
+    if (static const bool htk = std::getenv("STRATA_HEAD_TOPK") != nullptr; htk)
+        head_topk_dump(head_logits_, n_vocab_, S, 0, 'B', last_rows_, last_pos_b_, out);
+    note_nonfinite(S, last_pos_b_);
+    (void) g;
     progress_at("decode");
     progress_beat();
     return true;
@@ -4540,9 +5234,15 @@ bool Verifier::commit_slot_prefixes(const int* keep, std::string& err) {
             c[2 + j] = j < n ? (int32_t) last_pos_b_[first + j] : -1;
     }
     std::atomic_thread_fence(std::memory_order_seq_cst);
+    bool peer_done = false;
     if (!batch_self_commits(last_rows_, S)) {   // (else the window has kept its rows)
         const cudaError_t le = cudaGraphLaunch(commit_bm_[bkey(last_rows_, S, row_base_)], cs_);
         if (le != cudaSuccess) { err = std::string("verify: batch commit launch: ") + cudaGetErrorString(le); return false; }
+        // --tensor-parallel (cycle 3): the peer's commit runs beside this one
+        if (tp_peer_ != nullptr) {
+            peer_done = true;
+            if (!tp_peer_->commit_slot_prefixes(keep, err)) { (void) cudaStreamSynchronize(cs_); return false; }
+        }
         const cudaError_t se = cudaStreamSynchronize(cs_);
         if (se != cudaSuccess) { err = std::string("verify: batch commit: ") + cudaGetErrorString(se); return false; }
     }
@@ -4557,6 +5257,7 @@ bool Verifier::commit_slot_prefixes(const int* keep, std::string& err) {
             }
         }
     ms_commit += ms_since(t0);
+    if (tp_peer_ != nullptr && !peer_done && !tp_peer_->commit_slot_prefixes(keep, err)) return false;   // --tensor-parallel: the peer's slots
     return next_ == nullptr || next_->commit_slot_prefixes(keep, err);
 }
 
@@ -4564,10 +5265,15 @@ bool Verifier::sample_rows(int S, std::string& err) {
     bool any = false;
     for (int t = 0; t < S; ++t) {
         strata::kernels::SamplerParams sp = slot_sp_[(size_t) last_rows_[t]];
-        if (sp.greedy || sp.temperature <= 0.0f) continue;
+        // the penalties over this row's own history (set_batch_history), as the solo window passes them: the last
+        // min(penalty_last_n, cap) tokens the row's pick follows, history_len the same count.  A greedy row with them
+        // is picked again here (the graph's argmax is the unpenalized one), exactly as the solo window does.
+        const int hn = bhist_d_ != nullptr && sp.penalty_last_n > 0 ? std::min(sp.penalty_last_n, bhist_stride_) : 0;
+        if ((sp.greedy || sp.temperature <= 0.0f) && hn == 0) continue;
         sp.counter = (uint64_t) last_pos_b_[t];   // Philox(seed, position): the solo window's draw for this position
-        sp.penalty_last_n = 0;
-        strata::kernels::sample_tokens(head_logits_ + (size_t) t * (size_t) n_vocab_, 1, (int) n_vocab_, nullptr, 0, sp,
+        if (hn == 0) sp.penalty_last_n = 0;
+        const int32_t* h = hn > 0 ? bhist_d_ + (size_t) t * (size_t) bhist_stride_ + (size_t) (bhist_stride_ - hn) : nullptr;
+        strata::kernels::sample_tokens(head_logits_ + (size_t) t * (size_t) n_vocab_, 1, (int) n_vocab_, h, hn, sp,
                                        m_out_ + t, cs_);
         any = true;
     }

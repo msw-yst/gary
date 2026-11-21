@@ -53,7 +53,7 @@ bool in_arch_list(const char* list_c, const std::string& arch) {
 
 bool compiled_for(const std::string& arch) { return in_arch_list(STRATA_HIP_ARCHS, arch); }
 
-// gfx906 helper: a card that may serve ONLY as a helper expert cache (--expert-cache-device1..3) - a wave64 card of
+// gfx906 helper: a card that may serve ONLY as a helper expert cache (--expert-cache-device1..5) - a wave64 card of
 // an architecture the helper translation units were additionally compiled for (STRATA_HIP_HELPER_ARCHS, set by
 // cmake/hip_backend.cmake when the helper feature is built; same comma-separated format as STRATA_HIP_ARCHS).  Always
 // absent from a build without helper architectures.
@@ -63,7 +63,7 @@ bool helper_capable(const cudaDeviceProp& p, const std::string& arch) {
 }
 #endif
 
-// `helper`: the card is to be a helper expert cache (--expert-cache-device1..3), which besides every card the strict
+// `helper`: the card is to be a helper expert cache (--expert-cache-device1..5), which besides every card the strict
 // check accepts may be a helper_capable() one.  The primary, the --layer-split stages and the --peer-device stay strict:
 // they run prefill / dense / QSA kernels that exist for STRATA_HIP_ARCHS (wave32) only.
 std::string arch_problem(const cudaDeviceProp& p, int ordinal, bool helper = false) {
@@ -81,7 +81,7 @@ std::string arch_problem(const cudaDeviceProp& p, int ordinal, bool helper = fal
 #if defined(STRATA_HIP_HELPER_ARCHS)
     if (helper_capable(p, arch)) {
         if (helper) return "";
-        return card + " runs wave64: this engine can use it only as a helper expert cache (--expert-cache-device1..3, "
+        return card + " runs wave64: this engine can use it only as a helper expert cache (--expert-cache-device1..5, "
                       "docs/SECOND_GPU.md), not as the primary GPU, a --layer-split stage or the --peer-device";
     }
     if (helper && p.warpSize == 64) {
@@ -91,7 +91,7 @@ std::string arch_problem(const cudaDeviceProp& p, int ordinal, bool helper = fal
 #else
     // A helper role only adds a hint; whether the card is refused is the strict check's answer, as before.
     if (helper && p.warpSize == 64) {
-        why += "; a wave64 card (gfx906) can only be a helper expert cache (--expert-cache-device1..3), and only in an "
+        why += "; a wave64 card (gfx906) can only be a helper expert cache (--expert-cache-device1..5), and only in an "
                "engine built with -DSTRATA_HIP_HELPER_ARCHS=gfx906";
     }
 #endif

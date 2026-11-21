@@ -371,6 +371,60 @@ inline int ring_slots(size_t T) {
 // and taken through this one place, so the bytes the prompt path borrows cover every buffer it writes.
 inline int stage_slots(size_t T) { return std::max(ring_slots(T), STAGE_GRP); }
 constexpr int DQ = 2;              // dequantized-expert ring (FP16 gate/up + down)
+// STRATA_PF_DQ_BATCH=G (prefill cycle 2, opt-in, 2..16): the FP16 expert path of the streamed walk (native packs)
+// dequantizes G experts' gate/up and down in ONE launch (iq_dequant_experts_f16) into G buffer pairs, then runs their
+// GEMMs; the same FP16 bytes as the per-expert launches (STRATA_PF_DQ_BATCH_CHECK=1 compares them for the first 64
+// groups).  The ring slots of a group are given back after its launch.  0 / unset: the per-expert launches.
+constexpr int DQ_MAX = 16;
+inline int dq_batch() {
+    static const int v = [] {
+        const char* e = std::getenv("STRATA_PF_DQ_BATCH");
+        const int g = e ? std::atoi(e) : 0;
+        return g >= 2 ? std::min(g, DQ_MAX) : 0;
+    }();
+    return v;
+}
+inline int dq_bufs() { return std::max(DQ, dq_batch()) + (dq_batch() > 0 && std::getenv("STRATA_PF_DQ_BATCH_CHECK") ? 1 : 0); }
+// STRATA_PF_DQ_BATCH_CHECK=1 (with STRATA_PF_DQ_BATCH): the first 64 groups' FP16 weights are also made by the
+// per-expert launches into the spare pair (chk_gu, chk_d) and compared byte for byte on the host (a sync per expert).
+void dq_batch_check(const strata::kernels::DqExperts& g, int gu_t, int d_t, int64_t n_ff, int64_t n_embd,
+                    uint16_t* chk_gu, uint16_t* chk_d, cudaStream_t cs) {
+    static const bool on = std::getenv("STRATA_PF_DQ_BATCH_CHECK") != nullptr;
+    static int groups = 0, bad = 0, experts = 0;
+    if (!on || groups >= 64) return;
+    ++groups;
+    const size_t ngu = (size_t) 2 * n_ff * n_embd, nd = (size_t) n_ff * n_embd;
+    std::vector<uint16_t> a(ngu), b(ngu);
+    for (int i = 0; i < g.n; ++i) {
+        strata::kernels::iq_dequant_gu_f16(gu_t, g.gate[i], g.up[i], n_ff, n_embd, chk_gu, cs, g.tail[i]);
+        strata::kernels::iq_dequant_f16(d_t, g.down[i], (int64_t) nd, chk_d, cs, g.tail[i] ? g.tail[i] + 2 : nullptr);
+        cudaStreamSynchronize(cs);
+        cudaMemcpy(a.data(), g.gu_dst[i], ngu * 2, cudaMemcpyDeviceToHost);
+        cudaMemcpy(b.data(), chk_gu, ngu * 2, cudaMemcpyDeviceToHost);
+        bool same = std::memcmp(a.data(), b.data(), ngu * 2) == 0;
+        cudaMemcpy(a.data(), g.d_dst[i], nd * 2, cudaMemcpyDeviceToHost);
+        cudaMemcpy(b.data(), chk_d, nd * 2, cudaMemcpyDeviceToHost);
+        same = same && std::memcmp(a.data(), b.data(), nd * 2) == 0;
+        ++experts;
+        if (!same) ++bad;
+    }
+    if (bad > 0 || groups == 64)
+        std::fprintf(stderr, "strata prefill: STRATA_PF_DQ_BATCH_CHECK: %d groups, %d experts compared, %d differ\n", groups,
+                     experts, bad);
+}
+// STRATA_PF_MHIST=1 (prefill cycle 2, data only): a histogram of the FP16 expert path's rows per expert (the GEMMs'
+// M), printed every 24,576 experts (48 layers x 512) as "M:count" pairs.
+inline bool mhist_on() { static const bool on = std::getenv("STRATA_PF_MHIST") != nullptr; return on; }
+void mhist_add(int64_t ne) {
+    static std::map<int64_t, int64_t> h;
+    static int64_t n = 0;
+    ++h[ne];
+    if (++n % 24576 != 0) return;
+    std::string s;
+    for (const auto& kv : h) s += " " + std::to_string(kv.first) + ":" + std::to_string(kv.second);
+    std::fprintf(stderr, "strata prefill mhist: %lld experts%s\n", (long long) 24576, s.c_str());
+    h.clear();
+}
 // The BF16-weight projections (hyper-connection, SSM alpha/beta, indexer, router, shared gate, PLE key/value) take
 // BF16 activations here and FP32 ones in decode. STRATA_PREFILL_BF16X2=1 adds each activation's BF16 remainder as a
 // second GEMM (Y = W.hi + W.lo, ~16 mantissa bits): a router that picks its top 10 from the same x decode would.
@@ -1085,8 +1139,8 @@ struct Prefill::Impl {
     int32_t* grp_host = nullptr;
     int32_t* grp_dev = nullptr;          // its device alias
     size_t grp_n = 0, grp_tk = 0;        // int32s allocated; T_max * K (the offset of slot, and of src past it)
-    uint16_t* dq_gu[DQ] = {};
-    uint16_t* dq_d[DQ] = {};
+    uint16_t* dq_gu[DQ_MAX + 1] = {};
+    uint16_t* dq_d[DQ_MAX + 1] = {};
     uint8_t* stage_dev[RING_MAX] = {};
     int ring = STAGE;                        // the slots of this layout's ring (ring_slots)
     // this layout's GU, H and Xq are the fused path's (moe_bufs' `fused`), so a layer that runs MMQ or the FP16 path may
@@ -1832,7 +1886,7 @@ bool Prefill::carve(size_t T, void* alloc) {
         }
         if (base == nullptr) ok = false;
     }
-    for (int i = 0; i < DQ; ++i) { m.dq_gu[i] = o.take<uint16_t>(1280 * 2560, ok); m.dq_d[i] = o.take<uint16_t>(2560 * 640, ok); }
+    for (int i = 0; i < dq_bufs(); ++i) { m.dq_gu[i] = o.take<uint16_t>(1280 * 2560, ok); m.dq_d[i] = o.take<uint16_t>(2560 * 640, ok); }
     if (mmq_plan().any) {
         const MmqPlan& mp = mmq_plan();
         m.ids_identity = o.take<int32_t>(T * K, ok);
@@ -2572,7 +2626,7 @@ uint64_t Prefill::bytes_needed_impl(const core::ModelGeometry& g, const core::Se
     const int64_t max_blocks = ss.qsa_states[ss.qsa_primary()].max_cells / s.idx_block + 2;
     o.take<uint8_t>((size_t) std::max({gdn_set_bytes(T), qsa_set_bytes(T, cap, max_blocks, 256, 32, s),
                                        moe_set_bytes(T, g.n_expert, fused_layout(T, src))}), ok);
-    for (int i = 0; i < DQ; ++i) { o.take<uint16_t>(1280 * 2560, ok); o.take<uint16_t>(2560 * 640, ok); }
+    for (int i = 0; i < dq_bufs(); ++i) { o.take<uint16_t>(1280 * 2560, ok); o.take<uint16_t>(2560 * 640, ok); }
     if (mmq_plan().any) {
         const MmqPlan& mp = mmq_plan();
         o.take<int32_t>(T * K, ok);
@@ -5224,6 +5278,45 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         // one expert's products from its blob on the device; `slot` (a ring slot, or -1 for a resident
                         // expert) is released once the blob is read; `cslot`: the expert-cache slot the blob is in (-1:
                         // a ring slot or the peer's), which STRATA_MMQ_DIRECT reads in place
+                        // STRATA_PF_DQ_BATCH: the FP16 path's open group (streamed walk, native pack); its ring slots
+                        // are given back only after the group's dequant launch (dq_flush)
+                        struct DqPend { const uint8_t* blob; int slot; int32_t e; };
+                        DqPend dqp[DQ_MAX];
+                        int dqp_n = 0;
+                        const int dqg = (!use_mmq && stream_all && lay.native && !ws_layer) ? dq_batch() : 0;
+                        auto dq_flush = [&]() -> bool {
+                            if (dqp_n == 0) return true;
+                            const auto& f = lay.fmt[(size_t) l];
+                            strata::kernels::DqExperts dg;
+                            dg.n = dqp_n;
+                            for (int i = 0; i < dqp_n; ++i) {
+                                const uint8_t* b = dqp[i].blob;
+                                dg.gate[i] = b;
+                                dg.up[i] = b + f.up_off;
+                                dg.down[i] = b + f.down_off;
+                                dg.gu_dst[i] = m.dq_gu[i];
+                                dg.d_dst[i] = m.dq_d[i];
+                                dg.tail[i] = f.tail_off ? (const float*) (b + f.tail_off) : nullptr;
+                            }
+                            pt.mark(kPfDequant, cs);
+                            strata::kernels::iq_dequant_experts_f16(f.gu_type, f.d_type, f.n_ff, f.n_embd, dg, m.cs);
+                            dq_batch_check(dg, f.gu_type, f.d_type, f.n_ff, f.n_embd, m.dq_gu[dq_bufs() - 1],
+                                           m.dq_d[dq_bufs() - 1], m.cs);
+                            for (int i = 0; i < dqp_n; ++i)
+                                if (dqp[i].slot >= 0) { cudaEventRecord(m.used[dqp[i].slot], m.cs); m.used_of[dqp[i].slot] = dqp[i].slot; }
+                            for (int i = 0; i < dqp_n; ++i) {
+                                const int32_t e = dqp[i].e;
+                                const int64_t o0 = m.off[(size_t) e], ne = m.cnt[(size_t) e];
+                                pt.mark(kPfGemmGU, cs);
+                                m.gemm.f16(m.Xs + o0 * N, m.dq_gu[i], m.GU + o0 * 1280, ne, 1280, N);
+                                swiglu_interleaved(m.GU + o0 * 1280, m.Hh + o0 * 640, ne, m.cs);
+                                if (had_d) strata::kernels::hadamard_rows_f16(m.Hh + o0 * 640, ne, 640, had_block, had_sh, m.cs);
+                                pt.mark(kPfGemmD, cs);
+                                m.gemm.f16(m.Hh + o0 * 640, m.dq_d[i], m.Dm + o0 * N, ne, N, 640);
+                            }
+                            dqp_n = 0;
+                            return true;
+                        };
                         auto compute = [&](size_t j, const uint8_t* blob_dev, int slot, int32_t cslot) -> bool {
                             const int32_t e = order[j];
 #if STRATA_EXPERT_NIBBLE_BUILT
@@ -5372,6 +5465,12 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                 return true;
                             }
                             const int q = (int) (j % DQ);
+                            if (mhist_on()) mhist_add(m.cnt[(size_t) e]);
+                            if (dqg > 0) {   // STRATA_PF_DQ_BATCH: into the open group; the group's launch at its end
+                                dqp[dqp_n++] = DqPend{blob_dev, slot, e};
+                                if (dqp_n < dqg && j + 1 < order.size()) return true;
+                                return dq_flush();
+                            }
                             if (lay.native) {
                                 // plan v0.3 P6: a native pack's layer, dequantized by llama.cpp's own formulas
                                 const auto& f = lay.fmt[(size_t) l];
@@ -5454,7 +5553,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                     cudaEventRecord(m.used[sl], m.cs);
                                     m.used_of[sl] = sl;
                                     consumed = ++k;
-                                    give_back(consumed);
+                                    if (dqp_n == 0) give_back(consumed);   // (STRATA_PF_DQ_BATCH: not past an open group)
                                 }
                             };
                             for (size_t j = 0; j < order.size(); ++j) {
@@ -5470,7 +5569,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                     cur_entry = k;
                                     if (!compute(j, m.stage_dev[sl], sl, -1)) return false;
                                     consumed = ++k;
-                                    if (!group_gather || gg_nslots == 0) give_back(consumed);   // its group was gathered
+                                    if ((!group_gather || gg_nslots == 0) && dqp_n == 0) give_back(consumed);   // its group was gathered
                                 } else {
                                     const bool r0 = m.host_res && m.cache && m.host_res[(size_t) l * m.g->n_expert + e] >= 0;
                                     const uint8_t* bp = r0 ? m.cache->device_slot(m.host_res[(size_t) l * m.g->n_expert + e])
@@ -5482,6 +5581,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                 }
                             }
                             release_to(m.g->n_expert);
+                            if (dqg > 0) give_back(consumed);   // STRATA_PF_DQ_BATCH: the last group's slots
                         }
                     }
                     pt.mark(kPfCombine, cs);

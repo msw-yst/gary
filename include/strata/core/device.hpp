@@ -34,7 +34,7 @@ struct DeviceInfo {
 // is no such device: the caller's own device errors apply), else the reason in a sentence.  A binary carried to
 // another card would otherwise fail later with "invalid device function".  CUDA builds: always "".
 //
-// gfx906 helper: `helper` = the card is to be a helper expert cache (--expert-cache-device1..3).  A helper is
+// gfx906 helper: `helper` = the card is to be a helper expert cache (--expert-cache-device1..5).  A helper is
 // accepted when the strict check above accepts it, or - in a build with STRATA_HIP_HELPER_ARCHS (the helper TUs'
 // extra architectures, e.g. "gfx906") - when its architecture is in that list and it runs wave64.  The primary, the
 // --layer-split stages and the --peer-device always take the strict check (helper = false).  Without

@@ -1,4 +1,5 @@
 #include "strata/core/native_dense.hpp"
+#include "strata/core/tp_slice.hpp"
 #include <cstdlib>
 #include "strata/core/weights.hpp"
 #include "strata/artifact/gguf_reader.hpp"
@@ -361,13 +362,46 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
                     tensor.shape[0] != (uint64_t) ref.ne0 || tensor.shape[1] != (uint64_t) ref.ne1) {
                     err = "native dense: incompatible matrix " + tensor.name; return false;
                 }
+                // --tensor-parallel: this card's rows / columns of a split projection only (tp_slice.hpp)
+                std::vector<uint8_t> tp_host;
+                {
+                    const strata::core::TpSlice& tps = strata::core::tp_slice();
+                    strata::core::TpSlice::Ranges tr;
+                    const auto ax = tps.plan(tensor.name, tr);
+                    if (ax != strata::core::TpSlice::Axis::None) {
+                        const uint64_t whole = strata::kernels::native_mmvq_weight_bytes(tensor.type, (int) ref.ne0, (int) ref.ne1);
+                        int be = 0, bb = 0;
+                        if (!strata::block_geometry(tensor.type, be, bb) || whole % (uint64_t) ref.ne1 != 0 ||
+                            whole / (uint64_t) ref.ne1 != (uint64_t) (ref.ne0 / be) * (uint64_t) bb) {
+                            err = "native dense (tensor parallel): " + tensor.name + " is not plain GGUF rows"; return false;
+                        }
+                        const size_t row_bytes = (size_t) (whole / (uint64_t) ref.ne1);
+                        int64_t kept = 0;
+                        for (const auto& x : tr) kept += x.second - x.first;
+                        if (ax == strata::core::TpSlice::Axis::Rows) {
+                            tp_host = strata::core::tp_take_rows((const uint8_t*) gguf.tensor_data(tensor), row_bytes, tr);
+                            ref.ne1 = kept;
+                        } else {
+                            std::string cerr;
+                            tp_host = strata::core::tp_take_cols((const uint8_t*) gguf.tensor_data(tensor), ref.ne1, row_bytes,
+                                                                 be, bb, tr, cerr);
+                            if (!cerr.empty()) { err = "native dense (tensor parallel): " + tensor.name + ": " + cerr; return false; }
+                            ref.ne0 = kept;
+                        }
+                        ref.elements = ref.ne0 * ref.ne1;
+                        if (tp_host.size() != strata::kernels::native_mmvq_weight_bytes(tensor.type, (int) ref.ne0, (int) ref.ne1)) {
+                            err = "native dense (tensor parallel): the slice of " + tensor.name + " has the wrong size"; return false;
+                        }
+                    }
+                }
                 const auto bytes = strata::kernels::native_mmvq_weight_bytes(
                     tensor.type, (int) ref.ne0, (int) ref.ne1);
                 void* allocation = nullptr;
                 auto status = cudaMalloc(&allocation, bytes);
                 DevicePtr data(allocation);
                 if (status == cudaSuccess)
-                    status = cudaMemcpy(data.get(), gguf.tensor_data(tensor), bytes, cudaMemcpyHostToDevice);
+                    status = cudaMemcpy(data.get(), tp_host.empty() ? gguf.tensor_data(tensor) : (const void*) tp_host.data(),
+                                        bytes, cudaMemcpyHostToDevice);
                 if (status != cudaSuccess) {
                     err = "native dense upload " + tensor.name + ": " + cudaGetErrorString(status); return false;
                 }
@@ -377,7 +411,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
                 // STRATA_Q8_PACKED=1: a second, packed copy of an eligible Q8_0 matrix for the decode MMVQ (the GGUF
                 // copy stays: the prompt path's GEMMs read it).
                 DevicePtr packed;
-                if (tensor.type == 8 && tensor.name != "blk.1.ple_key.weight" &&   // the PLE has its own kernel
+                if (tensor.type == 8 && tensor.name != "blk.1.ple_key.weight" && tp_host.empty() &&   // the PLE has its own kernel
                     strata::kernels::native_q8_0_packed_enabled() &&
                     strata::kernels::native_q8_0_packed_eligible((int) ref.ne0, (int) ref.ne1)) {
                     std::vector<uint8_t> host(bytes);

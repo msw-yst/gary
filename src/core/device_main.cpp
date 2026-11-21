@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
             if (const std::string why = strata::core::gpu_arch_problem(ordinal); !why.empty()) {
                 // gpu_helper_arch is always "" without STRATA_HIP_HELPER_ARCHS, so such a build prints what it did
                 if (const std::string helper = strata::core::gpu_helper_arch(ordinal); !helper.empty())
-                    std::printf("  helper-only (%s, wave64): a helper expert cache (--expert-cache-device1..3) only, "
+                    std::printf("  helper-only (%s, wave64): a helper expert cache (--expert-cache-device1..5) only, "
                                 "not the primary GPU, a --layer-split stage or the --peer-device\n", helper.c_str());
                 else
                     std::printf("  cannot run: %s\n", why.c_str());

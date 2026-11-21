@@ -331,6 +331,12 @@ HipLtCachedAlgo resolve_hipblaslt_algo(HipLtState& state, strata::prefill::hipbl
 
     HipLtCachedAlgo resolved;
     const bool verbose = std::getenv("STRATA_HIPBLASLT_VERBOSE") != nullptr;
+    // (prefill cycle 2) the packaged gfx1100 table runs the per-expert gate/up GEMM (f16, N 1280, K 2560) on hipBLASLt's
+    // matrix-core kernels: the exactness reference since 2026-11-21.  STRATA_PF_GU_LEGACY=1 ignores those rows, so the
+    // product goes back to hipblasGemmEx's default kernel (the reference before; different bits).
+    static const bool gu_legacy = [] { const char* v = std::getenv("STRATA_PF_GU_LEGACY"); return v && v[0] == '1'; }();
+    if (gu_legacy && type == strata::prefill::hipblaslt::InputType::f16 && n == 1280 && k == 2560)
+        return state.cache.emplace(key, resolved).first->second;
     const auto* row = state.table.closest(type, n, k, ldy, t);
     if (!row) {
         if (verbose) {

@@ -196,6 +196,9 @@ public:
     /// With `host_works`, `run()` claims jobs itself instead of spinning on `done_`, and the pool is six
     /// threads on six cores. `false` is the A/B arm and exists so the change is measurable rather than
     /// asserted - the counter it moves is `pool phases ... drain`, which is host-side and needs no profiler.
+    /// STRATA_POOL_STATS: the expert source notes every decode layer (index within the window, distinct CPU experts),
+    /// so the stats line can say how many layers and windows had no CPU work.  Host thread only; a no-op when off.
+    static void note_layer(int64_t layer, int cpu_jobs);
     explicit ExpertPool(int n_workers = 0, bool pin = true, bool host_works = true,
                         PoolAffinity affinity = PoolAffinity::All, int tasks = 0);
     /// Batched row phases: 0 keeps three tasks per participating thread; explicit counts are capped by rows.
@@ -347,6 +350,49 @@ private:
     std::mutex sleep_mu_;
     std::condition_variable sleep_cv_;
     std::chrono::microseconds spin_before_sleep_{kSpinBeforeSleep};
+    // ---- STRATA_POOL_WAIT (2026-11-21, opt-in, Linux; pool.cpp "pool wait modes"): how a parked worker waits once
+    // its spin is over (3 = pred, see below).  0 = as before (spin kSpinBeforeSleep, then sleep_cv_), 1 = futex (spin STRATA_POOL_SPIN_US,
+    // then a futex wait on `epoch_` itself: no mutex, so a wake is not 30-odd threads queueing for one lock),
+    // 2 = nap (futex, plus a timed futex wait sized from the worker's recent inter-layer gaps, so it is spinning
+    // again shortly before the next layer publishes).  Which thread runs which task never changes, so neither mode
+    // can change a bit of the output.
+    int wait_mode_ = 0;
+    int64_t spin_ns_ = 0;          // modes 1-2: the spin before any futex wait
+    int64_t nap_margin_ns_ = 0;    // mode 2: wake this long before the predicted publish
+    int64_t nap_after_ns_ = 0;     // mode 2: after a nap, spin at most this long before the untimed wait
+    alignas(64) std::atomic<int64_t> last_pub_ns_{0};   // the newest publish (steady ns), modes 2 and STRATA_POOL_STATS
+    bool park_futex(int id, uint32_t seen, int64_t* gaps, int& ngaps, int& gi);   // true: stop
+    // ---- STRATA_POOL_WAIT=pred (mode 3, 2026-11-21, opt-in, Linux): the HOST predicts the next layer's publish.  After a
+    // layer's last phase (and on a layer with no CPU work) it posts an absolute wake time = now + the gap this same layer
+    // index had in the last 4 windows (min) - STRATA_POOL_PRED_MARGIN_US (30).  The host posts after EVERY phase; until the
+    // post a parked worker spins (the phase's tail is in flight).  Inside a layer (`soon_`) the post says "now": spin
+    // STRATA_POOL_SPIN_US (50), then block.  Between layers: nap (timed futex) to the posted time, spin at most
+    // STRATA_POOL_PRED_SPIN_US (200) past it, then block untimed (the publish wakes it).  Scheduling only: no output bit moves.
+    // STRATA_POOL_WAKE_FANOUT=k (modes 1-3): a publish wakes k sleepers and every woken worker wakes k more (a tree), so
+    // the host does not pay one FUTEX_WAKE of 30-odd threads before it starts its own share; 0 (default) = wake all.
+    int64_t pred_margin_ns_ = 0, pred_spin_ns_ = 0, pred_minnap_ns_ = 0;
+    int wake_fanout_ = 0;
+    bool pred_more_ = false;                               // host: the next phase continues this layer (a batch of > 96 experts)
+    alignas(64) std::atomic<uint32_t> soon_{0};            // written before a publish: 1 = another phase of this layer follows
+    alignas(64) std::atomic<int64_t> wake_at_ns_{0};       // the posted wake time (steady ns)
+    std::atomic<uint32_t> wake_ep_{0};                     // the epoch the post belongs to (release after wake_at_ns_)
+    struct PredState;
+    std::unique_ptr<PredState> pred_;                      // host only
+    void pred_note(int64_t layer, int cpu_jobs);           // host: note_layer's hook
+    void pred_post(int64_t t_end);                         // host: the current layer is finished at t_end
+    void wake_more();                                      // a woken worker passes the wake on (fan-out)
+    // ---- STRATA_POOL_STATS=1 (2026-11-21, diagnostics): per phase, the gap since the previous phase, how long after the
+    // publish the first and the last worker left the park, the phase time; a line every ~5 s on stderr.
+    bool stats_ = false;
+    struct alignas(64) WorkerStat {
+        std::atomic<int64_t> wake_ns{0};      // when the worker last left the park
+        std::atomic<uint32_t> wake_ep{0};     // for which epoch
+        std::atomic<uint64_t> blocks{0}, naps{0}, nap_timeouts{0};
+    };
+    std::unique_ptr<WorkerStat[]> wstat_;
+    struct PoolStats;
+    std::unique_ptr<PoolStats> pstat_;     // host only
+    void stats_phase(uint32_t e, int64_t t_pub, int64_t t_done, int tasks, uint32_t sleepers_at_pub);
     std::vector<std::thread> threads_;
     std::vector<ExpertScratch> scratch_;   // one per worker: no allocation, no false sharing of the hot data
     // run_split state: mode 0 = whole experts, 1 = gate/up row parts, 2 = down row parts

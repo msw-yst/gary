@@ -6,9 +6,13 @@
 #include <cuda_runtime.h>
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -39,6 +43,28 @@ public:
                int64_t k, const int32_t* kind, const int32_t* primary_res,
                std::string& err);
     bool owns(int64_t index) const { return owned_[(size_t) index] != 0; }
+    /// begin() in two halves (cycle 6): claim() classifies the rows (host only, no device call: owns() is valid after
+    /// it), launch() stages them and queues the device work.  begin() = claim() + launch().
+    bool claim(int64_t layer, const int32_t* ids, int64_t n_tok, int64_t k, const int32_t* kind,
+               const int32_t* primary_res, std::string& err);
+    bool launch(int64_t layer, const float* x, int64_t n_tok, std::string& err);
+    /// claim() gave this helper rows of the current request
+    bool has_work() const { return !group_id_.empty(); }
+    /// STRATA_HELPER_THREADS=1 (cycle 6; HIP builds, not with --remote-expert-opt): launch() + finish() on this helper's
+    /// own thread, so the helpers are issued and collected concurrently.  post() after claim() hands the request to the
+    /// thread (x and out must stay valid until join()); join() waits for it.  The thread writes only the rows this
+    /// helper owns (finish), which the caller must neither write nor zero meanwhile.
+    static bool threads_requested();
+    bool threaded() const { return threaded_; }
+    void post(int64_t layer, const float* x, int64_t n_tok, float* out);
+    bool join(std::string& err);
+    /// How this helper's requests move (the startup line): "copies", "zero-copy", or STRATA_HELPER_FAST's
+    /// "kernel fetch + push + flag" (1) / "kernel fetch + rows to host + flag" (2), "+ graph" with STRATA_HELPER_GRAPH.
+    std::string transport() const;
+    /// STRATA_HELPER_GRAPH: requests replayed from a captured graph / captured / issued directly (cumulative)
+    int64_t graph_replays() const { return graph_replays_; }
+    int64_t graph_captures() const { return graph_captures_; }
+    int64_t graph_direct() const { return graph_direct_; }
     /// This helper's cache holds (layer, expert): begin() will take its rows unless the plan gave them away.
     bool holds(int64_t layer, int32_t expert) const { return cache_.slot_of(layer, expert) >= 0; }
     bool optimized_decode() const { return remote_opt_ != nullptr; }
@@ -47,11 +73,21 @@ public:
     int64_t computed() const { return computed_; }
     int64_t launched_layers() const { return launched_layers_; }
     double gib() const { return cache_.gib(); }
+    /// open(): ranked candidates passed over because CUDA0, a split stage or another helper already held them
+    int64_t skipped_held() const { return skipped_held_; }
     uint64_t returned_bytes() const { return returned_bytes_; }
     uint64_t full_row_bytes() const { return full_row_bytes_; }
     /// host time spent in begin() (staging + launches) and in finish() (waiting for this GPU), cumulative
     double ms_begin() const { return ms_begin_; }
     double ms_wait() const { return ms_wait_; }
+    /// STRATA_HELPER_TIMING=1 (opt-in; cycle 5): this GPU's own clock per launched layer, cumulative - the input and group
+    /// copies in, the kernels, the result copy out (stream events, read in finish() after the stream has drained) - and
+    /// the host's whole round trip per launched layer (begin() entry -> finish() return).  Zero when off.
+    double ms_gpu_in() const { return ms_gpu_in_; }
+    double ms_gpu_kernels() const { return ms_gpu_kernels_; }
+    double ms_gpu_out() const { return ms_gpu_out_; }
+    double ms_round_trip() const { return ms_round_trip_; }
+    int64_t groups_launched() const { return groups_launched_; }
 
     /// STRATA_PREFILL_HELPER_SOURCE (opt-in): copy up to `n` cached blobs into the host buffers `dst[i]`
     /// on this helper's own stream and wait.  `hit[i]` is set where this helper held (layer, expert); the
@@ -73,6 +109,55 @@ private:
     uint64_t returned_bytes_ = 0;
     uint64_t full_row_bytes_ = 0;
     double ms_begin_ = 0, ms_wait_ = 0;
+    double ms_gpu_in_ = 0, ms_gpu_kernels_ = 0, ms_gpu_out_ = 0, ms_round_trip_ = 0;
+    int64_t groups_launched_ = 0;
+    bool timing_ = false;                   ///< STRATA_HELPER_TIMING=1: the events below are recorded
+    cudaEvent_t ev_[4] = {nullptr, nullptr, nullptr, nullptr};   ///< start, inputs in, kernels done, results out
+    std::chrono::steady_clock::time_point rt0_{};                 ///< begin() entry of the launched request
+    int64_t skipped_held_ = 0;
+    /// begin() launched work that finish() has not waited for yet.  Every caller pairs them inside one pool call; a
+    /// failure between the two (the pool's early returns) leaves it set, and the next begin() drains the stream before
+    /// it rewrites the staging that work may still read (the pipelined windows rely on one request at a time).
+    bool pending_ = false;
+    /// The device sequence of one request on `s` (inputs in, kernels, results out, the flag); also what a graph captures
+    /// (`capturing`: no timing events).
+    bool enqueue(int64_t layer, int64_t n_tok, bool reduce, bool capturing, std::string& err);
+    /// STRATA_HELPER_FAST (HIP only; 0 = off, the copies above): 1 = one fetch kernel reads x and the metadata from
+    /// coherent host staging into VRAM (no host-to-device copies), the expert kernels write VRAM, a push kernel stores
+    /// the compact rows into the coherent host rows, a one-thread kernel raises the host flag word, and the CPU polls
+    /// that word (no device-to-host copy, no stream query, no device switch in the wait).  2 = the same, but the expert
+    /// kernels store their rows straight into the coherent host rows (no push kernel).  Push-only: the helper reads and
+    /// writes host memory, never a peer GPU's.
+    int fast_ = 0;
+    uint32_t* h_flag_ = nullptr;   ///< one coherent mapped host word (64 bytes)
+    uint32_t* z_flag_ = nullptr;   ///< h_flag_ as the helper GPU sees it
+    uint32_t* d_seq_ = nullptr;    ///< the device's count of raised flags (flag_next)
+    uint32_t seq_ = 0;             ///< the host's count of queued flags: the request is done once *h_flag_ == seq_
+    void* z_meta_ = nullptr;       ///< h_meta_ as the helper GPU sees it
+    size_t meta_copy_ = 0;         ///< bytes the fetch kernel moves of the metadata (16-byte multiple)
+    bool flag_seen() const;
+    bool wait_flag(std::string& err);
+    /// STRATA_HELPER_GRAPH=1 (with STRATA_HELPER_FAST, not with STRATA_HELPER_TIMING): each (expert format, rows, groups,
+    /// entries) sequence is issued directly the first time, captured into a graph the second, replayed after that.  The
+    /// graph's launches are the direct ones (same kernels, grids and buffers; the flag's value comes from d_seq_).
+    bool graph_ = false;
+    std::unordered_map<uint64_t, std::pair<int, cudaGraphExec_t>> graphs_;   ///< key -> (times seen, exec or null)
+    std::vector<uint64_t> fmt_keys_;   ///< the distinct expert formats seen (their index is the key's format part)
+    int64_t graph_replays_ = 0, graph_captures_ = 0, graph_direct_ = 0;
+    /// STRATA_HELPER_THREADS: the helper's thread and its doorbell
+    bool threaded_ = false;
+    std::thread worker_;
+    std::atomic<uint64_t> posted_{0}, done_{0};
+    std::atomic<bool> stop_{false}, sleeping_{false};
+    std::mutex wake_mu_;
+    std::condition_variable wake_cv_;
+    int64_t job_layer_ = 0, job_ntok_ = 0;
+    const float* job_x_ = nullptr;
+    float* job_out_ = nullptr;
+    bool job_ok_ = true;
+    std::string job_err_;
+    void worker_loop(int cpu);
+    void stop_worker();
     ExpertCache cache_;
     cudaStream_t stream_ = nullptr;
     cudaStream_t read_stream_ = nullptr;   ///< STRATA_PREFILL_HELPER_SOURCE: cache -> host copies

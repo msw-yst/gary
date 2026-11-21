@@ -7,12 +7,13 @@ cache. Later, the adaptive primary cache can promote an expert that the helper
 already holds. Both cards then spend memory on the same expert.
 
 We observed about 1,900-2,000 duplicate slots during sustained requests.
-This opt-in change keeps helper-owned experts out of primary promotion candidates,
+This change keeps helper-owned experts out of primary promotion candidates,
 in both the server and command-line generation paths.
 
 ## Use
 
-Set `STRATA_DISJOINT_ADAPT=1` before starting the engine. It is off by default.
+It is on by default whenever a helper expert cache (`--expert-cache-device1..5`) is enabled;
+`STRATA_DISJOINT_ADAPT=0` turns it off. Without helper caches it has no effect.
 It leaves the existing peer-tier check and expert arithmetic unchanged.
 The check is live: each promotion candidate is asked of the helper's own cache (`RemoteExperts::holds`), so an expert
 the helper's tier swaps in or out later is followed (a mask copied at load would go stale). Needs the helper-share
