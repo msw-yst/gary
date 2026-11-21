@@ -116,7 +116,8 @@ user with the MTP drafter (83-87 tok/s) [MEASURED].
 
 The 2-user figures of the last two rows are one user on each worker or server; their 1- and 2-user cells come from a separate
 one-trial test. The pool's ratios against two servers also include a runtime difference (pool on the ROCm 7.2.1 HSA runtime,
-servers on the bundled one); a same-runtime baseline is being measured. Rows come from different sessions; ratios within a session are the reliable
+servers on the bundled one); a same-runtime control with MTP off gives the same ratios (1.098x at 4 users, 1.181x at 8), so
+the runtime does not explain the gain. Rows come from different sessions; ratios within a session are the reliable
 comparison ([README.md](README.md#results)).
 
 Next: placement tuning for the pool, MTP on the pool at more than one user, the remaining 8-row kernels, and quality testing on

@@ -26,8 +26,9 @@ Run data: [data/2026-11-21-dp-pool.md](data/2026-11-21-dp-pool.md). Timing model
   were all 8/8 [MEASURED].
 - **Faster.** Per agent, against two separate single-card servers measured in the same session: **1.106x at 4 users**
   (bar 1.10, met), **1.175x at 8 users** (bar 1.20, missed; abort line 1.05, clear), and **1.27x at 16 users** with 8
-  slots per worker [MEASURED]. The pool ran on the ROCm 7.2.1 HSA runtime and the baseline on the bundled one, so these
-  ratios include any runtime difference; a same-runtime baseline is being measured (section 8).
+  slots per worker [MEASURED]. The pool ran on the ROCm 7.2.1 HSA runtime and the baseline on the bundled one; a control
+  with the baseline on the pool's own build and runtime gives the same ratios (1.098x at 4 users, 1.181x at 8), so the
+  runtime does not explain the gain (section 8) [MEASURED].
 - **One user, with MTP.** One user per worker with the MTP drafter: 83-87 tok/s per user, 1.11-1.17x the baseline; in the
   pool, MTP changes no bit of the output [MEASURED].
 - **Cheaper on the host.** Host RAM 124 GiB against 190 GiB, and about 13 busy cores against 32-40 [MEASURED].
@@ -247,9 +248,8 @@ case; in service each worker keeps a card only 15-25 % busy.
 Baseline for every bar, measured fresh in the same session and alternated with the pool: two separate single-card
 servers (XTX A + MI50 #1, #2; XTX B + the slow-link MI50 + MI50 #4), same engine settings, full CPU expert threads, MTP off.
 **Not the same runtime:** every pool cell ran an engine build with the ROCm 7.2.1 HSA runtime swapped in (export needs it),
-while every baseline cell ran the build with its bundled runtime. The ratios in this section therefore include any
-difference between the two runtimes and builds, not only the pool. A baseline on the same runtime is being measured; the
-numbers here will be updated when it is in.
+while every baseline cell ran the build with its bundled runtime. A control run afterwards ("Same-runtime control" below)
+shows that difference does not explain the pool's gain.
 Load: the standard 8-prompt set, 384 tokens, temperature 0, presence penalty 0, split evenly over the two servers.
 Per agent = median over users of streamed chunks per second.
 
@@ -353,6 +353,26 @@ drafter costs ~443 XTX slots), CPU path 0. Baseline: MTP on, automatic caches. A
   texts equal the MTP-off pool's, so in the pool MTP changes no bit of the output [MEASURED].
 - The baseline with MTP also gives the no-MTP reference `a7ae6623797f17fe` in this environment. An earlier one-card MTP arm
   on an older engine and environment gave `da29bc7d5a0ba433`; that is not reproduced and was not re-baselined.
+
+### Same-runtime control
+
+An independent review pointed out the runtime difference above. Control: three arms alternated per trial, two trials each,
+MTP off, 4 slots per worker: the baseline on the bundled runtime (B), the same baseline on the pool's own build and ROCm 7.2.1
+runtime with no pool (H), and the pool (P, hot 4,700, MI50 caches 5,000) [MEASURED]:
+
+| Users | B per agent | H per agent | P per agent | H / B | **P / H** |
+|---|---|---|---|---|---|
+| 1 on worker 1 alone | 51.58 | 51.61 | 54.44 | 1.001 | **1.055** |
+| 1 on worker 2 alone | 50.56 | 49.80 | 54.56 | 0.985 | **1.096** |
+| 1 + 1 | 47.95 | 48.09 | 52.01 | 1.003 | **1.082** |
+| 4 (2+2) | 36.31 | 36.38 | 39.96 | 1.002 | **1.098** |
+| 8 (4+4) | 24.34 | 24.25 | 28.64 | 0.996 | **1.181** |
+
+- The runtime does not explain the gain: H / B is 0.985-1.003, within the trial spread, and the pool's ratios against H
+  (1.098x at 4 users, 1.181x at 8) match those against B above (1.106x, 1.175x). The bar verdicts stand.
+- H gives the reference hash on both servers [MEASURED].
+- MTP on has no same-runtime control: the first MTP-on cell (arm B, two private arenas, 191 GiB host RAM in use) stalled at its
+  first request and was stopped, with no abort-list line in the kernel log ([data](data/2026-11-21-dp-pool.md) section 7).
 
 ### Side measurement: XTX power cap
 

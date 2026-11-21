@@ -5,9 +5,10 @@ it scores against Q8_0, and what it costs.
 
 Labels as in [README.md](README.md#how-to-read-the-numbers). Card: [NX-07](cards/NX-07.md).
 
-**Download:** the file will be published on Hugging Face: **[PLACEHOLDER: Hugging Face repository link, not yet
-published]**. The weights are a derivative of Qwen3.8 Flash-Next and are under the Qwen Community License 1.0; the licence text
-ships with the files. Gary's MIT licence covers the code in this repository, not the weights.
+**Download:** [huggingface.co/yst-dev/Qwen3.8-Flash-Next-Q4_K-imatrix-GGUF](https://huggingface.co/yst-dev/Qwen3.8-Flash-Next-Q4_K-imatrix-GGUF)
+(four GGUF shards, 106.2 GB, with `SHA256SUMS`). The weights are a derivative of Qwen3.8 Flash-Next and are under the Qwen
+Community License 1.0; the licence text ships with the files. Gary's MIT licence covers the code in this repository, not the
+weights.
 
 ## Why not the shipped file
 
@@ -18,36 +19,91 @@ measured ourselves.
 
 ## The recipe
 
-1. Start from the BF16 weights.
-2. Make a Q8_0 GGUF. It serves as the intermediate for calibration and as the quality reference below.
-3. Compute an importance matrix (llama.cpp's imatrix tool) on the Q8_0 model over calibration text.
-4. Quantise the BF16 weights to Q4_K with that importance matrix.
-   - Routed experts: gate and up are Q4_K. The down matrix is 640 columns wide, which no 256-block type can quantise, so it
-     falls back to **Q5_0 in every layer**.
+Tools: llama.cpp b11870 (commit `74bca3950`, the `full-rocm-b11870` container image) for convert, imatrix and quantize, all run
+on the CPU [MEASURED: `--version`, image label]. `<...>` are local paths.
+
+1. **BF16 weights.** `Qwen/Qwen3.8-Flash-Next` at revision `812d96e10a0dd82b69d749e68693698cf6c36daa` (the head of `main` when we
+   downloaded it; the chat template embedded in our GGUF matches that revision byte for byte) [MEASURED].
+   - We skipped the 31 BF16 shards that hold only the n-gram embedding table (step 3 takes that table from the shipped pack)
+     [MEASURED: safetensors index].
+2. **Q8_0 GGUF.** It is the intermediate for calibration and the quality reference below. It is made with a small wrapper around
+   llama.cpp's converter: the wrapper sets `embedding_length_per_layer_input = 160` and drops the n-gram shard tensors.
+
+   ```sh
+   python3 convert_full.py <bf16 dir> --outtype q8_0 --no-mtp --no-tensor-first-split --split-max-size 75G \
+     --outfile <inter>/Qwen3.8-Flash-Next-YST-Q8_0.gguf --model-name Qwen3.8-Flash-Next-YST
+   ```
+
+   - The converter writes 3 shards. We set their `split.count` to 4 (and `split.tensors.count` to 1224) and add the shipped
+     pack's shard 4 as the fourth.
+   - The architecture metadata equals the shipped file's key for key [MEASURED].
+3. **Importance matrix.** llama.cpp's imatrix tool, run on the Q8_0:
+
+   ```sh
+   llama-imatrix -m <inter>/Qwen3.8-Flash-Next-YST-Q8_0-00001-of-00004.gguf -f imatrix-corpus.txt -c 512 -t 48 -ngl 0 \
+     -o imatrix-Qwen3.8-Flash-Next-YST-Q8_0.gguf
+   ```
+
+   - **Calibration text:** 252,067 bytes in three parts:
+     - 72 KB of alternating prose and code excerpts from the llama.cpp repository;
+     - the first 90 KB of llama.cpp's `docs/*.md` (README files excluded, alphabetical);
+     - the first 90 KB of a Python source corpus (open-source inference-server code).
+   - **Size:** 140 chunks of 512 tokens = **71,680 tokens**; 926 tensors recorded [MEASURED: imatrix header].
+   - **Not covered:** no chat, multilingual or reasoning text.
+4. **Quantise the Q8_0** (a requantise, not from BF16) with that importance matrix and a per-tensor type file:
+
+   ```sh
+   llama-quantize --keep-split --allow-requantize --imatrix imatrix-Qwen3.8-Flash-Next-YST-Q8_0.gguf \
+     --tensor-type-file types.txt <inter>/Qwen3.8-Flash-Next-YST-Q8_0-00001-of-00004.gguf \
+     <out>/Qwen3.8-Flash-Next-YST-Q4K-imat Q4_K_M 48
+   ```
+
+   - The type file sets every 2-D tensor:
+     - routed experts `q4_k`;
+     - every other quantised tensor the type the shipped UD-IQ4_XS gives it (where the shipped file keeps BF16 or F16, the
+       Q8_0's own type);
+     - the n-gram table `iq4_nl`. So against the shipped file only the experts differ.
+   - **Routed experts:** gate and up are Q4_K. The down matrix is 640 columns wide, which no 256-block type can quantise, so it
+     falls back to **Q5_0 in every layer** (`48 of 1224 tensor(s) required fallback quantization`).
    - One expert is 921,600 + 921,600 + 1,126,400 = **2,969,600 bytes** in every layer; all experts are 72.98 GB.
-   - The dense projections (GDN, attention, shared expert, lm head) are stored at higher precision; the kernels we measured on
-     them are Q6_K and Q8_0. The full tensor-type map is in the GGUF header (`gguf-dump` lists it).
+   - **Totals:** 1224 tensors = F32 388, Q8_0 476, Q6_K 213, Q4_K 96, Q5_0 48, F16 1, IQ4_XS 1, IQ4_NL 1.
+     - `output` Q6_K and `token_embd` IQ4_XS;
+     - `attn_qkv` Q6_K (35 layers) / Q8_0 (1);
+     - shared-expert down Q8_0;
+     - experts 4.83 bpw, the other tensors 7.15 bpw [MEASURED: GGUF headers]. The full map is in the GGUF header
+       (`gguf-dump` lists it).
 5. Keep the shipped pack's PLE / n-gram shard and MTP drafter file unchanged.
-6. Pack it for the engine with `tools/iq_pack.py --compat-bf16`, as setup does for the shipped files. Use the shipped pack's
+   - **Shard 4.** Our shard 4 is the shipped `UD-IQ4_XS-00004-of-00004.gguf` byte for byte (Unsloth revision `f5d175de`,
+     sha256 `5de8b5db...ec36`). The tensor the quantiser re-wrote had the same bytes [MEASURED].
+   - **Drafter.** We did not build an MTP drafter (`--no-mtp`); the Hugging Face repository does not include one.
+6. Pack it for the engine with `tools/iq_pack.py --compat-bf16`, as setup does for the shipped files. `iq_pack.py` needs
+   llama.cpp's `gguf-py`: setup sets `STRATA_GGUF_PY` to its own llama.cpp copy; run by hand, set
+   `STRATA_GGUF_PY=<llama.cpp checkout>/gguf-py`. Use the shipped pack's
    `chat_template.jinja`: the template exported in the Q4_K GGUF contains Hugging Face's `{% generation %}` tag, which the
    server's jinja2 refuses.
+   - The Hugging Face repository ships that template as `chat_template.jinja`: Qwen's revision `de4b8e4d`, sha256 `c3cf9e34...1041`.
 
-The whole file is 106 GB with the PLE shard.
-
-Not yet in the published record: the calibration text, its size and chunk count, the exact llama.cpp version and command lines.
-They will be added before the file itself is published (see [README.md](README.md#limitations-and-open-items)).
+The whole file is 106.2 GB (106,212,324,416 bytes) with the PLE shard. Its shard 1 on Hugging Face has two metadata strings
+(`quantize.imatrix.file`, `quantize.imatrix.dataset`) shortened to bare file names; no tensor or other key differs from the
+file the results here were measured on.
 
 ## Quality against Q8_0
 
-Scored against our Q8_0 on text held out from calibration [REPORTED: the scoring logs are not in the published extracts, so the
-table has not been re-checked against raw output here]:
+**Method:**
+- **Reference:** our Q8_0. Every file below shares the same n-gram table.
+- **Text:** 140,001 bytes held out from calibration: bytes 90,001-160,000 of the same docs concatenation and of the same Python
+  corpus. 1.7 % of its 64-byte windows also occur in the calibration text.
+- **Run:** `llama-perplexity -c 512 --chunks 40` (20,480 tokens) on the CPU. First `--kl-divergence-base` from the Q8_0, then
+  `--kl-divergence` for each file. The llama-perplexity build's commit is not recorded.
+
+[MEASURED: scoring logs]
 
 | File | Size | Mean KL vs Q8_0 | 99 % KL | Same top token |
 |---|---|---|---|---|
-| Shipped UD-IQ4_XS | ~85 GB | 0.056 | 0.77 | 93.6 % |
-| **Ours, calibrated Q4_K** | 106 GB | **0.032** | 0.50 | **95.2 %** |
-| Ours, calibrated IQ4_XS | ~98 GB | 0.037 | 0.51 | 94.8 % |
-| Another public IQ4_XS upload (3.84 bpw, the shipped file's size) | ~85 GB | 0.246 | 3.37 | 87.5 % |
+| Shipped UD-IQ4_XS | 93.7 GB | 0.056 | 0.77 | 93.6 % |
+| **Ours, calibrated Q4_K** | 106.2 GB | **0.032** | 0.50 | **95.2 %** |
+| Ours, calibrated IQ4_XS | 98.7 GB | 0.037 | 0.51 | 94.8 % |
+| Another public IQ4_XS upload (3.84 bpw) | 84.9 GB | 0.246 | 3.37 | 87.5 % |
 
 - Our files are bigger, which explains part of the gain. We did not build a calibrated file at the shipped size.
 - The last row scored far worse than its size suggests; we did not investigate why and set it aside.
@@ -68,5 +124,9 @@ table has not been re-checked against raw output here]:
 
 ## Publishing the file
 
-We have not published the Q4_K GGUF. Before we do: the Qwen model licence terms for redistributing derived weights need
-checking, and the recipe details above need filling in.
+The file is published at the link above under the Qwen Community License 1.0.
+- Redistributing modified weights is allowed if the copyright and permission notice ship with them.
+- Products with more than 100M monthly users or US$20M monthly revenue must display the model name.
+- Model-as-a-Service and AI-work-assistant businesses need a separate Qwen licence for commercial use.
+
+The model card credits Qwen for the base model and Unsloth for the n-gram shard and the non-expert type choices.

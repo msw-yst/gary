@@ -61,13 +61,25 @@ serve as helpers). The configure is the DeepSeek branch's ([tools/dsv41/build.sh
 machine with ROCm, CMake 3.24+ and Ninja:
 
 ```sh
-TGTS="strata strata-device" bash tools/dsv41/build.sh            # build dir: build/dsv41, logs in build/dsv41/logs
-# optional, CPU-only checks of the new code:
-TGTS="pool_plan_test" bash tools/dsv41/build.sh && build/dsv41/pool_plan_test
+TGTS="strata strata-device pool_plan_test" bash tools/dsv41/build.sh   # build dir: build/dsv41, logs in build/dsv41/logs
+build/dsv41/pool_plan_test                                             # CPU-only check of the pool placement code
 ```
 
 `GGML=<llama.cpp checkout>` builds offline; otherwise CMake fetches the pinned llama.cpp commit. Extra targets used in the
 studies: `tp_proof_bench`, `b6_mmvq_bench`, `pool_wait_stress`, `pool_ipc_smoke`.
+
+**Prompt-reading build option.** The engines we measured were configured with `STRATA_PREFILL_MMQ=ON` (the GGML MMQ prompt
+path, which Strata's own HIP packages also enable); `tools/dsv41/build.sh` leaves it at CMake's default, OFF, because the
+DeepSeek builds in [docs/dsv41](../dsv41/README.md) did not use it. To build what we measured, set it in the build folder
+before building the engine (the script configures only once, so the setting stays):
+
+```sh
+TGTS="pool_plan_test" bash tools/dsv41/build.sh                        # configures build/dsv41
+cmake -B build/dsv41 -DSTRATA_PREFILL_MMQ=ON
+TGTS="strata strata-device" bash tools/dsv41/build.sh
+```
+
+The build gate on the published tree used the first form (MMQ off); the MMQ-on sequence has not been run as written.
 
 To run it in Strata's container, package the build as an engine component and build an image from it, as
 [docs/DOCKER.md](../DOCKER.md#build-it-yourself) describes (`packaging/package_engine.py --backend hip ...`, then
@@ -76,12 +88,20 @@ To run it in Strata's container, package the build as an engine component and bu
 ## Launch
 
 These are the settings we ran with, written out as `docker run` commands. They follow [docs/DOCKER.md](../DOCKER.md); card
-numbers are HIP ordinals (`strata-device --list-devices`). The engine needs the main XTX at ordinal 0, so list it first in
-`HIP_VISIBLE_DEVICES`. The commands themselves have not been run as written: the studies used an equivalent private launcher.
+numbers are HIP ordinals of the whole machine (`strata-device --list-devices` with every card visible). `GPUS` names the main
+XTX for setup; `STRATA_TP_HIP_VISIBLE` (main XTX first) is the list the engine sees. Do not set `HIP_VISIBLE_DEVICES` or
+`GPU_ROLES` with MI50 helpers: the Terminal sets `HIP_VISIBLE_DEVICES` itself and its setup refuses gfx906 cards by number.
+
+The studies ran every layout through an equivalent private launcher; each layout below says whether its command has been run as
+written. On hosts where podman's AppArmor profile blocks the container runtime's socket, add `--security-opt apparmor=unconfined`.
 
 **Model.** `MODEL_PATH` = a folder with our calibrated Q4_K GGUF shards ([QUANT.md](QUANT.md)). We served it through the
-Unsloth family entry (`FAMILY=unsloth MODEL=UD-IQ4_XS`), which picks the folder's only `-00001-of-` file, with the shipped pack's
-`chat_template.jinja`.
+Unsloth family entry (`FAMILY=unsloth MODEL=UD-IQ4_XS`), which picks the folder's only `-00001-of-` file. Replace the template
+the pack exports from the GGUF (it has `{% generation %}` tags, which the server refuses at load) with the Hugging Face
+repository's `chat_template.jinja`: copy it to `/data/Strata-data/packs/unsloth-ud-iq4_xs/tokenizer/chat_template.jinja` in the
+data volume after setup has made the pack, then start the container again. Setup makes the pack with `tools/iq_pack.py`, which
+needs llama.cpp's `gguf-py` (setup points `STRATA_GGUF_PY` at its own llama.cpp copy; when you run `iq_pack.py` yourself, set
+`STRATA_GGUF_PY=<llama.cpp checkout>/gguf-py`).
 
 **Environment common to every layout** (each is a card; all are off in the code unless stated):
 
@@ -98,12 +118,13 @@ GPU="--device /dev/kfd --device /dev/dri --group-add video --group-add $(getent 
 `STRATA_HELPER_CPUS=<one CPU per helper>` gives each helper issue thread its own core; on two servers per machine give each
 server its own CPUs (`--cpuset-cpus`, and `host-core` / `pool-cores` in `STRATA_SET`).
 
-**Layout 1: one XTX + two MI50 helpers** (one server; run a second on the other XTX and MI50 #3, #4):
+**Layout 1: one XTX + two MI50 helpers** (one server; run a second on the other XTX and MI50 #3, #4). Run as written on our
+test box (podman, image built from this tree), one chat request answered:
 
 ```sh
 docker run -d --name gary-1 $GPU -p 127.0.0.1:8080:8080 -v gary-data-1:/data -v /models:/models:ro \
   -e FAMILY=unsloth -e MODEL=UD-IQ4_XS -e MODEL_PATH=/models/flashnext-q4k -e PARALLEL=4 \
-  -e HIP_VISIBLE_DEVICES=<XTX A>,<MI50 #1>,<MI50 #2> -e GPU_ROLES=0=main,1=helper,2=helper \
+  -e GPUS=<XTX A> -e STRATA_TP_HIP_VISIBLE=<XTX A>,<MI50 #1>,<MI50 #2> \
   -e STRATA_SET="$SET expert-cache-device1=auto expert-cache-device2=auto" \
   $COMMON -e STRATA_HELPER_CPUS=<c1>,<c2> -e STRATA_BATCH_MTP=1 \
   -e STRATA_BATCH_CONCURRENT_READ=2 -e STRATA_BATCH_LENT_GPU=1 \
@@ -113,11 +134,11 @@ docker run -d --name gary-1 $GPU -p 127.0.0.1:8080:8080 -v gary-data-1:/data -v 
 For agents keep the prompt cache on (the default); our speed tables used `prompt-cache=0` because the client repeats prompts.
 `STRATA_NO_MTP=1` turns the drafter off.
 
-**Layout 2: tensor parallel 2 + four MI50 helpers:**
+**Layout 2: tensor parallel 2 + four MI50 helpers** (corrected, not run as written):
 
 ```sh
 docker run -d --name gary-tp2 $GPU -p 127.0.0.1:8080:8080 -v gary-data-tp:/data -v /models:/models:ro \
-  -e FAMILY=unsloth -e MODEL=UD-IQ4_XS -e MODEL_PATH=/models/flashnext-q4k -e PARALLEL=8 -e GPUS=0 \
+  -e FAMILY=unsloth -e MODEL=UD-IQ4_XS -e MODEL_PATH=/models/flashnext-q4k -e PARALLEL=8 -e GPUS=<XTX A> \
   -e STRATA_TP_HIP_VISIBLE=<XTX A>,<XTX B>,<MI50 #1>,<MI50 #2>,<MI50 #3>,<MI50 #4> \
   -e STRATA_SET="$SET tensor-parallel=2 expert-cache-device1=auto expert-cache-device2=auto expert-cache-device3=auto expert-cache-device4=auto" \
   $COMMON -e STRATA_HELPER_CPUS=<c1>,<c2>,<c3>,<c4> \
@@ -127,7 +148,7 @@ docker run -d --name gary-tp2 $GPU -p 127.0.0.1:8080:8080 -v gary-data-tp:/data 
 Under tensor parallel the MTP drafter, the prompt cache, the batched prompt path and vision are off (the engine says so at
 start). Batch self-commit is on by default.
 
-**Layout 3: two workers sharing one MI50 pool.** Both workers in one pod that shares the network, PID and IPC namespaces (HIP IPC
+**Layout 3: two workers sharing one MI50 pool** (corrected, not run as written). Both workers in one pod that shares the network, PID and IPC namespaces (HIP IPC
 on ROCm 7 passes a file descriptor over a socket in the exporter's network namespace). Both need the ROCm 7.2.1
 `libhsa-runtime64.so.1` in place of the one bundled with the engine (the bundled runtime refuses IPC export). Take it from a
 ROCm 7.2.1 installation (`lib/libhsa-runtime64.so.1` under the ROCm folder); we took ours from llama.cpp's b11870 ROCm container
@@ -143,15 +164,15 @@ MOUNTS="-v /dev/shm:/hostshm -v gary-pool:/pool -v /models:/models:ro -v <hsa 7.
 # worker 1 (XTX A): fills the MI50 caches and exports them
 podman run -d --pod gary-pool --name gary-w1 $GPU $MOUNTS -v gary-data-1:/data -e PORT=8080 \
   -e FAMILY=unsloth -e MODEL=UD-IQ4_XS -e MODEL_PATH=/models/flashnext-q4k -e PARALLEL=4 \
-  -e HIP_VISIBLE_DEVICES=<XTX A>,<MI50 #1>,<MI50 #2>,<MI50 #3>,<MI50 #4> \
-  -e GPU_ROLES=0=main,1=helper,2=helper,3=helper,4=helper -e STRATA_SET="$POOLSET expert-cache=4700" \
+  -e GPUS=<XTX A> -e STRATA_TP_HIP_VISIBLE=<XTX A>,<MI50 #1>,<MI50 #2>,<MI50 #3>,<MI50 #4> \
+  -e STRATA_SET="$POOLSET expert-cache=4700" \
   -e STRATA_POOL_EXPORT=/pool/manifest.bin -e STRATA_BATCH_LENT_GPU=1 $COMMON -e STRATA_HELPER_CPUS=<4 CPUs> \
   strata-gary:rocm
 # worker 2 (XTX B): waits for the manifest, maps the same MI50 memory
 podman run -d --pod gary-pool --name gary-w2 $GPU $MOUNTS -v gary-data-2:/data -e PORT=8081 \
   -e FAMILY=unsloth -e MODEL=UD-IQ4_XS -e MODEL_PATH=/models/flashnext-q4k -e PARALLEL=4 \
-  -e HIP_VISIBLE_DEVICES=<XTX B>,<MI50 #1>,<MI50 #2>,<MI50 #3>,<MI50 #4> \
-  -e GPU_ROLES=0=main,1=helper,2=helper,3=helper,4=helper -e STRATA_SET="$POOLSET expert-cache=4700" \
+  -e GPUS=<XTX B> -e STRATA_TP_HIP_VISIBLE=<XTX B>,<MI50 #1>,<MI50 #2>,<MI50 #3>,<MI50 #4> \
+  -e STRATA_SET="$POOLSET expert-cache=4700" \
   -e STRATA_POOL_IMPORT=/pool/manifest.bin -e STRATA_BATCH_LENT_GPU=1 $COMMON -e STRATA_HELPER_CPUS=<4 other CPUs> \
   strata-gary:rocm
 ```
@@ -172,7 +193,7 @@ four MI50 caches must cover all 24,576 experts).
 | Switch | Default | Effect | Card |
 |---|---|---|---|
 | `--tensor-parallel 2` / `STRATA_TP=2` | off | tensor parallel over two XTX | [NX-01](cards/NX-01.md) |
-| `STRATA_TP_HIP_VISIBLE=<list>` | unset | the device list the engine sees under tensor parallel (replaces `HIP_VISIBLE_DEVICES`) | NX-01 |
+| `STRATA_TP_HIP_VISIBLE=<list>` | unset | the device list the engine sees (replaces the `HIP_VISIBLE_DEVICES` the Terminal sets; any layout, not only tensor parallel) | NX-01 |
 | `expert-cache-device1..4` (`STRATA_SET`) | - | MI50 helper caches (`auto` or a slot count) | [NX-05](cards/NX-05.md) |
 | `STRATA_HELPER_FAST` / `_GRAPH` / `_THREADS` | off | fast helper round trip | [NX-06](cards/NX-06.md) |
 | `STRATA_HELPER_CPUS=<list>` | unset | one CPU per helper issue thread | NX-06 |
@@ -227,10 +248,11 @@ Per-agent decode tok/s, calibrated Q4_K, short prompts (384 tokens out), tempera
 | **two workers + shared MI50 pool** | **54.4** | **52.3** | **39.8** | **28.2** | **17.1** (8 slots each) | same |
 | shared pool, MTP | **86.5-87.0** | **83.1** | not measured | not measured | - | same |
 
-- **Runtime confound.** Every pool cell ran an engine build with the ROCm 7.2.1 HSA runtime swapped in (export needs it); every
-  baseline cell ran the build with the bundled runtime. The pool / baseline ratios in this table therefore include any difference
-  between the two runtimes and builds, not only the pool. A baseline on the same runtime is being measured; these numbers will be
-  updated when it is in.
+- **Runtime control.** Every pool cell ran an engine build with the ROCm 7.2.1 HSA runtime swapped in (export needs it); every
+  baseline cell in this table ran the build with the bundled runtime. A control put the baseline on the pool's own build and
+  runtime (MTP off, 2 trials per arm): pool vs that baseline 39.96 vs 36.38 tok/s per agent at 4 users (1.098x), 28.64 vs 24.25
+  at 8 users (1.181x). The bundled-runtime and 7.2.1 baselines are within 0.985-1.003 of each other, so the runtime does not
+  explain the gain ([data](data/2026-11-21-dp-pool.md) section 7). The MTP-on pool row has no such control.
 - The pool and its baseline were alternated in one session at 4-16 users (3 + 3 trials at 4 slots per worker, 2 + 2 at 8; ranges
   do not overlap): pool / baseline 1.106x at 4 users, 1.175x at 8, 1.272x at 16. The 1- and 2-user cells are a separate test
   (one trial each without MTP, two with). The two-servers row's 1-user cell is one server alone; its 2-user cell one user on
@@ -257,8 +279,9 @@ pool workers do (8/8).
 
 - **Tensor parallel**: no MTP drafter, no batched prompt path and no prompt cache (every prompt goes through 8-token decode
   windows; 1,631 tokens took 19-25 s), no vision. Not usable for long agent prompts yet.
-- **Build from this tree not yet verified**: the published `flashnext-amd` tree has not yet been built end to end from the
-  exported tree itself; that build check is pending.
+- **Build and launch from this tree**: the published tree builds (`strata`, `strata-device`, `pool_plan_test` with
+  `tools/dsv41/build.sh`, MMQ off) and `pool_plan_test` passes. Layout 1 was run once as written (one chat request); layouts 2
+  and 3 have not been run as written, and the MMQ-on build sequence ([Build](#build)) has not been run from this tree.
 - **Pool vs baseline runtime**: the pool's ratios mix the pool with a runtime / build difference (pool on the ROCm 7.2.1 HSA
   runtime, baseline on the bundled one); a same-runtime baseline is being measured.
 - **Shared pool**: needs the ROCm 7.2.1 HSA runtime and one pod with shared network / PID / IPC namespaces; needs one shared host
@@ -272,7 +295,8 @@ pool workers do (8/8).
 - **Kernels left**: 8-row Q6_K matvecs (mostly the lm head) at 300-450 GB/s against 450-600 at 4 rows; hc read, router and shared
   expert at 8 rows; ~2,300-3,650 small kernels per window; Q5_0 down has no decode-once multi-row kernel.
 - **Quality**: KL against Q8_0 only; task-level quality (agent benchmarks, tool calling) on the optimised engine is not run. The
-  Q4_K recipe's calibration text and exact command lines are not yet published ([QUANT.md](QUANT.md)).
+  Q4_K recipe's command lines and the calibration text's makeup are in [QUANT.md](QUANT.md); the calibration text itself is not
+  published.
 - **No public re-run yet**: the short-prompt set is private; a public prompt set and a published launcher example
   (`docs/examples/`) are to come.
 - **Hardware**: one machine; one MI50 with a slow PCIe link; host RAM, DRAM bandwidth and CPU threads limit a third server.
