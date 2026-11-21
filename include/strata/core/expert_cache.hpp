@@ -98,6 +98,12 @@ public:
     /// Plan v0.3 P6: slots of the given sizes, back to back (a native pack's blobs differ per layer, and a
     /// profile-filled tier never moves an expert to another layer's slot, so each slot keeps its first size).
     bool open_sized(const std::vector<int64_t>& slot_bytes, int64_t n_layers, int64_t n_expert, std::string& err);
+    /// dp pool (shared MI50 pool): open_sized over memory this process did not allocate - another process's cache
+    /// imported through a HIP IPC handle.  No allocation, no zeroing (the owner filled it); close() does not free it.
+    /// `base_bytes` bounds the layout.  The caller then admits the owner's pairs in the owner's slot order (no fill).
+    bool open_sized_external(void* base, uint64_t base_bytes, const std::vector<int64_t>& slot_bytes, int64_t n_layers,
+                             int64_t n_expert, std::string& err);
+    bool external() const { return external_; }
     /// Byte offset of each slot in the arena (null for uniform slots).
     const uint64_t* slot_offsets() const { return off_.empty() ? nullptr : off_.data(); }
     void close();
@@ -253,6 +259,9 @@ private:
     bool open_segmented(uint64_t want, std::string& err);
     void release_segmented();
     uint8_t* base_ = nullptr;
+    bool external_ = false;             ///< dp pool: base_ belongs to another process (open_sized_external): never freed
+    uint8_t* adopt_base_ = nullptr;     ///< open_sized_external's base while it runs open()
+    uint64_t adopt_bytes_ = 0;
     int64_t live_slots_ = 0;            ///< #533: slots() - all of them unless shrunk
     int64_t seg_req_ = 0;               ///< #533: the segment size asked for (0: one cudaMalloc)
     int64_t guard_req_ = 0;             ///< STRATA_MMQ_DIRECT: bytes kept after each sized slot's blob (set_slot_guard)

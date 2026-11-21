@@ -40,6 +40,7 @@
 #include "strata/core/pin_budget.hpp"
 #include "strata/core/uma_cache.hpp"
 #include "strata/core/remote_experts.hpp"
+#include "strata/core/pool_plan.hpp"   // dp pool: the shared MI50 pool manifest (STRATA_POOL_EXPORT / STRATA_POOL_IMPORT)
 #include "strata/core/on_device.hpp"
 #include "strata/core/peer_experts.hpp"
 #include "strata/core/layer.hpp"
@@ -7847,11 +7848,88 @@ int main(int argc, char** argv) {
                                  "held by CUDA0 or a split stage)\n",
                          o.expert_cache_remote_placement == "layer" ? "grouped by layer" : "striped", devices,
                          (long long) stripe_skipped);
+            // dp pool (shared MI50 pool, opt-in): STRATA_POOL_WEIGHTS="<bdf>=<w>,..." (devices not named: 1) replaces the stripe
+            // with pool_plan's make_plan - every unheld rank to the helper with the lowest routed mass / weight that still has
+            // room, the mass from the coverage curve (STRATA_POOL_COVER_B, default 1.7) - so a slow card (a slower PCIe link) holds less of
+            // the traffic.  Placement is decided here, once, from the ranking and the configuration (exactness).
+            if (const char* pw = std::getenv("STRATA_POOL_WEIGHTS"); pw != nullptr && pw[0] != '\0') {
+                std::vector<strata::core::pool::Device> devs((size_t) devices);
+                const std::string spec = pw;
+                for (int i = 0; i < devices; ++i) {
+                    devs[(size_t) i].capacity = o.expert_cache_remote[(size_t) i];
+                    const std::string bus = strata::core::RemoteExperts::bus_id(remote_dev[i]);
+                    const size_t at = bus.empty() ? std::string::npos : spec.find(bus + "=");
+                    if (at != std::string::npos) devs[(size_t) i].weight = std::atof(spec.c_str() + at + bus.size() + 1);
+                }
+                std::vector<strata::core::pool::Pair> rest;
+                for (const auto& pair : ranked) {
+                    if (pair.first < 0 || pair.first >= g.n_layers || pair.second < 0 || pair.second >= g.n_expert) continue;
+                    const size_t index = (size_t) pair.first * (size_t) g.n_expert + (size_t) pair.second;
+                    if (xcache.slot_of(pair.first, pair.second) >= 0 || claimed[index]) continue;
+                    rest.push_back(pair);
+                }
+                const char* cb = std::getenv("STRATA_POOL_COVER_B");
+                // the mass of each remaining rank on the whole ranking's curve (ranks after the XTX's prefix)
+                std::vector<double> mass(rest.size());
+                const size_t total = (size_t) (g.n_layers * g.n_expert), off = total - rest.size();
+                for (size_t r = 0; r < rest.size(); ++r)
+                    mass[r] = strata::core::pool::curve_mass(off + r, total, cb ? std::atof(cb) : 1.7);
+                const auto plan = strata::core::pool::make_plan(rest, 0, devs, mass);
+                std::string per;
+                for (int i = 0; i < devices; ++i) {
+                    by_device[(size_t) i] = plan.by_device[(size_t) i];
+                    char b[96];
+                    std::snprintf(b, sizeof b, " CUDA%d w %.2f: %zu (%.1f %%)", remote_dev[i], devs[(size_t) i].weight,
+                                  plan.by_device[(size_t) i].size(), 100.0 * plan.mass[(size_t) i]);
+                    per += b;
+                }
+                std::fprintf(stderr, "strata generate: dp pool: STRATA_POOL_WEIGHTS placement (share of the pool's routed mass):%s;"
+                                     " %zu overflow to the CPU\n", per.c_str(), plan.overflow.size());
+            }
         } else {
             by_device[0] = std::move(ranked);
         }
+        // ---- dp pool (shared MI50 pool, opt-in): STRATA_POOL_IMPORT=<manifest>: the helper caches are another engine's,
+        // mapped through HIP IPC handles (the same pairs in the same slots; this engine's own staging, streams, graphs and
+        // threads); STRATA_POOL_EXPORT=<manifest>: after the fill below, publish this engine's helper caches for others.
+        const char* pool_import = std::getenv("STRATA_POOL_IMPORT");
+        const char* pool_export = std::getenv("STRATA_POOL_EXPORT");
+        strata::core::pool::Manifest pool_in;
+        if (pool_import != nullptr && pool_import[0] != '\0') {
+            const auto t_wait = Clock::now();
+            std::string perr;
+            for (;;) {   // the exporter may still be filling: wait for its manifest (written whole, then renamed)
+                if (strata::core::pool::read_manifest(pool_import, pool_in, perr)) break;
+                if (std::chrono::duration<double>(Clock::now() - t_wait).count() > 1800) {
+                    std::fprintf(stderr, "strata generate: STRATA_POOL_IMPORT: %s\n", perr.c_str());
+                    return 1;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+            if (pool_in.n_layers != (uint32_t) g.n_layers || pool_in.n_expert != (uint32_t) g.n_expert) {
+                std::fprintf(stderr, "strata generate: STRATA_POOL_IMPORT: %s is for another model geometry\n", pool_import);
+                return 1;
+            }
+            std::fprintf(stderr, "strata generate: dp pool: importing %zu helper caches from %s (waited %.1f s)\n",
+                         pool_in.devices.size(), pool_import, std::chrono::duration<double>(Clock::now() - t_wait).count());
+        }
         for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0) {
             if (remote_opt) remote_opt->attach(remote_experts[(size_t) r]);
+            if (!pool_in.devices.empty()) {
+                const std::string bus = strata::core::RemoteExperts::bus_id(remote_dev[r]);
+                const strata::core::pool::ManifestDevice* md = nullptr;
+                for (const auto& d : pool_in.devices) if (bus == d.bdf) md = &d;
+                if (md == nullptr) {
+                    std::fprintf(stderr, "strata generate: STRATA_POOL_IMPORT: CUDA%d (%s) is not in the pool manifest\n",
+                                 remote_dev[r], bus.c_str());
+                    return 1;
+                }
+                if (!remote_experts[(size_t) r].open_import(remote_dev[r], md->ipc, md->base_bytes, md->pairs, g.n_layers,
+                                                            g.n_expert, xcache, *srcp, claimed, err)) {
+                    std::fprintf(stderr, "strata generate: %s\n", err.c_str());
+                    return 1;
+                }
+            } else
             if (!remote_experts[(size_t) r].open(remote_dev[r], o.expert_cache_remote[(size_t) r],
                      g.n_layers, g.n_expert, by_device[(size_t) r], xcache, *srcp, claimed, err,
                      o.expert_cache_remote_auto[(size_t) r])) {
@@ -7891,6 +7969,45 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "strata: tensor parallel: expert fill: CUDA0 %lld, CUDA1 %lld%s; CPU path %lld of %lld\n",
                          (long long) xcache.resident(), (long long) on1, per.c_str(), (long long) cpu_left,
                          (long long) (g.n_layers * g.n_expert));
+        }
+        if (pool_import != nullptr || pool_export != nullptr) {   // dp pool: what this engine computes where
+            int64_t on_xtx = 0, on_pool = 0, cpu_left = 0;
+            for (int64_t l = 0; l < g.n_layers; ++l)
+                for (int64_t e = 0; e < g.n_expert; ++e) {
+                    if (xcache.slot_of(l, e) >= 0) { ++on_xtx; continue; }
+                    bool h = false;
+                    for (int r = 0; r < kMaxHelpers && !h; ++r)
+                        h = o.expert_cache_remote[(size_t) r] > 0 && remote_experts[(size_t) r].holds(l, (int32_t) e);
+                    (h ? on_pool : cpu_left) += 1;
+                }
+            std::fprintf(stderr, "strata generate: dp pool (%s): CUDA0 %lld, pool %lld, CPU path %lld of %lld\n",
+                         pool_in.devices.empty() ? "exporter" : "importer", (long long) on_xtx, (long long) on_pool,
+                         (long long) cpu_left, (long long) (g.n_layers * g.n_expert));
+        }
+        if (pool_export != nullptr && pool_export[0] != '\0' && pool_in.devices.empty()) {
+            strata::core::pool::Manifest m;
+            m.n_layers = (uint32_t) g.n_layers;
+            m.n_expert = (uint32_t) g.n_expert;
+            m.blob_bytes = (uint64_t) strata::kernels::cpu::expert_layout().max_blob;
+            for (int r = 0; r < kMaxHelpers; ++r) if (o.expert_cache_remote[(size_t) r] > 0) {
+                strata::core::pool::ManifestDevice d;
+                const std::string bus = strata::core::RemoteExperts::bus_id(remote_dev[r]);
+                std::snprintf(d.bdf, sizeof d.bdf, "%s", bus.c_str());
+                std::string eerr;
+                if (bus.empty() || !remote_experts[(size_t) r].export_handle(d.ipc, d.base_bytes, eerr)) {
+                    std::fprintf(stderr, "strata generate: STRATA_POOL_EXPORT: CUDA%d: %s\n", remote_dev[r],
+                                 bus.empty() ? "no PCI bus id" : eerr.c_str());
+                    return 1;
+                }
+                d.pairs = remote_experts[(size_t) r].pairs();
+                m.devices.push_back(std::move(d));
+            }
+            std::string werr;
+            if (!strata::core::pool::write_manifest(pool_export, m, werr)) {
+                std::fprintf(stderr, "strata generate: STRATA_POOL_EXPORT: %s\n", werr.c_str());
+                return 1;
+            }
+            std::fprintf(stderr, "strata generate: dp pool: exported %zu helper caches to %s\n", m.devices.size(), pool_export);
         }
         std::fprintf(stderr, "strata generate: expert caches: %lld of %lld experts on the GPUs (CUDA0, split stages, "
                              "helpers; disjoint)\n", (long long) on_gpus, (long long) (g.n_layers * g.n_expert));

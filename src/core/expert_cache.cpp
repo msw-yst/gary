@@ -578,7 +578,7 @@ bool ExpertCache::open(int64_t n_slots, int64_t n_layers, int64_t n_expert, int6
     // `device_slot()` walks off the end. So the free-VRAM figure is read and compared BEFORE the allocation,
     // and the two numbers are named in the refusal.
     size_t free_b = 0, total_b = 0;
-    if (cudaMemGetInfo(&free_b, &total_b) == cudaSuccess) {
+    if (adopt_base_ == nullptr && cudaMemGetInfo(&free_b, &total_b) == cudaSuccess) {   // (dp pool: an imported arena is already allocated)
         free_b = device_free_bytes();   // unified memory: what the OS can give back counts (see the header)
         if ((uint64_t) free_b < want) {
             char buf[320];
@@ -593,7 +593,14 @@ bool ExpertCache::open(int64_t n_slots, int64_t n_layers, int64_t n_expert, int6
         }
     }
 
-    if (seg_req_ > 0) {   // #533: --vram-elastic: physical segments behind one address range (zeroed below)
+    if (adopt_base_ != nullptr) {   // dp pool: another process's filled arena (open_sized_external): no allocation, no zeroing
+        if (want > adopt_bytes_) {
+            err = "ExpertCache: the imported pool arena is smaller than its slot layout";
+            return false;
+        }
+        base_ = adopt_base_;
+        external_ = true;
+    } else if (seg_req_ > 0) {   // #533: --vram-elastic: physical segments behind one address range (zeroed below)
         if (!open_segmented(want, err)) return false;
     } else if (g_cache_vmm && vmm_available()) {
         // the elastic K/V: every chunk mapped now; the K/V may later take some of them (and give them back)
@@ -617,7 +624,7 @@ bool ExpertCache::open(int64_t n_slots, int64_t n_layers, int64_t n_expert, int6
     }
     // Zeroed so a slot read before it is filled is a DETERMINISTIC wrong answer rather than whatever the
     // allocator handed back.  A stale block of a previous process's memory would still sum to finite floats.
-    if (cudaMemset(base_, 0, (size_t) want) != cudaSuccess) {
+    if (!external_ && cudaMemset(base_, 0, (size_t) want) != cudaSuccess) {
         err = "ExpertCache: cudaMemset of the slot arena failed";
         close();
         return false;
@@ -684,6 +691,18 @@ bool ExpertCache::open_sized(const std::vector<int64_t>& slot_bytes, int64_t n_l
     return true;
 }
 
+bool ExpertCache::open_sized_external(void* base, uint64_t base_bytes, const std::vector<int64_t>& slot_bytes,
+                                      int64_t n_layers, int64_t n_expert, std::string& err) {
+    if (base == nullptr) { err = "ExpertCache: no imported arena"; return false; }
+    if (seg_req_ > 0) { err = "ExpertCache: an imported arena cannot be segmented (--vram-elastic)"; return false; }
+    adopt_base_ = (uint8_t*) base;
+    adopt_bytes_ = base_bytes;
+    const bool ok = open_sized(slot_bytes, n_layers, n_expert, err);
+    adopt_base_ = nullptr;
+    adopt_bytes_ = 0;
+    return ok;
+}
+
 void ExpertCache::close() {
 #if defined(STRATA_USE_HIP)
     if (blocking_staging_) (void) cudaFreeHost(blocking_staging_);
@@ -698,9 +717,10 @@ void ExpertCache::close() {
         vmm_.reset();   // unmaps and frees every chunk it still holds
         base_ = nullptr;
     } else if (base_ != nullptr) {
-        cudaFree(base_);
+        if (!external_) cudaFree(base_);   // dp pool: an imported arena stays its owner's
         base_ = nullptr;
     }
+    external_ = false;
     residency_.clear();
     slots_ = 0;
     live_slots_ = 0;

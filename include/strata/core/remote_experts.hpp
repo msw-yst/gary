@@ -36,6 +36,19 @@ public:
               const ExpertCache& primary, ExpertSource& source,
               std::vector<uint8_t>& claimed, std::string& err, bool auto_size = false);
     void close();
+    /// dp pool (shared MI50 pool, opt-in): share this helper's cache with other engine processes.  export_handle() gives
+    /// the HIP IPC handle (64 bytes) of the cache arena and its size; pairs() is the cache's (layer, expert) list in
+    /// slot order.  open_import() is open() over another process's exported cache: the same pairs in the same slots, no
+    /// allocation and no fill (STRATA_POOL_VERIFY slots, default 16, are byte-compared to `source` first); everything
+    /// else - staging, stream, flag, graphs, issue thread - is this process's own, as with open().  HIP builds only.
+    bool export_handle(void* handle64, uint64_t& bytes, std::string& err) const;
+    bool open_import(int device, const void* handle64, uint64_t bytes, const std::vector<std::pair<int32_t, int32_t>>& pairs,
+                     int64_t layers, int64_t experts, const ExpertCache& primary, ExpertSource& source,
+                     std::vector<uint8_t>& claimed, std::string& err);
+    const std::vector<std::pair<int32_t, int32_t>>& pairs() const { return selected_; }
+    /// dp pool: a device's PCI bus id ("0000:c3:00.0", lower case) - ordinals differ between processes, bus ids do not
+    static std::string bus_id(int device);
+    bool imported() const { return imported_ != nullptr; }
 
     /// `kind` is the primary verifier's classification (-1 = CPU candidate),
     /// or null on the one-token path. Entries already served on CUDA0 are excluded.
@@ -159,6 +172,10 @@ private:
     void worker_loop(int cpu);
     void stop_worker();
     ExpertCache cache_;
+    std::vector<std::pair<int32_t, int32_t>> selected_;   ///< the cache's pairs in slot order (dp pool export)
+    const void* import_handle_ = nullptr;   ///< open_import() in progress: the handle and size to map instead of filling
+    uint64_t import_bytes_ = 0;
+    void* imported_ = nullptr;              ///< the mapped IPC arena (closed in close())
     cudaStream_t stream_ = nullptr;
     cudaStream_t read_stream_ = nullptr;   ///< STRATA_PREFILL_HELPER_SOURCE: cache -> host copies
     std::mutex read_mu_;                   ///< one cache reader at a time (the stager is threaded)

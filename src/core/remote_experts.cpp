@@ -18,7 +18,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cctype>
 #include <cstring>
+#if defined(STRATA_USE_HIP)
+#include <hip/hip_runtime.h>   // dp pool: hipIpc* (no CUDA-name shim for them)
+#endif
 
 #if defined(__linux__)
 #include <sched.h>
@@ -131,6 +135,9 @@ void RemoteExperts::close() {
         if (d_seq_) cudaFree(d_seq_);
         if (read_stream_) cudaStreamSynchronize(read_stream_);
         cache_.close();
+#if defined(STRATA_USE_HIP)
+        if (imported_) (void) hipIpcCloseMemHandle(imported_);
+#endif
         if (d_x_) cudaFree(d_x_);
         if (d_out_) cudaFree(d_out_);
         if (d_q8_) cudaFree(d_q8_);
@@ -156,6 +163,8 @@ void RemoteExperts::close() {
     meta_copy_ = 0;
     timing_ = false;
     device_ = -1;
+    imported_ = nullptr;
+    selected_.clear();
     pending_ = false;
     stream_ = nullptr;
     read_stream_ = nullptr;
@@ -197,13 +206,14 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
     selected.reserve((size_t) std::min<int64_t>(slots, layers * experts));
     std::vector<uint8_t> picked(claimed.size(), 0);
     skipped_held_ = 0;
+    const bool importing = import_handle_ != nullptr;   // dp pool: the exporter's pairs, all of them, in its slot order
     for (const auto& pair : ranked) {
         if (pair.first < 0 || pair.first >= layers || pair.second < 0 || pair.second >= experts) continue;
         const size_t index = (size_t) pair.first * (size_t) experts + (size_t) pair.second;
-        if (primary.slot_of(pair.first, pair.second) >= 0 || claimed[index]) { ++skipped_held_; continue; }
+        if (!importing && (primary.slot_of(pair.first, pair.second) >= 0 || claimed[index])) { ++skipped_held_; continue; }
         if (!picked[index]) {
             const uint64_t bytes = lay.native ? (lay.blob_bytes(pair.first) + 255) / 256 * 256 : lay.max_blob;
-            if (auto_size && needed + bytes + (512ull << 20) > free_bytes) break;
+            if (!importing && auto_size && needed + bytes + (512ull << 20) > free_bytes) break;
             selected.push_back(pair);
             needed += bytes;
             picked[index] = 1;
@@ -221,10 +231,46 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
         for (const auto& pair : selected) sizes.push_back((int64_t) lay.blob_bytes(pair.first));
     }
     // Leave room for the CUDA context, staging and later driver allocations, especially under WDDM.
-    if (needed + (512ull << 20) > free_bytes) {
+    if (!importing && needed + (512ull << 20) > free_bytes) {
         err = "CUDA" + std::to_string(device) + " experts: slots leave less than 512 MiB free; reduce --expert-cache-device" + std::to_string(device);
         close(); return false;
     }
+    if (importing) {   // dp pool: map the exporter's arena; the same layout over it; admit in its slot order, no fill
+#if defined(STRATA_USE_HIP)
+        hipIpcMemHandle_t h;
+        std::memcpy(&h, import_handle_, sizeof h);
+        void* p = nullptr;
+        const hipError_t oe = hipIpcOpenMemHandle(&p, h, hipIpcMemLazyEnablePeerAccess);
+        if (oe != hipSuccess || p == nullptr || !lay.native) {
+            err = "CUDA" + std::to_string(device) + " experts: the shared pool's handle did not open (" +
+                  (lay.native ? hipGetErrorString(oe) : "not a native pack") + ")";
+            close(); return false;
+        }
+        imported_ = p;
+        if (!cache_.open_sized_external(p, import_bytes_, sizes, layers, experts, err)) {
+            err = "CUDA" + std::to_string(device) + " experts: " + err; close(); return false;
+        }
+        for (const auto& pair : selected)
+            if (cache_.admit(pair.first, pair.second) < 0) {
+                err = "CUDA" + std::to_string(device) + " experts: the shared pool's layout does not admit its pairs";
+                close(); return false;
+            }
+        // the bytes must be the ones this process would have filled: STRATA_POOL_VERIFY slots spread over the cache
+        const int nv = std::max(1, env_int("STRATA_POOL_VERIFY", 16));
+        for (int i = 0; i < nv; ++i) {
+            const auto& pr = selected[(size_t) ((uint64_t) i * selected.size() / (uint64_t) nv)];
+            if (!cache_.verify_slot(cache_.slot_of(pr.first, pr.second), source.blob(pr.first, pr.second), err,
+                                    (int64_t) lay.blob_bytes(pr.first))) {
+                err = "CUDA" + std::to_string(device) + " experts: the shared pool's slot of (layer " + std::to_string(pr.first) +
+                      ", expert " + std::to_string(pr.second) + ") differs from this engine's blob: " + err;
+                close(); return false;
+            }
+        }
+#else
+        err = "CUDA" + std::to_string(device) + " experts: the shared pool needs a HIP build";
+        close(); return false;
+#endif
+    } else {
     const bool cache_ok = lay.native ? cache_.open_sized(sizes, layers, experts, err)
                                      : cache_.open((int64_t) selected.size(), layers, experts,
                                                    (int64_t) lay.max_blob, err);
@@ -244,6 +290,8 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
         err = "CUDA" + std::to_string(device) + " experts: " + err;
         close(); return false;
     }
+    }   // (not importing)
+    selected_ = selected;
 
     const size_t scratch = std::max<size_t>(
         (size_t) strata::kernels::moe_hit_grouped_scratch_bytes(CAP, H, FF),
@@ -358,6 +406,51 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
     }
     threaded_ = threads_requested() && remote_opt_ == nullptr;
     return true;
+}
+
+bool RemoteExperts::export_handle(void* handle64, uint64_t& bytes, std::string& err) const {
+#if defined(STRATA_USE_HIP)
+    if (device_ < 0 || !cache_.valid() || imported_ != nullptr) { err = "experts: no own cache to export"; return false; }
+    DeviceScope scope(device_);
+    if (!scope.ok) { err = scope.error(device_); return false; }
+    hipIpcMemHandle_t h;
+    const hipError_t e = hipIpcGetMemHandle(&h, (void*) cache_.device_slot(0));
+    if (e != hipSuccess) { err = std::string("hipIpcGetMemHandle: ") + hipGetErrorString(e); return false; }
+    static_assert(sizeof(h) <= 64, "an IPC handle fits the manifest's 64 bytes");
+    std::memset(handle64, 0, 64);
+    std::memcpy(handle64, &h, sizeof h);
+    bytes = (uint64_t) cache_.full_bytes();
+    return true;
+#else
+    (void) handle64; (void) bytes;
+    err = "the shared pool needs a HIP build";
+    return false;
+#endif
+}
+
+std::string RemoteExperts::bus_id(int device) {
+#if defined(STRATA_USE_HIP)
+    char b[32] = {};
+    if (hipDeviceGetPCIBusId(b, (int) sizeof b, device) != hipSuccess) { (void) hipGetLastError(); return ""; }
+    std::string s(b);
+    for (auto& ch : s) ch = (char) std::tolower((unsigned char) ch);
+    return s;
+#else
+    (void) device;
+    return "";
+#endif
+}
+
+bool RemoteExperts::open_import(int device, const void* handle64, uint64_t bytes,
+                                const std::vector<std::pair<int32_t, int32_t>>& pairs, int64_t layers, int64_t experts,
+                                const ExpertCache& primary, ExpertSource& source, std::vector<uint8_t>& claimed,
+                                std::string& err) {
+    import_handle_ = handle64;
+    import_bytes_ = bytes;
+    const bool ok = open(device, (int) pairs.size(), layers, experts, pairs, primary, source, claimed, err, false);
+    import_handle_ = nullptr;
+    import_bytes_ = 0;
+    return ok;
 }
 
 bool RemoteExperts::begin(int64_t layer, const float* x, const int32_t* ids, int64_t n_tok,

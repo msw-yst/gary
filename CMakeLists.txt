@@ -1799,6 +1799,11 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   target_include_directories(ple_residency_test PRIVATE include)
   add_test(NAME ple_residency_test COMMAND ple_residency_test)
 
+  # shared MI50 pool: the placement and the manifest; header-only, needs nothing
+  add_executable(pool_plan_test src/core/pool_plan_test.cpp)
+  target_include_directories(pool_plan_test PRIVATE include)
+  add_test(NAME pool_plan_test COMMAND pool_plan_test)
+
   # #4474: the automatic expert cache's slot rule (the late allocation priced); header-only, needs nothing
   add_executable(auto_cache_test src/core/auto_cache_test.cpp)
   target_include_directories(auto_cache_test PRIVATE include)
