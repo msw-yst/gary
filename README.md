@@ -1,4 +1,4 @@
-> **This is a fork of Strata ("Gary").** It covers two models on AMD RX 7900 XTX cards with Instinct MI50s as expert helpers:
+> **This is Gary, our fork of Strata** ([github.com/msw-yst/gary](https://github.com/msw-yst/gary)). It covers two models on AMD RX 7900 XTX cards with Instinct MI50s as expert helpers:
 > - **DeepSeek V4.1 Flash** (branch `dsv41-amd`) on 4x RX 7900 XTX + 4x MI50: tensor parallel over the XTX cards, plus the
 >   batching, drafting and prefill work that goes with it. Start at [docs/dsv41/README.md](docs/dsv41/README.md); latest
 >   results: [docs/dsv41/UPDATE-2026-11-14.md](docs/dsv41/UPDATE-2026-11-14.md).

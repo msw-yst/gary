@@ -13,7 +13,9 @@ in both the server and command-line generation paths.
 ## Use
 
 It is on by default whenever a helper expert cache (`--expert-cache-device1..5`) is enabled;
-`STRATA_DISJOINT_ADAPT=0` turns it off. Without helper caches it has no effect.
+`STRATA_DISJOINT_ADAPT=0` turns it off. Without helper caches it has no effect. This default is this fork's change (made
+with the Flash-Next work, [docs/flashnext](flashnext/README.md#settings)); before it, the check was opt-in
+(`STRATA_DISJOINT_ADAPT=1`) and off by default.
 It leaves the existing peer-tier check and expert arithmetic unchanged.
 The check is live: each promotion candidate is asked of the helper's own cache (`RemoteExperts::holds`), so an expert
 the helper's tier swaps in or out later is followed (a mask copied at load would go stale). Needs the helper-share

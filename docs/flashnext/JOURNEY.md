@@ -93,7 +93,7 @@ someone else's prompt; and lent experts computed on the GPU made that decode exa
 ## The CPU pool's spin
 
 One-card servers kept every CPU pool worker spinning at 100 % from the first token. A predicted wake between layers
-(`STRATA_POOL_WAIT=pred`) freed 17-20 cores and 10-14 W per server at no cost in speed and no change in output
+(`STRATA_POOL_WAIT=pred`) freed 17-20 cores and about 10-14 W on one server at no cost in speed and no change in output
 ([NX-13](cards/NX-13.md)).
 
 ## The shared MI50 pool
@@ -110,12 +110,13 @@ user with the MTP drafter (83-87 tok/s) [MEASURED].
 
 | Layout | Per agent at 1 / 2 / 4 / 8 users | Notes |
 |---|---|---|
-| tp2 + 4 MI50 | 50.5 / 40.6 / 31.6 / 18.8 | every expert on a GPU; no MTP; slow prompts |
+| tp2 + 4 MI50 (before NX-09) | 50.5 / 40.6 / 31.6 / 18.8 | every expert on a GPU; no MTP; slow prompts; 8 users after [NX-09](cards/NX-09.md): 19.4 (169.4 aggregate) |
 | two one-card servers (1 XTX + 2 MI50 each) | 51.5 / 47.5 / 36.0 / 24.0 | about a third of experts on the CPU |
 | two workers + shared MI50 pool | 54.4 / 52.3 / 39.8 / 28.2 | every expert on a GPU; 83-87 at 1 user with MTP |
 
 The 2-user figures of the last two rows are one user on each worker or server; their 1- and 2-user cells come from a separate
-one-trial test. Rows come from different sessions; ratios within a session are the reliable
+one-trial test. The pool's ratios against two servers also include a runtime difference (pool on the ROCm 7.2.1 HSA runtime,
+servers on the bundled one); a same-runtime baseline is being measured. Rows come from different sessions; ratios within a session are the reliable
 comparison ([README.md](README.md#results)).
 
 Next: placement tuning for the pool, MTP on the pool at more than one user, the remaining 8-row kernels, and quality testing on

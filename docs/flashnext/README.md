@@ -1,6 +1,7 @@
 # Qwen3.8 Flash-Next on RX 7900 XTX + MI50
 
-This folder records what we changed in Gary (our fork of Strata) to serve Qwen3.8 Flash-Next to several agents at once on a mix
+This folder records what we changed in Gary ([github.com/msw-yst/gary](https://github.com/msw-yst/gary), our fork of Strata,
+branch `flashnext-amd`) to serve Qwen3.8 Flash-Next to several agents at once on a mix
 of AMD consumer and datacenter cards, and what each change did when measured. It sits beside the DeepSeek V4.1 Flash work in
 [docs/dsv41](../dsv41/README.md); both ship from this repository.
 
@@ -33,7 +34,7 @@ helper build:
 - **Prompt reading**: tuned hipBLASLt rows for the experts' gate/up GEMM, a concurrent read mode.
 - **CPU pool**: a predicted wake between layers instead of spinning.
 
-Every new path is opt-in unless a card says it is the default.
+Every new path is opt-in unless a card or the [Settings](#settings) table says it is the default.
 
 ## Hardware
 
@@ -128,8 +129,11 @@ start). Batch self-commit is on by default.
 
 **Layout 3: two workers sharing one MI50 pool.** Both workers in one pod that shares the network, PID and IPC namespaces (HIP IPC
 on ROCm 7 passes a file descriptor over a socket in the exporter's network namespace). Both need the ROCm 7.2.1
-`libhsa-runtime64.so.1` in place of the one bundled with the engine (the bundled runtime refuses IPC export). Both use one shared
-host expert arena in `/dev/shm` (two private 68 GB arenas led to a driver stall, [SHARED-POOL.md](SHARED-POOL.md) section 8).
+`libhsa-runtime64.so.1` in place of the one bundled with the engine (the bundled runtime refuses IPC export). Take it from a
+ROCm 7.2.1 installation (`lib/libhsa-runtime64.so.1` under the ROCm folder); we took ours from llama.cpp's b11870 ROCm container
+image, which ships ROCm 7.2.1. Mount it over the engine's copy as below (`<hsa 7.2.1 lib>` = that file, `<engine folder>` = where
+the image keeps the engine's libraries). Both use one shared host expert arena in `/dev/shm` (two private 68 GB arenas led to a
+driver stall, [SHARED-POOL.md](SHARED-POOL.md) section 8).
 
 ```sh
 podman pod create --name gary-pool --share net,pid,ipc -p 127.0.0.1:8080-8081:8080-8081
@@ -153,9 +157,15 @@ podman run -d --pod gary-pool --name gary-w2 $GPU $MOUNTS -v gary-data-2:/data -
 ```
 
 Both workers must use the same `expert-cache` (the hot prefix) and MI50 cache size. Each prints
-`dp pool (exporter|importer): CUDA0 <n>, pool <n>, CPU path <n> of 24576` at start; check that the CPU path is 0. Sizes we ran:
-4 slots per worker hot 4,700 / MI50 5,000; 8 slots hot 3,700 / MI50 5,300; with MTP (`STRATA_BATCH_MTP=1`) hot 4,300 / MI50
-5,100. Spread clients evenly over ports 8080 and 8081.
+`dp pool (exporter|importer): CUDA0 <n>, pool <n>, CPU path <n> of 24576` at start; check that the CPU path is 0. Sizes we ran,
+in experts, for our Q4_K file (every expert 2.97 MB): 4 slots per worker hot 4,700 / MI50 5,000; 8 slots hot 3,700 / MI50 5,300;
+with MTP (`STRATA_BATCH_MTP=1`) hot 4,300 / MI50 5,100. Spread clients evenly over ports 8080 and 8081.
+
+With the shipped UD-IQ4_XS these counts do not apply: its experts are smaller and of mixed size (~2.46 MB on average), so the
+same memory holds more of them. Layouts 1 and 2 size themselves (`auto`). For layout 3 (not run with that file): start each XTX
+once as a layout-1 server with `auto` caches and note the XTX expert count each reports; use the smaller one as `expert-cache`
+on both workers, give each MI50 cache a count that fits its card, and confirm `CPU path 0` at start (the hot prefix plus the
+four MI50 caches must cover all 24,576 experts).
 
 ## Settings
 
@@ -177,6 +187,7 @@ Both workers must use the same `expert-cache` (the hot prefix) and MI50 cache si
 | `STRATA_PF_DQ_BATCH=G` | off | batched FP16 conversion (exact, slower) | [NX-12](cards/NX-12.md) |
 | `STRATA_POOL_WAIT=spin\|futex\|nap\|pred` | spin | CPU pool wait between layers | [NX-13](cards/NX-13.md) |
 | `STRATA_POOL_EXPORT` / `STRATA_POOL_IMPORT=<manifest>` | unset | shared MI50 pool | [NX-14](cards/NX-14.md) |
+| `STRATA_DISJOINT_ADAPT=0\|1` | **on whenever a helper cache is set** (changed here; it was opt-in before) | the adaptive tier never promotes an expert a helper GPU already holds; `=0` restores the old behaviour | [DISJOINT_EXPERT_CACHE.md](../DISJOINT_EXPERT_CACHE.md) |
 | `STRATA_POOL_VERIFY=N` | 16 | pool slots byte-checked per card on import | NX-14 |
 | `STRATA_POOL_WEIGHTS="<pci-bus-id>=<w>,..."`, `STRATA_POOL_COVER_B` (1.7) | unset | weighted pool placement (not used in the measured runs) | [SHARED-POOL.md](SHARED-POOL.md) |
 | `STRATA_NO_MTP=1` / `STRATA_BATCH_MTP=1` | - | MTP drafter off / drafter in batch windows | [NX-15](cards/NX-15.md) |
@@ -209,19 +220,25 @@ Per-agent decode tok/s, calibrated Q4_K, short prompts (384 tokens out), tempera
 
 | Layout | 1 user | 2 users | 4 users | 8 users | 16 users | Source |
 |---|---|---|---|---|---|---|
-| tp2 + 4 MI50 | 50.5 | 40.6 | 31.6 | 18.8 | 18.0 (8 slots + queue) | [comparative timing](data/2026-11-21-comparative-timing.md) |
-| one XTX + 2 MI50 (one server) | 50.5 | 37.9 | 24.6 | 13.5 | - | same |
-| one XTX + 2 MI50, MTP | 76.3 | 49.3 | 26.7 | 13.2 | - | same |
+| tp2 + 4 MI50 (before NX-09) | 50.5 | 40.6 | 31.6 | 18.8 | 18.0 (8 slots + queue) | [comparative timing](data/2026-11-21-comparative-timing.md) |
+| one XTX + 2 MI50 (one server, before NX-09) | 50.5 | 37.9 | 24.6 | 13.5 | - | same |
+| one XTX + 2 MI50, MTP (before NX-09) | 76.3 | 49.3 | 26.7 | 13.2 | - | same |
 | two one-card servers, users split evenly | 51.5 | 47.5 | 36.0 | 24.0 | 13.4 (8 slots each) | [pool runs](data/2026-11-21-dp-pool.md) |
 | **two workers + shared MI50 pool** | **54.4** | **52.3** | **39.8** | **28.2** | **17.1** (8 slots each) | same |
 | shared pool, MTP | **86.5-87.0** | **83.1** | not measured | not measured | - | same |
 
+- **Runtime confound.** Every pool cell ran an engine build with the ROCm 7.2.1 HSA runtime swapped in (export needs it); every
+  baseline cell ran the build with the bundled runtime. The pool / baseline ratios in this table therefore include any difference
+  between the two runtimes and builds, not only the pool. A baseline on the same runtime is being measured; these numbers will be
+  updated when it is in.
 - The pool and its baseline were alternated in one session at 4-16 users (3 + 3 trials at 4 slots per worker, 2 + 2 at 8; ranges
   do not overlap): pool / baseline 1.106x at 4 users, 1.175x at 8, 1.272x at 16. The 1- and 2-user cells are a separate test
   (one trial each without MTP, two with). The two-servers row's 1-user cell is one server alone; its 2-user cell one user on
   each.
-- The tp2 and one-server rows come from the comparative timing study, a different session; compare them with the pool rows
-  loosely.
+- The tp2 and one-server rows come from the comparative timing study, a different session, before B6 under TSUM
+  ([NX-09](cards/NX-09.md)); compare them with the pool rows loosely. With NX-09 on (the decode A/B of the same day,
+  [data](data/2026-11-21-decode-ab.md)) only cells with 7-8 rows a window change: tp2 at 8 users 19.4 per agent, 169.4 aggregate;
+  one server at 8 users 15.3; one server with MTP 27.5 at 4 users and 13.6 at 8. The pool rows were measured with NX-09 on.
 - Aggregate at 16 users: pool 296 tok/s, two servers 229. Host RAM: pool 124 GiB, two servers 190 GiB; busy cores ~13 against
   32-40.
 - Agent turns with ~50k-token contexts (one server, MTP): 74-75 tok/s alone; prefix reused in 3.6-4.5 s; a cold 52k prompt in
@@ -229,7 +246,10 @@ Per-agent decode tok/s, calibrated Q4_K, short prompts (384 tokens out), tempera
 - Our per-agent target for thinking-on coding agents is 40 tok/s ([AGENT-TURNS.md](AGENT-TURNS.md)): the pool meets it for about
   four agents (39.8, at the line), tp2 and a single server for two.
 
-Exactness: every row above gives the reference text `a7ae6623797f17fe` on its solo prompt, and batched == solo on every server.
+Exactness: every row above gives the reference text `a7ae6623797f17fe` on its solo prompt except one XTX + 2 MI50 with MTP,
+which gave `da29bc7d5a0ba433`: the drafter takes 513 XTX expert slots, so a different set of experts runs on that server's CPU
+path, and the CPU rounds differently from the GPUs (MTP itself was not separated from that). The pool has no CPU path and gives `a7ae6623797f17fe` with and without MTP.
+Batched == solo on every server.
 Two separate one-card servers do not give each other's texts at 384 tokens (different experts on each one's CPU path); the two
 pool workers do (8/8).
 
@@ -237,6 +257,10 @@ pool workers do (8/8).
 
 - **Tensor parallel**: no MTP drafter, no batched prompt path and no prompt cache (every prompt goes through 8-token decode
   windows; 1,631 tokens took 19-25 s), no vision. Not usable for long agent prompts yet.
+- **Build from this tree not yet verified**: the published `flashnext-amd` tree has not yet been built end to end from the
+  exported tree itself; that build check is pending.
+- **Pool vs baseline runtime**: the pool's ratios mix the pool with a runtime / build difference (pool on the ROCm 7.2.1 HSA
+  runtime, baseline on the bundled one); a same-runtime baseline is being measured.
 - **Shared pool**: needs the ROCm 7.2.1 HSA runtime and one pod with shared network / PID / IPC namespaces; needs one shared host
   expert arena; the exporter's death stops both workers. Placement tuning (slow-link MI50 weight, a hot set from agent traffic)
   and MTP at more than one user per worker are not measured. The cause of the first trial's driver stall is likely

@@ -184,14 +184,14 @@ On a one-card server with a CPU expert path, all pool workers spun at 100 % from
 260 us at 8), then ~300-850 us of nothing while the GPU runs the dense part [MEASURED:
 [data/2026-11-21-pool-spin.md](data/2026-11-21-pool-spin.md)].
 
-- Plain sleeping costs speed: a futex wake of ~25 sleepers starts the last worker 27 us (p50) to 146 us (p90) late, and every
+- Plain sleeping costs speed: a futex wake of ~25 sleepers starts the last worker 27 us (p50) / 41-146 us (p90) late, and every
   layer's first phase waits for it (-1.5 to -3 %).
 - **`STRATA_POOL_WAIT=pred`** (opt-in, Linux): the host predicts. After each layer's last phase it posts an absolute wake time:
   now + the smallest gap this same layer had in the last 4 windows, minus 30 us. Workers nap to it with a timed futex, spin at
   most 200 us past it, then block. Inside a layer the post says "now". A parked worker keeps spinning until the post for its
   phase lands. Result: the last worker starts 0.6 us (p50) / 1.0 us (p90) after the publish, the same as spinning.
 - It is exact by construction (the same row ranges, claimed dynamically) and measured so (every text identical). Speed within
-  noise (MTP off) or +1-2 % (MTP on). It frees 17-20 cores and 10-14 W per server ([NX-13](cards/NX-13.md)).
+  noise (MTP off) or +1-2 % (MTP on). It frees 17-20 cores and about 10-14 W on one server (the cells without a concurrent compile job; [NX-13](cards/NX-13.md)).
 
 ## 8. What we changed because of this, and what is left
 

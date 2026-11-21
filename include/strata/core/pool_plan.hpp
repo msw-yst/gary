@@ -13,7 +13,7 @@
 //
 // BALANCE.  A layer waits for the slowest MI50 it used, so the pool is balanced by routed MASS per unit of device speed,
 // not by expert count: `weight` is a device's relative speed (on our box one MI50, whose transfers cost 2.4-2.9x, gets
-// less; docs/flashnext/data/2026-11-21-comparative-timing.md, cell tH).  The profile carries a ranking only (tools/make_profile.py), so
+// less; per-window helper clocks of a tp2 timing build, docs/flashnext/SHARED-POOL.md section 2).  The profile carries a ranking only (tools/make_profile.py), so
 // the mass of rank r comes from the caller (a measured histogram) or from the coverage curve H(f) = 1 - (1 - f)^b
 // (tools/pool_fit.py fits b ~ 1.7 to the 2026-11-21 decode logs).
 #pragma once

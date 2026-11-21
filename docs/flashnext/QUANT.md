@@ -5,6 +5,10 @@ it scores against Q8_0, and what it costs.
 
 Labels as in [README.md](README.md#how-to-read-the-numbers). Card: [NX-07](cards/NX-07.md).
 
+**Download:** the file will be published on Hugging Face: **[PLACEHOLDER: Hugging Face repository link, not yet
+published]**. The weights are a derivative of Qwen3.8 Flash-Next and are under the Qwen Community License 1.0; the licence text
+ships with the files. Gary's MIT licence covers the code in this repository, not the weights.
+
 ## Why not the shipped file
 
 The widely used "UD-IQ4_XS" upload of Flash-Next is about 3.84 bits per weight on average, and its routed experts are mostly not
@@ -35,8 +39,8 @@ They will be added before the file itself is published (see [README.md](README.m
 
 ## Quality against Q8_0
 
-Scored against our Q8_0 on text held out from calibration [MEASURED; the logs are not in the published extracts, so treat these
-as REPORTED until they are]:
+Scored against our Q8_0 on text held out from calibration [REPORTED: the scoring logs are not in the published extracts, so the
+table has not been re-checked against raw output here]:
 
 | File | Size | Mean KL vs Q8_0 | 99 % KL | Same top token |
 |---|---|---|---|---|

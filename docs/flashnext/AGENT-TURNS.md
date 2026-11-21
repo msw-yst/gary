@@ -105,7 +105,7 @@ Per-agent decode on 384-token requests (not agent prompts) [MEASURED,
 
 | Layout | 1 | 2 | 4 | 8 users |
 |---|---|---|---|---|
-| tp2: 2 XTX tensor parallel + 4 MI50 helpers | 50.5 | 40.6 | 31.6 | 18.8 |
+| tp2: 2 XTX tensor parallel + 4 MI50 helpers (before NX-09; 8 users after it: 19.4) | 50.5 | 40.6 | 31.6 | 18.8 |
 | Two workers + shared MI50 pool (see [SHARED-POOL.md](SHARED-POOL.md)) | 53.6-54.4 | 52.3 | 39.8 | 28.2 |
 
 The two rows come from different sessions, and the pool row's 1-2 user cells from a separate one-trial test.

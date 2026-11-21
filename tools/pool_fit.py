@@ -30,7 +30,8 @@ MI50_EXPERTS = 5586                    # per MI50 with the 512 MiB guard: 15.45 
 SLOT_GIB = 0.73                        # one --batch slot session on a single card (max-context 131072, kv int8) [MEASURED]
 PER_SLOT_EXPERTS = round(SLOT_GIB * GIB / EXPERT_B)   # = 264
 # expert cache of a single-card worker at P slots: measured at P = 4 (arm G) and P = 8 (arm S); 264 experts per slot
-# otherwise.  Keys are the two XTX cards' PCI bus numbers on the test machine: "43" = XTX A, "84" = XTX B.
+# otherwise.  Keys are short card ids used in the run logs and printed below: "43" = XTX A, "84" = XTX B (in the output,
+# "46" = the slow-link MI50).
 XTX = {"43": {4: 5302, 8: 4248}, "84": {4: 4840}}      # [MEASURED: arm G's two engine logs, arm S at 8 users]
 MTP_COST = {4: 443, 8: 513}            # draft head + slot drafters [MEASURED: R vs G (P 4), S+MTP vs S (P 8)]
 LOAN = 1556                            # prompt-path loan of XTX slots during a read [MEASURED]
@@ -81,8 +82,8 @@ def option_b(p: int, b: float, mtp: bool):
 
 
 def mi50_load(users: int, pool_share: float, weights=(1.0, 1.0, 1.0, 1.0)):
-    """entries per worker-window per MI50 and a busy-time estimate from tH's per-window helper clocks
-    (T, STRATA_HELPER_TIMING=1: busy = 44.9 us a launch + 10.2 us an entry on a normal card, 48.9 + 19.2 on 46:00)"""
+    """entries per worker-window per MI50 and a busy-time estimate from the per-window helper clocks of a tp2 timing build
+    (T, STRATA_HELPER_TIMING=1: busy = 44.9 us a launch + 10.2 us an entry on a normal card, 48.9 + 19.2 on the slow-link MI50)"""
     e_total = users * 480 * pool_share
     wsum = sum(weights)
     out = []

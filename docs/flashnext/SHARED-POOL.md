@@ -26,7 +26,8 @@ Run data: [data/2026-11-21-dp-pool.md](data/2026-11-21-dp-pool.md). Timing model
   were all 8/8 [MEASURED].
 - **Faster.** Per agent, against two separate single-card servers measured in the same session: **1.106x at 4 users**
   (bar 1.10, met), **1.175x at 8 users** (bar 1.20, missed; abort line 1.05, clear), and **1.27x at 16 users** with 8
-  slots per worker [MEASURED].
+  slots per worker [MEASURED]. The pool ran on the ROCm 7.2.1 HSA runtime and the baseline on the bundled one, so these
+  ratios include any runtime difference; a same-runtime baseline is being measured (section 8).
 - **One user, with MTP.** One user per worker with the MTP drafter: 83-87 tok/s per user, 1.11-1.17x the baseline; in the
   pool, MTP changes no bit of the output [MEASURED].
 - **Cheaper on the host.** Host RAM 124 GiB against 190 GiB, and about 13 busy cores against 32-40 [MEASURED].
@@ -47,7 +48,7 @@ Run data: [data/2026-11-21-dp-pool.md](data/2026-11-21-dp-pool.md). Timing model
 | Coverage of the ranking in decode | top 4,248 ranks carry 28-31 % of routed entries; 4,840 carry 30 %; 5,302 carry 36 %; 15,420 carry 78-85 %. On agent turns 4,859 ranks carry 46-52 %. Fit H(f) = 1 - (1 - f)^b gives b = 1.7 (1.6-1.9) for short prompts, ~2.4 at the top for agent turns | MEASURED counts; fit ESTIMATE (`tools/pool_fit.py`) |
 | MI50 service time (timing build, graphs off) | normal card 44.9 us per launch + 10.2 us per entry; the slow-link MI50 48.9 + 19.2. Its kernels are as fast; its PCIe in/out costs 2.4-2.9x | MEASURED; fit ESTIMATE |
 | Host RAM | one single-card server 113-120 GB; two side by side 190 GB (of 251); expert arena 68 GB pinned per process | MEASURED |
-| Per-agent speed before this work (1/2/4/8 users) | tp2 (T): 50.5 / 40.6 / 31.6 / 18.8 tok/s. Single-card server (S): 50.5 / 37.9 / 24.6 / 13.5. Two S servers side by side at 4+4 users: 21.7-23.3 | MEASURED ([comparative timing](data/2026-11-21-comparative-timing.md)) |
+| Per-agent speed before this work (1/2/4/8 users; before NX-09) | tp2 (T): 50.5 / 40.6 / 31.6 / 18.8 tok/s (8 users after NX-09: ~19.4, 169.4 aggregate). Single-card server (S): 50.5 / 37.9 / 24.6 / 13.5. Two S servers side by side at 4+4 users: 21.7-23.3 | MEASURED ([comparative timing](data/2026-11-21-comparative-timing.md)) |
 
 The coverage numbers say the shipped ranking predicts this workload only weakly: the top 17 % of ranks carry 28-31 % of
 the routed entries. A ranking built from our own traffic should sharpen the hot set (section 9).
@@ -244,12 +245,17 @@ case; in service each worker keeps a card only 15-25 % busy.
 ## 8. Pre-registered bars and results
 
 Baseline for every bar, measured fresh in the same session and alternated with the pool: two separate single-card
-servers (XTX A + MI50 #1, #2; XTX B + the slow-link MI50 + MI50 #4), same environment, full CPU expert threads, MTP off.
+servers (XTX A + MI50 #1, #2; XTX B + the slow-link MI50 + MI50 #4), same engine settings, full CPU expert threads, MTP off.
+**Not the same runtime:** every pool cell ran an engine build with the ROCm 7.2.1 HSA runtime swapped in (export needs it),
+while every baseline cell ran the build with its bundled runtime. The ratios in this section therefore include any
+difference between the two runtimes and builds, not only the pool. A baseline on the same runtime is being measured; the
+numbers here will be updated when it is in.
 Load: the standard 8-prompt set, 384 tokens, temperature 0, presence penalty 0, split evenly over the two servers.
 Per agent = median over users of streamed chunks per second.
 
 **Bars (written before the runs):** per agent at least **1.10x** the baseline at 4 users and **1.20x** at 8 users;
-4 agents (2+2) at 40 tok/s or more; above tp2 at 8 users (21.2 tok/s per agent, REPORTED). **Abort:** below 1.05x at
+4 agents (2+2) at 40 tok/s or more; above tp2 at 8 users (21.2 tok/s: tp2's aggregate / 8, 169.4 / 8, as pre-registered;
+not a per-agent median, which was ~19.4 after [NX-09](cards/NX-09.md)). **Abort:** below 1.05x at
 8 users after one tuning pass; the other worker's load costing a worker more than 15 % (or more than 3 ms of helper wait
 per window); or any exactness failure.
 
@@ -273,10 +279,10 @@ kernel-log watch that stops the cell on any queue-eviction, hung-task, reset or 
 - **First retry.** Both workers loaded with CPU path 0; the second found the arena "already filled by another engine";
   host RAM 124 GiB instead of 190; reference hash on both [MEASURED]. The cell stopped at the client's 30 s no-progress
   watch. The cause was not IPC: XTX B's memory temperature had reached the thermal guard's pause limit (94 C), and the
-  guard paused that worker for 30 s, exactly the watch's threshold. The kernel log had no line from the abort list
+  guard paused that worker for 32 s, past the watch's threshold. The kernel log had no line from the abort list
   [MEASURED]. We then set the pause limits to 100 C junction / memory (warning from 97 C) and made the no-progress
   watch ignore paused time.
-- **Second retry (10 cells, about 58 min of pool cells): the pool holds.** No abort-list line in the kernel log, no stall,
+- **Second retry (10 cells (5 pool cells), about 58 min of pool cells): the pool holds.** No abort-list line in the kernel log, no stall,
   no reset, no thermal pause [MEASURED]. That fits the first stall being memory-pressure eviction with two private
   arenas rather than an IPC fault [INFERRED].
 
@@ -305,7 +311,7 @@ two servers have different placements) [MEASURED].
 | Spread between the two workers at 4 users | within 2 % | baseline server 2 is 3-7 % slower than server 1 | MEASURED |
 
 Against the other bars: 4 agents reached 39.82 tok/s on average, a hair under the 40 tok/s bar (best trial 40.00).
-At 8 users the pool's 28.2 tok/s is well above tp2's 21.2. Against the estimates in section 6 the pool came in 10-20 %
+At 8 users the pool's 28.2 tok/s is well above tp2's 21.2 (aggregate / 8, as pre-registered; ~19.4 per agent). Against the estimates in section 6 the pool came in 10-20 %
 below prediction at every level: 39.8 vs 43-45 tok/s at 2 users per worker, 28.2 vs ~31 at 4, 17.1 vs ~21 at 8.
 We did not measure the cross-worker helper-wait histogram separately; the one-user test below gives the cost of the
 other worker's load directly.

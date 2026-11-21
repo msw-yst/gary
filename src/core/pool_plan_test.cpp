@@ -1,5 +1,5 @@
 // src/core/pool_plan_test.cpp - the shared MI50 pool's placement and manifest (include/strata/core/pool_plan.hpp).
-// Header-only, CPU only.  Not yet built (phase 1 of the pool design is desk-only).
+// Header-only, CPU only.  CMake target and CTest test `pool_plan_test` (see docs/flashnext/README.md, Build).
 #include "strata/core/pool_plan.hpp"
 
 #include <cstdio>

@@ -1,6 +1,8 @@
 # NOTICE
 
-This repository is a fork of [Strata](https://github.com/Niko1221/Strata) by Niko1221 and the Strata contributors. It is
+This repository, Gary ([github.com/msw-yst/gary](https://github.com/msw-yst/gary)), is a fork of
+[Strata](https://github.com/Niko1221/Strata) by Niko1221 and the Strata contributors. Code, binary and flag names stay
+Strata's. It is
 based on upstream tag `v0.2.9` and adds YST's work running DeepSeek V4.1 Flash and Qwen3.8 Flash-Next on RX 7900 XTX
 (gfx1100) cards with Instinct MI50 (gfx906) cards as expert helpers. The changes, their measurements and the flags that turn
 them on are documented in [docs/dsv41](docs/dsv41/README.md) (DeepSeek) and [docs/flashnext](docs/flashnext/README.md)

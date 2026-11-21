@@ -45,4 +45,4 @@
 #
 # Proposed next step for this bucket at the time (overlap, not a faster pass): two half-batch windows in flight per card.  Estimate
 # then: +10-15 % at 4 users, +30-40 % at 8.  Not built: cycle 5 moved the CPU experts to the MI50s instead, and the engine
-# anatomy (docs/flashnext/ANATOMY.md, section 6) argues against it once the CPU pass is gone.
+# anatomy (docs/flashnext/ANATOMY.md, section 8) argues against it once the CPU pass is gone.
