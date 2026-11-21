@@ -1,5 +1,5 @@
-// src/kernels/pool_ipc_smoke.cpp - the shared MI50 pool's go/no-go test (design note 2026-11-21-shared-mi50-pool-design.md,
-// increment ii, step 0): can one process own an expert cache on an MI50 and other processes compute from it through a
+// src/kernels/pool_ipc_smoke.cpp - the shared MI50 pool's go/no-go test (design note docs/flashnext/SHARED-POOL.md,
+// section 7): can one process own an expert cache on an MI50 and other processes compute from it through a
 // HIP IPC memory handle, bit for bit, at the same time?
 //
 //   pool_ipc_smoke holder <dev> <handle-file> [G] [seconds]

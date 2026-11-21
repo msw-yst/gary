@@ -6,7 +6,8 @@ Desk tool (no GPU, no engine): reproduces the fit tables of the design note
 The profile file (`data/expert-profile.bin`) carries a RANKING only, no counts (tools/make_profile.py), so the routed
 traffic a set of ranks holds comes from a coverage curve H(f) = 1 - (1 - f)^b over the held fraction f of the 24,576
 experts (the same family generate.cpp uses for the layer split), with b fitted to the decode batch lines of the
-2026-11-21 comparative-timing and decode-ab engine logs ("routed entries per window: VRAM / PCIe / CPU"):
+2026-11-21 comparative-timing and decode A/B engine logs ("routed entries per window: VRAM / PCIe / CPU"; arm letters
+as in docs/flashnext/data/2026-11-21-comparative-timing.md):
 
     held top ranks (of 24,576)   local share measured        b
     3,735 (15.2 %)               25.4-27.4 %                 1.8-2.0
@@ -25,12 +26,13 @@ import math
 N_EXP = 48 * 512                       # experts [geometry]
 EXPERT_B = 921_600 + 921_600 + 1_126_400   # Q4_K gate + Q4_K up + Q5_0 down, every layer [MEASURED: types/quantize log]
 GIB = 1 << 30
-MI50_EXPERTS = 5586                    # per MI50 with the 512 MiB guard: 15.45 GiB [MEASURED: S/G engine logs]
+MI50_EXPERTS = 5586                    # per MI50 with the 512 MiB guard: 15.45 GiB [MEASURED: arm S / G engine logs]
 SLOT_GIB = 0.73                        # one --batch slot session on a single card (max-context 131072, kv int8) [MEASURED]
 PER_SLOT_EXPERTS = round(SLOT_GIB * GIB / EXPERT_B)   # = 264
-# expert cache of a single-card worker at P slots: measured at P = 4 (G) and P = 8 (S); 264 experts per slot otherwise
-XTX = {"43": {4: 5302, 8: 4248}, "84": {4: 4840}}      # [MEASURED: G/engine-seed-s{,2}.log, sU]
-MTP_COST = {4: 443, 8: 513}            # draft head + slot drafters [MEASURED: R vs G (P 4), mU vs sU (P 8)]
+# expert cache of a single-card worker at P slots: measured at P = 4 (arm G) and P = 8 (arm S); 264 experts per slot
+# otherwise.  Keys are the two XTX cards' PCI bus numbers on the test machine: "43" = XTX A, "84" = XTX B.
+XTX = {"43": {4: 5302, 8: 4248}, "84": {4: 4840}}      # [MEASURED: arm G's two engine logs, arm S at 8 users]
+MTP_COST = {4: 443, 8: 513}            # draft head + slot drafters [MEASURED: R vs G (P 4), S+MTP vs S (P 8)]
 LOAN = 1556                            # prompt-path loan of XTX slots during a read [MEASURED]
 
 

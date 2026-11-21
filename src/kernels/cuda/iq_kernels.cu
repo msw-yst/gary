@@ -5322,7 +5322,7 @@ void xtx_fast_perm_startup() {
     static std::once_flag once;
     std::call_once(once, [] {
         const char* v = xtx_perm::env_value();
-        if (v == nullptr) return;   // OFF, unset: 04fcd5673's default, nothing written, nothing printed
+        if (v == nullptr) return;   // OFF, unset: the default, nothing written, nothing printed
         const bool on = xtx_perm::requested();
         int n = 0, prev = 0;
         if (cudaGetDeviceCount(&n) != cudaSuccess || n <= 0) {

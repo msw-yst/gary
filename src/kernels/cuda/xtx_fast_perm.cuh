@@ -1,6 +1,6 @@
 // src/kernels/cuda/xtx_fast_perm.cuh - STRATA_XTX_FAST_PERM=1: the IQ4_NL / IQ4_XS 16-entry codebook lookup on gfx1100
 // (RX 7900 XTX) by v_perm_b32 directly, the gfx906 body of iq_kernels.cu get_int_from_table_16 (llama.cpp's HIP branch;
-// the DeepSeek line's c18a7159b did the same for its MXFP4 table).
+// the DeepSeek engine's v_perm form does the same for its MXFP4 table).
 //
 // Today's gfx1100 lookup is the CUDA form: six __byte_perm, each through hip_compat/intrinsics.hpp byte_perm, which
 // spreads the 4-bit nibble selector to byte selectors (and/shift/or) before its v_perm_b32.  The form below feeds
@@ -12,7 +12,7 @@
 // xtx_fast_perm_startup (iq_kernels.cu, declared in strata/kernels/iq_kernels.hpp) wrote 1 into both on that device.
 // The engine calls it once at process start (generate.cpp main before the family switch, q36_main.cpp, the expert
 // bench), before any context work or graph capture: every gfx1100 device is set with a synchronous
-// cudaMemcpyToSymbol on a thread with no stream capturing, then cudaDeviceSynchronize.  (04fcd5673 set it lazily
+// cudaMemcpyToSymbol on a thread with no stream capturing, then cudaDeviceSynchronize.  (The first version set it lazily
 // from the IQ4 launchers, skipping a capturing stream; in serve mode those launchers only ever run inside the session's
 // graph captures, so it was skipped every time, silently.)  OFF never writes it.  Only the gfx1100 device pass reads
 // it; every other arch (gfx906 included) and CUDA compile today's code.  The flag can only change speed: both forms
