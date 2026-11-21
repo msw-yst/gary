@@ -67,9 +67,10 @@ int main() {
     const Plan a2 = make_plan(ranked, 4840, four);
     check(a2.by_device == a.by_device && a2.hot_pairs == a.hot_pairs, "deterministic");
 
-    // a measured histogram instead of the curve
+    // a measured histogram instead of the curve.  Same hot prefix as P4: with hot = 0 the pool would need all 24,576
+    // pairs in 22,344 slots, every MI50 fills and the weight cannot show (the cold tail goes to the slow-link card too)
     std::vector<double> hist(ranked.size(), 1.0);
-    const Plan u = make_plan(ranked, 0, four, hist);
+    const Plan u = make_plan(ranked, 4840, four, hist);
     check(u.by_device[1].size() < u.by_device[0].size() && u.overflow.empty(), "uniform mass: 46 still lighter");
 
     // manifest round trip
