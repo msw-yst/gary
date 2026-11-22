@@ -33,7 +33,8 @@ The two models were measured on different machines with different MI50 cards; ea
 **What:** four RX 7900 XTX cards run the model in tensor parallel, while four Instinct MI50s hold and compute the
 experts the XTX cards can't fit, so DeepSeek V4.1 Flash serves several users from one machine.
 
-**Headline results** (release 3 against the build before it; served, drafter on, same machine, same day):
+**Headline results** (the release build, build 17, against the build before it; served, drafter on, same machine, same
+day):
 
 - **Eight users: +12.5 % (202.8 tok/s in all); four users: +5.3 % (161.6 tok/s in all)**
   ([SV-17](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/cards/SV-17.md)).
@@ -45,7 +46,10 @@ experts the XTX cards can't fit, so DeepSeek V4.1 Flash serves several users fro
 - **The MI50s matter most:** with one XTX, decode rises from 25.2 tok/s with the experts in host RAM to 51.7 tok/s with
   four MI50s holding them ([GPU permutations](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/benchmarking-gpu-permutations.md)).
 
-Timings use a private prompt set; ratios within a run compare like with like.
+Release 4 keeps build 17 as its release build and recommended setup, so these numbers apply to it. It adds an opt-in,
+bit-identical BF16 matrix-vector kernel ([FG-20](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/cards/FG-20.md)), off by default, and a write-up of
+[P2P on gfx906 and gfx1100](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/p2p-on-gfx906-and-gfx1100.md). Timings use a private prompt set; ratios within a run
+compare like with like.
 
 **Hardware tested:** 4× RX 7900 XTX 24 GB + 4× Instinct MI50 32 GB, one 16-core EPYC (Zen 2), DDR4-2666; ROCm 7.14 on
 Linux ([hardware table](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/README.md#hardware-public-labels)).
@@ -59,8 +63,8 @@ write-up and one card per change alongside it.
 **Weights:** [ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF](https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF),
 the 2.25 bpw IQ2_XS set (ISTA-DASLab's GSQ-RCO quantisation).
 
-**Status:** release 3, [`v0.2.9-dsv41.3`](https://github.com/msw-yst/gary/releases/tag/v0.2.9-dsv41.3). The next release
-is pending its gate. Every result, decision and dead end has a card:
+**Status:** release 4, [`v0.2.9-dsv41.4`](https://github.com/msw-yst/gary/releases/tag/v0.2.9-dsv41.4)
+([release notes](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/UPDATE-2026-11-17.md)). Next release (pending). Every result, decision and dead end has a card:
 [cards index](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/README.md#card-index).
 
 ## Qwen3.8 Flash-Next
@@ -116,7 +120,7 @@ The DeepSeek branch is based on upstream tag `v0.2.9`. Ideas and code also come 
 - **[castagna-veloce](https://github.com/benpeterson40/castagna-veloce)** (MIT, a llama.cpp fork by benpeterson40): its
   gfx906 MoE kernels, including the fused expert kernel idea, are our MI50 benchmark reference.
 - **[ISTA-DASLab](https://huggingface.co/ISTA-DASLab)**: their GSQ-RCO quantisation of DeepSeek V4.1 Flash (2.25 bpw
-  IQ2_XS) is the weights release 3 serves.
+  IQ2_XS) is the weights releases 3 and 4 serve.
 - **DeepSeek's** official chat-encoding reference: our chat template is checked against it, token for token.
 
 Licence: MIT. Upstream's [LICENSE](LICENSE) and copyright line are unchanged. YST's changes carry "Copyright (c) 2026
