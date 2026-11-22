@@ -1,266 +1,132 @@
-> ## This fork: DeepSeek V4.1 Flash on AMD consumer + datacenter cards
->
-> **What it is.** A fork of [Strata](https://github.com/Niko1221/Strata) that runs DeepSeek V4.1 Flash on a mixed AMD box:
-> four RX 7900 XTX (24 GB, RDNA3) in a tensor-parallel group, with four Instinct MI50 (32 GB, gfx906, several generations
-> older) holding and computing the experts the XTX cards can't fit. The work is on branch
-> [`dsv41-amd`](https://github.com/msw-yst/strata-dsv41/tree/dsv41-amd) (latest tag
-> [`v0.2.9-dsv41.2`](https://github.com/msw-yst/strata-dsv41/releases/tag/v0.2.9-dsv41.2)). This `main` branch is upstream
-> Strata, unchanged apart from this note.
->
-> **Where it came from.** Upstream Strata v0.2.9 already ran DeepSeek V4.1 Flash on one GPU, keeping the experts that
-> don't fit on it in host RAM. Several engine fixes and decode fusions were ported from [Project Maya](https://github.com/mw00/project-maya),
-> itself built on Strata. From early November 2026 we (YST) asked how much of the rest of the box could be put to work,
-> and at what cost in correctness. Each change went in behind a flag, was checked for byte-identical output against the
-> build before it, and was timed. Each one has a card: what and why, the prediction written down before the run,
-> correctness, timing and verdict. There are 146 cards so far.
->
-> **How it's looking** (our test machine, our quant of about 2.25 bits a weight; yours will vary):
->
-> | step | single-user decode, drafter off |
-> |---|---|
-> | start: 1 XTX, the rest of the experts in host RAM | 22.7 tok/s |
-> | + 1 MI50 holding experts | 26.8 tok/s |
-> | 3 XTX + 3 MI50, every expert on a GPU | 48.7 tok/s |
-> | 4 XTX + 4 MI50, build 10 → build 14 | 57.9 → 71.0 tok/s (77.1 after a short prompt) |
->
-> Early and late points used different prompts, so read that table as the shape of the progress. Today, on build 16
-> (the release build), one process on all 8 cards decodes at **79.7 tok/s, or 110.5 tok/s with DeepSeek's own DSpark
-> drafter**. Through the server, one user gets about 120 tok/s and 8 users about 189 tok/s in total. With fewer cards:
->
-> | XTX + MI50 | drafter off / on (tok/s) |
-> |---|---|
-> | 1 + 0 | 25.2 / 21.8 |
-> | 1 + 4 | 51.7 / 59.5 |
-> | 2 + 4 | 64.4 / 73.0 |
-> | 3 + 4 | 72.1 / 92.0 |
-> | 4 + 4 | 79.7 / 110.5 |
->
-> The MI50s matter most: each one adds speed until no experts are left in host RAM, and the drafter only pays off once
-> they are. Measured but not yet in a release: build 16 plus a batched-path fusion and a cache fix, together, against
-> build 16 on the same day: **+12.5 % with 8 users (about 203 tok/s), +5.3 % with 4**, and 12.5 % faster first token on
-> an 8K prompt, with identical output. It is the candidate for the next build. Served single-user decode on build 16 is
-> 5-9 % behind build 15. That is the price of fixing a real correctness bug: build 15 summed some experts twice.
->
-> **Read more:** [latest results](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/docs/dsv41/UPDATE-2026-11-14.md) ·
-> [the long write-up](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/docs/dsv41/WRITEUP.md) ·
-> [cards index](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/docs/dsv41/README.md) ·
-> [GPU permutations benchmark](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/docs/dsv41/benchmarking-gpu-permutations.md) ·
-> [credits and licence](https://github.com/msw-yst/strata-dsv41/blob/dsv41-amd/NOTICE.md).
->
-> Thanks to Niko1221 and the Strata contributors, whose engine all of this builds on; to Peasant Smith (mw00) and the
-> Project Maya contributors (including pepuscz, tctiger and mrsirg97, whose ports are credited in the source); and to the
-> MI50 Discord community. Built by YST, https://yst.dev. Upstream's README follows unchanged.
-
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="apps/host/public/brand/strata-lockup-dark.svg">
-    <img src="apps/host/public/brand/strata-lockup-light.svg" alt="Strata" width="340">
-  </picture>
+  <a href="https://yst.dev">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/brand/yst-lockup-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="docs/brand/yst-lockup-light.svg">
+      <img src="docs/brand/yst-lockup-light.svg" alt="YST" width="240" height="120">
+    </picture>
+  </a>
 </p>
 
-<h3 align="center">Run powerful AI on your own computer.</h3>
-<p align="center">Chat, code and work with images, locally.</p>
+# Gary
 
-<p align="center">
-  <a href="#models">Models</a> · <a href="#install"><b>Install</b></a> ·
-  <a href="#hardware">Hardware</a> · <a href="#tools">Tools</a> ·
-  <a href="#help">Help</a> · <a href="#support-strata">Support</a>
-</p>
+Gary is a fork of [Strata](https://github.com/Niko1221/Strata), made by YST for one job: serving very large
+mixture-of-experts models quickly, to many agents at once, from one machine of mixed AMD GPUs. Consumer RX 7900 XTX
+cards run the model, and older Instinct MI50s hold and compute the experts that do not fit on them. Strata does the hard,
+general work. Gary pushes in one direction, and several of its ideas come from other projects, credited below. Every
+result on this page is measured, and each links to the card that records it.
 
-<p align="center">
-  <a href="https://github.com/Niko1221/Strata/releases/latest"><img src="https://img.shields.io/github/v/release/Niko1221/Strata?label=download&color=0ab887" alt="Download Strata"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/Niko1221/Strata" alt="MIT license"></a>
-  <a href="https://github.com/sponsors/Niko1221"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?logo=githubsponsors&logoColor=fff" alt="Sponsor Strata on GitHub Sponsors"></a>
-  <a href="https://buymeacoffee.com/strataengine"><img src="https://img.shields.io/badge/Buy_me_a_coffee-FFDD00?logo=buymeacoffee&logoColor=000" alt="Support Strata on Buy Me a Coffee"></a>
-</p>
-
-<p align="center"><sub><b>English</b> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.pl.md">Polski</a></sub></p>
-
-**Free, open source, and yours to run.** Use Strata on your desktop or with your favorite coding tools. No account needed.
+Each model lives on its own branch with its own build instructions. This `main` branch holds only this page and links.
+[Upstream Strata's README](UPSTREAM-README.md) is kept unchanged.
 
 ## Models
 
-We recommend **ISTA-DASLab first**, then **Unsloth** and other providers, where a compatible model fits.
+| Model | Branch | Hardware tested | Headline result | Quick start | Weights |
+|---|---|---|---|---|---|
+| DeepSeek V4.1 Flash | [`dsv41-amd`](https://github.com/msw-yst/gary/tree/dsv41-amd/docs/dsv41) | 4× RX 7900 XTX + 4× Instinct MI50 | one user 8.45 ms a token (about 118 tok/s), 8 users 202.8 tok/s in all, output identical to the build before it | [Quick start](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/examples/dsv41-serve.sh) | [ISTA-DASLab, 2.25 bpw](https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF) |
+| Qwen3.8 Flash-Next | [`flashnext-amd`](https://github.com/msw-yst/gary/tree/flashnext-amd/docs/flashnext) | 2× RX 7900 XTX + 4× Instinct MI50 | 4 agents ≥ 40 tok/s each; 88 tok/s for one user | [Quick start](https://github.com/msw-yst/gary/tree/flashnext-amd/docs/flashnext#launch) | [Hugging Face](https://huggingface.co/yst-dev/Qwen3.8-Flash-Next-Q4_K-imatrix-GGUF) |
 
-<details>
-<summary><img src="docs/media/models/qwen.svg" width="22" alt="" align="middle"> &nbsp;<b>Qwen3.8-Flash-Next</b></summary>
+The two models were measured on different machines with different MI50 cards; each section gives its own hardware.
 
-| Provider | Choices |
-| --- | --- |
-| **ISTA-DASLab · recommended** | Q2\_0, IQ2\_XS, IQ3\_XXS, IQ3\_S. [Coder: IQ1\_M](docs/MODELS.md#coder) for coding. |
-| **Unsloth** | UD-IQ4\_XS, UD-Q4\_K\_XL, UD-Q5\_K\_XL, UD-Q6\_K\_XL, Q8\_0 |
-| **Gyro · agentionai** | [Gyro-S, Gyro-M](https://huggingface.co/agentionai/Qwen3.8-Flash-Next-Gyro-GGUF). Lower memory use but slower. |
-| **Other options** | [Swift 1.5](docs/MODELS.md#swift-15), [NVFP4](docs/NVFP4.md), [OrcaRouter](docs/ORCA.md) |
+## DeepSeek V4.1 Flash
 
-[Compare sizes, memory needs and compatibility](docs/MODELS.md).
+**What:** four RX 7900 XTX cards run the model in tensor parallel, while four Instinct MI50s hold and compute the
+experts the XTX cards can't fit, so DeepSeek V4.1 Flash serves several users from one machine.
 
-</details>
+**Headline results** (release 3 against the build before it; served, drafter on, same machine, same day):
 
-<details>
-<summary><img src="docs/media/models/qwen.svg" width="22" alt="" align="middle"> &nbsp;<b>Qwen3.6-35B-A3B</b></summary>
+- **Eight users: +12.5 % (202.8 tok/s in all); four users: +5.3 % (161.6 tok/s in all)**
+  ([SV-17](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/cards/SV-17.md)).
+- **One user, 2K context: 8.45 ms a token, about 118 tok/s; first token at 8K 6.73 → 5.89 s (−12.5 %)**
+  ([SV-17](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/cards/SV-17.md)).
+- **Exact:** output identical to the build before it, and no expert counted twice in 2.92 million picks
+  ([SV-17](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/cards/SV-17.md)). An earlier build summed some experts twice; the fix and what it cost are in
+  [HX-28](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/cards/HX-28.md).
+- **The MI50s matter most:** with one XTX, decode rises from 25.2 tok/s with the experts in host RAM to 51.7 tok/s with
+  four MI50s holding them ([GPU permutations](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/benchmarking-gpu-permutations.md)).
 
-**Unsloth:** UD-Q4_K_XL, UD-Q6_K_XL, Q8_0. These are the currently documented packs for this model.
+Timings use a private prompt set; ratios within a run compare like with like.
 
-[Model guide and compatibility](docs/QWEN36.md).
+**Hardware tested:** 4× RX 7900 XTX 24 GB + 4× Instinct MI50 32 GB, one 16-core EPYC (Zen 2), DDR4-2666; ROCm 7.14 on
+Linux ([hardware table](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/README.md#hardware-public-labels)).
 
-</details>
+**Quick start:** build with [`tools/dsv41/build.sh`](https://github.com/msw-yst/gary/blob/dsv41-amd/tools/dsv41/build.sh),
+serve with [`docs/examples/dsv41-serve.sh`](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/examples/dsv41-serve.sh);
+the switches and the recommended environment are in the
+[DeepSeek V4.1 README](https://github.com/msw-yst/gary/tree/dsv41-amd/docs/dsv41) on `dsv41-amd`, with the long
+write-up and one card per change alongside it.
 
-<details>
-<summary><img src="docs/media/models/deepseek.svg" width="22" alt="" align="middle"> &nbsp;<b>DeepSeekV4.1-Flash-1017</b></summary>
+**Weights:** [ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF](https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF),
+the 2.25 bpw IQ2_XS set (ISTA-DASLab's GSQ-RCO quantisation).
 
-In the **desktop app** and the **Terminal**. What does not fit in memory is read from your SSD, so it needs a lot of free
-disk space.
+**Status:** release 3, [`v0.2.9-dsv41.3`](https://github.com/msw-yst/gary/releases/tag/v0.2.9-dsv41.3). The next release
+is pending its gate. Every result, decision and dead end has a card:
+[cards index](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/README.md#card-index).
 
-| Set (ISTA-DAS) | Download | Free disk needed |
-| --- | ---: | ---: |
-| 1.75 bpw | 239 GB | about 245 GB |
-| 2.00 bpw | 257 GB | about 265 GB |
-| 2.25 bpw | 274 GB | about 280 GB |
-| ISTA-DAS Coder (half of the experts removed) | 191 GB | about 197 GB |
+## Qwen3.8 Flash-Next
 
-Runs on NVIDIA RTX 30, 40 and 50 series (Windows and Linux), AMD Radeon AI PRO R9700 (Linux), AMD Ryzen AI Max — Strix Halo
-(Windows), and Apple Silicon Macs with 64 GB or more ([Mac](docs/DEEPSEEK_MAC.md)). Setup downloads the files and the DeepSeek engine, then starts the model.
+**What:** two RX 7900 XTX workers share one pool of the model's 24,576 experts held on four Instinct MI50s, so the
+whole 4-bit model lives in GPU memory on one machine and serves several coding agents at once.
 
-```sh
-strata launch --family deepseek41 --model ist-das-2.00bpw --plan
-```
+**Headline results** (calibrated Q4_K, temperature 0):
 
-Measured with the 2.00 bpw set on Strata 0.2.5 (Strix Halo: 0.2.7). Output is the speed of the answer, prompt is how fast Strata reads your input.
+- **One user: 88–89 tok/s; four users: 54 tok/s each** with adaptive MTP on the shared pool
+  ([NX-20](https://github.com/msw-yst/gary/blob/flashnext-amd/docs/flashnext/cards/NX-20.md)).
+- **The shared pool against two separate servers on the same cards:** 1.11× per agent at 4 users, 1.18× at 8 and 1.27× at
+  16, using 124 GiB of host RAM against 190 GiB
+  ([NX-14](https://github.com/msw-yst/gary/blob/flashnext-amd/docs/flashnext/cards/NX-14.md)).
+- **Agents at 40 tok/s or more each:** 4 on a steady load (slowest 50 tok/s); 2 on agent turns with 13–32k-token contexts
+  (slowest 76 tok/s, warm first-token p95 6.1 s)
+  ([NX-22](https://github.com/msw-yst/gary/blob/flashnext-amd/docs/flashnext/cards/NX-22.md)).
+- **Reproducible runs:** with the reproducible-run switches, two identical 16-agent runs gave identical text on 96 of 96
+  turns ([NX-24](https://github.com/msw-yst/gary/blob/flashnext-amd/docs/flashnext/cards/NX-24.md)); without them, see the
+  exactness caveat in the Flash-Next README.
 
-| Hardware | Output | Prompt |
-| --- | ---: | ---: |
-| RTX 5070 12 GB, 64 GB RAM | 4 to 6 tokens/s | about 110 tokens/s (4K) |
-| RTX 3060 12 GB, 46 GB RAM | 9 to 11 tokens/s | about 155 tokens/s (4K) |
-| 1x Radeon AI PRO R9700, 251 GB RAM | 21 to 25 tokens/s | 320 to 360 tokens/s (8K) |
-| 4x Radeon AI PRO R9700 | 74 to 77 tokens/s | 400 to 450 tokens/s (8K) |
-| Ryzen AI Max+ 395 (Strix Halo), 128 GB unified | 19 to 21 tokens/s (code), 11 (chat) | 87 tokens/s (4K), 125 tokens/s (8K) |
+**Hardware tested:** 2× RX 7900 XTX 24 GB + 4× Instinct MI50 16 GB, one EPYC 7642, 256 GB DDR4; ROCm 7.2.
 
-[Memory, disk and details](docs/DEEPSEEK41.md) · [Release notes](https://github.com/Niko1221/Strata/releases)
+**Quick start:** build, launch commands for all three layouts, host setup and the full settings table are in the
+[Flash-Next README](https://github.com/msw-yst/gary/tree/flashnext-amd/docs/flashnext) on `flashnext-amd`; the journey and
+one card per change sit alongside it.
 
-</details>
+**Weights:** [yst-dev/Qwen3.8-Flash-Next-Q4_K-imatrix-GGUF](https://huggingface.co/yst-dev/Qwen3.8-Flash-Next-Q4_K-imatrix-GGUF)
+(our calibrated Q4_K; how it scores against Q8_0 is in QUANT.md).
 
-<a id="the-other-sizes"></a>
+**Status:** pre-release. Next: MI50s helping with prompt reading (in development; no results claimed).
 
-Not sure what fits? [Choose a model for your computer](docs/MODELS.md#pick-by-memory).
+## How we measure
 
-## Install
+Each change goes in behind a switch and gets a card: what and why, the prediction written down before the run,
+correctness, timing and a verdict. Exact changes must give byte-identical output to the build before them. Changes that
+are not exact must pass a stated quality bar. Every number is labelled MEASURED, REPORTED or INFERRED, and we publish dead
+ends too. All results are for our machine, these models and these quantisations, and may not transfer to yours. The
+cards are in the [DeepSeek cards index](https://github.com/msw-yst/gary/blob/dsv41-amd/docs/dsv41/README.md) and the
+[Flash-Next README](https://github.com/msw-yst/gary/tree/flashnext-amd/docs/flashnext).
 
-<a id="option-a-the-strata-app"></a>
+## Credits and licence
 
-### Desktop app
+Gary is a fork of **[Strata](https://github.com/Niko1221/Strata)** by **Niko1221 and the Strata contributors** (MIT).
+The DeepSeek branch is based on upstream tag `v0.2.9`. Ideas and code also come from:
 
-**[Download Strata for Windows, Linux or Mac →](https://github.com/Niko1221/Strata/releases/latest)**
+- **[Project Maya](https://github.com/mw00/project-maya)** (MIT, Peasant Smith (mw00) and contributors; itself built on
+  Strata): several decode fusions, correctness fixes, the batched attention launch and the uneven expert split are ported
+  from it. The individual pull-request authors (pepuscz, tctiger, mrsirg97) are credited in NOTICE.md and in the source
+  files.
+- **[llama.cpp / ggml](https://github.com/ggml-org/llama.cpp)** (MIT, the ggml authors): the reference engine we measure
+  against.
+- **[castagna-veloce](https://github.com/benpeterson40/castagna-veloce)** (MIT, a llama.cpp fork by benpeterson40): its
+  gfx906 MoE kernels, including the fused expert kernel idea, are our MI50 benchmark reference.
+- **[ISTA-DASLab](https://huggingface.co/ISTA-DASLab)**: their GSQ-RCO quantisation of DeepSeek V4.1 Flash (2.25 bpw
+  IQ2_XS) is the weights release 3 serves.
+- **DeepSeek's** official chat-encoding reference: our chat template is checked against it, token for token.
 
-Install the app, choose a model, and start chatting. There is one installer for each system. On first start the app
-downloads the engine for your graphics card. [Help with the installer](docs/INSTALL.md#the-app).
+Licence: MIT. Upstream's [LICENSE](LICENSE) and copyright line are unchanged. YST's changes carry "Copyright (c) 2026
+YST" under the same licence. The full record is in
+[NOTICE.md](https://github.com/msw-yst/gary/blob/dsv41-amd/NOTICE.md).
 
-<sub>Files: `Strata-0.2.13-windows-x64-setup.exe` · `Strata-0.2.13-linux-x86_64.AppImage` · `Strata-0.2.13-macos-arm64.dmg`</sub>
+Thanks to Niko1221 and the Strata contributors, whose engine all of this builds on, and to Peasant Smith (mw00) and the
+Project Maya contributors.
 
-<p align="center">
-  <img src="docs/media/app-chat.png" width="900" alt="Strata desktop app with a chat and live code preview side by side">
-  <br><sub>Chat, files and a live preview in one window.</sub>
-</p>
+## Status and contact
 
-<a id="option-b-the-terminal-one-line"></a>
-
-### Terminal app
-
-Prefer the terminal? Install Strata, then run **`strata launch`**.
-
-<details open>
-<summary><b>Install commands</b></summary>
-
-**Linux / Mac**
-
-```sh
-curl -fsSL --connect-timeout 15 --max-time 120 https://github.com/Niko1221/Strata/releases/latest/download/install.sh -o install.sh && sh install.sh
-```
-
-**Windows PowerShell**
-
-```powershell
-irm -TimeoutSec 120 https://github.com/Niko1221/Strata/releases/latest/download/install.ps1 | iex
-```
-
-On Windows, open a new terminal afterwards. Then:
-
-```sh
-strata launch
-```
-
-Follow the prompts to download and start a model. [Terminal guide](docs/TERMINAL_LAUNCH.md).
-
-</details>
-
-<p align="center">
-  <img src="docs/media/terminal-monitor.png" width="900" alt="Strata terminal app showing model activity, speed, memory and recent requests">
-  <br><sub>Watch your model and hardware while it runs.</sub>
-</p>
-
-<a id="build-from-source"></a>
-
-[Build from source](docs/SOURCE_INSTALL.md) · [Docker](docs/DOCKER.md) · [Full install guide](docs/INSTALL.md)
-
-<a id="what-you-need"></a>
-
-## Hardware
-
-| Supported hardware | Guide |
-| --- | --- |
-| **NVIDIA GeForce RTX 20 / 30 / 40 / 50 series** | [NVIDIA setup](docs/INSTALL.md#what-you-need) |
-| **AMD Radeon RX 7700 / 7800 / 7900, RX 9060 / 9070, AI PRO R9700** | [AMD setup](docs/AMD_HIP.md) |
-| **AMD Radeon RX 6800 / 6900 · experimental** | [RX 6000 setup](docs/AMD_HIP.md#rdna2-gfx1030) |
-| **Intel Arc · Linux** | [Intel setup](docs/INTEL_ARC.md) |
-| **Apple Silicon · M1 or newer** | [Mac setup](docs/MAC.md) |
-| **AMD Ryzen AI Max · Strix Halo** | [Strix Halo setup](docs/STRIX_HALO.md) |
-| **NVIDIA DGX Spark · Linux** | [DGX Spark setup](docs/DGX_SPARK_LINUX.md) |
-
-<a id="using-it"></a>
-
-## Tools
-
-**Claude Code · Codex CLI · OpenCode · oh-my-pi · pi.dev · Hermes Agent · OpenClaw**, and more through the OpenAI- and Anthropic-compatible APIs.
-
-Run **`strata connect`** to see setup instructions for your tool. [Connection guide](docs/TERMINAL_LAUNCH.md#connect-your-apps-strata-connect).
-
-<a id="guides"></a>
-<a id="how-fast-is-it"></a>
-<a id="how-does-it-work"></a>
-<a id="something-went-wrong"></a>
-
-## Help
-
-[All guides](docs) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Report a bug](https://github.com/Niko1221/Strata/issues/new/choose) ·
-[Benchmarks](docs/COMMUNITY_BENCHMARKS.md) · [How it works](docs/HOW_IT_WORKS.md) · [Contribute](CONTRIBUTING.md)
-
-## Support Strata
-
-**Help keep local AI open to everyone.** A GitHub sponsorship or a coffee helps fund development and testing on more hardware.
-
-<a href="https://github.com/sponsors/Niko1221"><img src="https://img.shields.io/badge/Sponsor_on_GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors: sponsor Strata" height="48"></a>
-<a href="https://buymeacoffee.com/strataengine"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee: support Strata" height="48"></a>
-
-### Loyal supporters
-
-Thank you to everyone who supports Strata.
-
-<!-- supporters:start (one line per public supporter, newest last; copy a line and change the GitHub name in all four places) -->
-<a href="https://github.com/ryan4yin"><img src="https://github.com/ryan4yin.png?size=96" width="48" height="48" alt="ryan4yin" title="ryan4yin"></a>
-<a href="https://github.com/themactep"><img src="https://github.com/themactep.png?size=96" width="48" height="48" alt="themactep" title="themactep"></a>
-<a href="https://github.com/macintog"><img src="https://github.com/macintog.png?size=96" width="48" height="48" alt="macintog" title="macintog"></a>
-<a href="https://github.com/bisonbet"><img src="https://github.com/bisonbet.png?size=96" width="48" height="48" alt="bisonbet" title="bisonbet"></a>
-<a href="https://github.com/vizv"><img src="https://github.com/vizv.png?size=96" width="48" height="48" alt="vizv" title="vizv"></a>
-<a href="https://github.com/kod88vn"><img src="https://github.com/kod88vn.png?size=96" width="48" height="48" alt="kod88vn" title="kod88vn"></a>
-<a href="https://github.com/seoulworker"><img src="https://github.com/seoulworker.png?size=96" width="48" height="48" alt="seoulworker" title="seoulworker"></a>
-<a href="https://github.com/jackyini"><img src="https://github.com/jackyini.png?size=96" width="48" height="48" alt="jackyini" title="jackyini"></a>
-<a href="https://github.com/router0mail"><img src="https://github.com/router0mail.png?size=96" width="48" height="48" alt="router0mail" title="router0mail"></a>
-<!-- supporters:end -->
-
-[MIT license](LICENSE) · [Credits and model licenses](docs/HOW_IT_WORKS.md#credits) · [Privacy](docs/SAFETY.md)
-
-<a id="option-c-let-your-ai-set-it-up"></a>
-
-<sub>For AI tools and automated readers: <a href="AGENTS.md">technical reference</a> · <a href="docs/AI_SETUP.md">setup instructions</a>.</sub>
-
-**Sponsorships, hardware partnerships or collaborations:** [niko.veit@outlook.com](mailto:niko.veit@outlook.com).
-
+Gary is a working fork, not a product and not a replacement for Strata. The DeepSeek branch has tagged releases, and
+Flash-Next is pre-release. Gary is maintained by YST (Your Systems Team Limited): https://yst.dev.
