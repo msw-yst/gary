@@ -337,6 +337,16 @@ try:
 except ValueError:
     ADMIT_SHORT_FIRST = 0
 ADMIT_MAX_WAIT_S = _timeout_env("STRATA_ADMIT_MAX_WAIT_S", 30.0) or 0.0
+# STRATA_PARALLEL_SLOTS_ONLY=1 (opt-in, docs/flashnext/cards/NX-24.md): with --batch every request is admitted into a batch slot
+# (BGEN) and decodes there to its end - never on the solo path, so never STOPped into a slot when another request
+# arrives, and never back to the solo path when left alone (implies STRATA_PARALLEL_SOLO=0).  Those two hand-offs land
+# where a STOP raced the decoding (1-3 tokens, or more, depending on when the other request came), and the engine's
+# state at the hand-off becomes a reuse source: a re-send that continues the reply (e.g. a client's thinking-budget wrap-up)
+# then re-reads it from a timing-dependent start, in other chunks, with other bits.  In a slot from the start, a reply
+# only ever continues from the end of its prompt's read or a checkpoint, the same in every run.  The output stream is
+# the same; a request alone decodes in a slot (batch-MTP drafts) instead of on the solo path.  Requests with pictures
+# on an engine whose slots hold text only still run alone (as without the switch).
+PARALLEL_SLOTS_ONLY = os.environ.get("STRATA_PARALLEL_SLOTS_ONLY") == "1"
 # STRATA_COALESCE_PREFILL=N (research, PAR-H; needs the engine's BCO / BCOK lines): a request that takes the control lines
 # for its admission also sends the prompts of up to N-1 requests still waiting for them (BCO <slot> <ids>, into free slots
 # it reserves for them); the engine reads all the prompts in ONE layer-major pass, so the experts a layer streams are
@@ -1171,6 +1181,9 @@ class StrataEngine:
         if asked and self.batch != asked:
             print(f"[strata] parallel requests: {asked} asked, the engine runs {self.batch or 'one at a time'} "
                   "(its log says why)", flush=True)
+        if self.batch and PARALLEL_SLOTS_ONLY:
+            print("[strata] STRATA_PARALLEL_SLOTS_ONLY=1: every request decodes in a batch slot, never on the solo path",
+                  flush=True)
         _bg = args[args.index("--batch-groups") + 1] if "--batch-groups" in args else "default"
         # no `--batch-groups` (the default on a layer split) or `auto`: the engine picks the groups and says so
         # (INFO batch_groups=G); a number is the group count asked for (1 = off)
@@ -1924,7 +1937,7 @@ class StrataEngine:
         """A request decoding in a slot that is alone now (no other slot busy, nobody waiting) goes back to the solo
         path with its MTP drafts: the engine continues it from the slot's sessions (its slot cache; INFO
         slot_cache=1).  STRATA_PARALLEL_SOLO=0 keeps it in the slot."""
-        if (embeddings or times >= self.SOLO_AGAIN_MAX or left < self.SOLO_AGAIN_MIN_LEFT or
+        if (embeddings or times >= self.SOLO_AGAIN_MAX or left < self.SOLO_AGAIN_MIN_LEFT or PARALLEL_SLOTS_ONLY or
                 not (self.info or {}).get("slot_cache") or os.environ.get("STRATA_PARALLEL_SOLO") == "0"):
             return False
         with self.slot_cv:
@@ -2013,7 +2026,7 @@ class StrataEngine:
                     if not ok:
                         return
                     alone = True
-                if (alone and left > 1) or solo_only:
+                if (alone and left > 1 and not PARALLEL_SLOTS_ONLY) or solo_only:
                     head = f"GENI {left}{keys} {embeddings}" if embeddings else f"GEN {left}{keys}"
                     self._last_done = None                  # (#879: this request's DONE decides below)
                     deadline = getattr(cancel, "_strata_queue_deadline", None)

@@ -144,6 +144,28 @@ class ParallelServiceYield(tp.FakeEngineCase):
         with self.svc.status_lock:
             self.assertEqual(len(self.svc.history), 2)
 
+    def test_slots_only_never_takes_the_solo_path(self):
+        """STRATA_PARALLEL_SLOTS_ONLY=1: a request alone is admitted into a slot (no GEN), one
+        left alone in a slot stays there, and the replies are the same."""
+        with mock.patch.object(tp.server, "PARALLEL_SLOTS_ONLY", True):
+            self.start(2, slot_cache=True)
+            alone = self.chat("alone LONGREPLY", max_tokens=200)
+            res = {}
+            long = threading.Thread(target=lambda: res.setdefault("long", self.chat("LONGREPLY please", max_tokens=200)))
+            long.start()
+            time.sleep(0.05)
+            short = self.chat("short", max_tokens=200)
+            long.join(30)
+        self.assertEqual(alone["choices"][0]["message"]["content"], "ok, " + "la " * 15 + "done.")
+        self.assertEqual(short["choices"][0]["message"]["content"], "ok, done.")
+        self.assertEqual(res["long"]["choices"][0]["message"]["content"], "ok, " + "la " * 15 + "done.")
+        kinds = [x.split()[0] for x in self.log.read_text().splitlines()]
+        self.assertEqual(kinds.count("BGEN"), 3, kinds)
+        self.assertNotIn("GEN", kinds)
+        self.assertFalse(any(self.engine.slot_busy))
+        with self.svc.status_lock:
+            self.assertEqual(len(self.svc.history), 3)
+
     def test_next_turn_goes_back_to_its_slot(self):
         self.start(2)
         a = "conversation A, first turn"
