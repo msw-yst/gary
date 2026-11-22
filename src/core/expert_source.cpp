@@ -5070,6 +5070,11 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
                     : (e >= 0 && e < d.n_expert && d.host_res != nullptr &&
                        d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e] >= 0) ? 0
                     : (e >= 0 && e < d.n_expert && d.peer != nullptr && d.peer->has(d.layers, e)) ? 2 : -1;
+            // STRATA_BATCH_LENT_GPU: no plan here (none, or a window wider than it), so a lent expert is the CPU's:
+            // counted with the plan's CPU fallbacks, the switch's log line shows it
+            if (kind[i] == -1 && d.lent != nullptr && e >= 0 && e < d.n_expert &&
+                d.lent[(size_t) d.layers * (size_t) d.n_expert + (size_t) e])
+                ++d.lent_cpu;
         }
     }
     if (d.peer != nullptr) {                 // multi-GPU: start the second GPU's share before the CPU's own work

@@ -15888,7 +15888,15 @@ int main(int argc, char** argv) {
             static const bool refill_parts = [] { const char* v = std::getenv("STRATA_REFILL_PARTS"); return v != nullptr && std::atoi(v) != 0; }();
             // STRATA_BATCH_LENT_GPU=1 (prefill cycle 2, opt-in): the residency entries a loan holds, for the pool's
             // verify-window plan (ExpertDrive::lent): a lent expert goes to the GPU's PCIe share instead of the CPU
-            static const bool lent_gpu_on = [] { const char* v = std::getenv("STRATA_BATCH_LENT_GPU"); return v != nullptr && v[0] == '1'; }();
+            // STRATA_BATCH_LENT_EXACT=1 (opt-in, implies STRATA_BATCH_LENT_GPU=1; docs/flashnext/cards/NX-23.md): a decoding slot never
+            // computes a lent expert on the CPU (the CPU rows are not the GPU's bits, so a slot's text would depend on
+            // whether its step landed during a read).  A loan whose every expert has a device alias in the pinned arena
+            // lets the windows run beside / between the read's chunks (the alias route: the hit kernel on the same
+            // bytes); a loan with any expert without one holds the windows until it is given back (lent_wait).
+            static const bool lent_exact = [] { const char* v = std::getenv("STRATA_BATCH_LENT_EXACT"); return v != nullptr && v[0] == '1'; }();
+            static const bool lent_gpu_on = [] { const char* v = std::getenv("STRATA_BATCH_LENT_GPU"); return v != nullptr && v[0] == '1'; }() ||
+                                            lent_exact;
+            static bool lent_wait = false;   // LENT_EXACT: the loan out now has an expert the GPU cannot reach: no window runs
             static std::vector<uint8_t> lent_mask;
             if (lent_gpu_on && lent_mask.size() != host_res.size()) {
                 lent_mask.assign(host_res.size(), 0);
@@ -15929,6 +15937,8 @@ int main(int argc, char** argv) {
 #endif
                 p.lent.clear();
                 p.lent_chunk = 0;
+                if (lent_wait && std::all_of(pf_parts.begin(), pf_parts.end(), [](const PfPart& q) { return q.lent.empty(); }))
+                    lent_wait = false;
                 return true;
             };
             auto refill_one = [&](PfPart& p, std::string& e) -> bool {
@@ -16043,6 +16053,26 @@ int main(int argc, char** argv) {
                 }
                 for (const PfPart& p : pf_parts)
                     if (p.first >= 0) seg_lend = std::max(seg_lend, p.lent_chunk);
+                if (lent_exact && any) {   // every lent expert must be reachable by the GPU, else the windows wait
+                    int64_t no_alias = 0, n_all = 0;
+                    for (const PfPart& p : pf_parts)
+                        for (const auto& [i, slot] : p.lent) {
+                            (void) slot;
+                            ++n_all;
+                            if (drive.d.src == nullptr || drive.d.src->device_alias(i / g.n_expert, i % g.n_expert) == nullptr)
+                                ++no_alias;
+                        }
+                    const bool was = lent_wait;
+                    lent_wait = no_alias > 0;
+                    static bool said_ok = false;
+                    if (lent_wait != was || (!lent_wait && !said_ok)) {
+                        said_ok = said_ok || !lent_wait;
+                        std::fprintf(stderr, "strata serve: STRATA_BATCH_LENT_EXACT: %lld of %lld lent experts have no device "
+                                             "alias: %s\n", (long long) no_alias, (long long) n_all,
+                                     lent_wait ? "the slots wait for the refill (no decoding during this read)"
+                                               : "the slots decode during reads, the lent experts on the GPU");
+                    }
+                }
                 if (any) res_upload();
                 if (trace) {
                     int64_t n_lent = 0;
@@ -16213,8 +16243,21 @@ int main(int argc, char** argv) {
                 auto run_conc = [&](int64_t q, int64_t r) -> bool {
                     conc_ran = false;
                     if (!conc1 || piped || !stages.empty() || o.batch <= 0 || (conc_mode == 1 && !o.no_prefill_borrow) ||
-                        !batch_on() || !req_imgs.empty() || kvg.on)
+                        !batch_on() || !req_imgs.empty() || kvg.on || lent_wait) {
+                        // (a decline is silent unless it is structural: once, with the reason - a layer split, the
+                        // pipelined groups, the elastic K/V or mode 1 with borrowing never read beside the slots)
+                        static bool said_off = false;
+                        if (conc1 && !said_off && (piped || !stages.empty() || kvg.on ||
+                                                   (conc_mode == 1 && !o.no_prefill_borrow))) {
+                            said_off = true;
+                            std::fprintf(stderr, "strata batch: STRATA_BATCH_CONCURRENT_READ=%d is off for this engine (%s)\n",
+                                         conc_mode, piped ? "pipelined slot groups: STRATA_PIPED_CONCURRENT is that path's form"
+                                                    : !stages.empty() ? "a layer split"
+                                                    : kvg.on ? "the elastic K/V cache"
+                                                             : "mode 1 needs --no-prefill-borrow");
+                        }
                         return run(q, r);
+                    }
                     conc_ran = conc_mode == 2;
                     std::atomic<bool> done{false};
                     bool read_ok = false;
@@ -16361,7 +16404,7 @@ int main(int argc, char** argv) {
                     const char* v = std::getenv("STRATA_PIPED_CONCURRENT_MIN");
                     return v != nullptr ? (int64_t) std::max(0LL, std::atoll(v)) : (int64_t) 0;
                 }();
-                if (piped && pr_conc && req_imgs.empty() && (b0 - a0) >= pr_conc_min) {   // (with no slot decoding it only watches for a BYIELD)
+                if (piped && pr_conc && req_imgs.empty() && (b0 - a0) >= pr_conc_min && !lent_wait) {   // (with no slot decoding it only watches for a BYIELD)
                     // the drafter's prompt pass captures its graphs and grows its records at first use, and the
                     // prompt path's pinned upload slots grow at their first larger upload: done here, with nothing in
                     // flight (on the reader's thread a capture, an allocation or a free takes the driver's lock and
@@ -16640,7 +16683,7 @@ int main(int argc, char** argv) {
                     const double since =
                         pr_have_prev ? std::chrono::duration<double, std::milli>(Clock::now() - pr_prev_end).count()
                                      : -1.0;
-                    if (strata::program::piped_read_lead_in(true, batch_on(), since, lead)) {
+                    if (strata::program::piped_read_lead_in(true, batch_on() && !lent_wait, since, lead)) {
                         const int64_t rows0 = pipe_rows;
                         const auto tl = Clock::now();
                         if (!piped_decode(lead, e)) return false;
@@ -16680,7 +16723,7 @@ int main(int argc, char** argv) {
                     // (on the pipelined path a piece's end has the pipeline drained - nothing runs during a piece and
                     // every decode budget ends in pipe_drain - so the part read can give way there as off the pipeline)
                     if (pr_on) {   // the pipelined pieces: the slots decode through the pipeline, then it is drained
-                        if (!batch_on()) {
+                        if (!batch_on() || lent_wait) {
                             std::fprintf(stderr, "strata batch: piped read %lld tokens in %.0f ms (to %lld of %lld)\n",
                                          (long long) piece_tokens, piece_ms, (long long) q, (long long) n);
                             continue;
@@ -16696,7 +16739,7 @@ int main(int argc, char** argv) {
                                      std::chrono::duration<double, std::milli>(Clock::now() - td).count());
                         continue;
                     }
-                    if (decode_share <= 0.0 || !batch_on() || conc_ran) continue;
+                    if (decode_share <= 0.0 || !batch_on() || conc_ran || lent_wait) continue;
                     const double budget = decode_share * std::chrono::duration<double, std::milli>(Clock::now() - tq).count();
                     const auto td = Clock::now();
                     in_prompt_read = true;
