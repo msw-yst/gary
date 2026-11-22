@@ -191,7 +191,7 @@ had none (agent tasks, the drafter studies, the MI50 helper benches, serving und
 - **The 39 written-off changes re-read** against the measured stage budget: 4 explained, 6 too small to see, 6 still open,
   23 not covered, each mapped to its card ([ME-17](cards/ME-17.md)).
 - **Addenda (dated 22 Nov)** correct or update AR-12, HX-38, SV-20, PF-17, PF-21, FG-23, FG-24, FG-25, FG-26 and TP-11.
-  PF-21's cut-off of 256 is disputed: r2a was gated with the default 512.
+  PF-21's cut-off: 256 was approved, r2a was gated at the default 512; a re-measure is pending.
 
 ## Benchmarking GPU permutations
 
