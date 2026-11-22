@@ -28,7 +28,7 @@ Server: one XTX with two MI50 helper caches, MTP drafter on (`STRATA_BATCH_MTP=1
 - **`STRATA_BATCH_LENT_GPU=1`** (opt-in) makes decode beside a read exact in the test below (4 x 12k prompts at once == alone,
   16/16). Before it, a slot decoding while another prompt was read computed the read's borrowed experts on the CPU, which
   rounds differently, so its text depended on timing [MEASURED]. On the shared pool, where it had not been set, the same
-  mechanism made agent turns differ from run to run; `STRATA_BATCH_LENT_EXACT=1` (development branch) turns it on with a
+  mechanism made agent turns differ from run to run; `STRATA_BATCH_LENT_EXACT=1` turns it on with a
   guarantee and a counter ([NX-23](cards/NX-23.md)).
 
 ## How a prompt is read on one card

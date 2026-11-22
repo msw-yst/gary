@@ -38,9 +38,7 @@ helper build:
 - **Prompt reading**: tuned hipBLASLt rows for the experts' gate/up GEMM, a concurrent read mode.
 - **CPU pool**: a predicted wake between layers instead of spinning.
 
-Every new path is opt-in unless a card or the [Settings](#settings) table says it is the default. The hugetlb arena, the
-lent-expert guarantee, adaptive MTP and the reproducible-run mode were measured on our development branch and are not yet in
-this tree (marked † in [Settings](#settings)).
+Every new path is opt-in unless a card or the [Settings](#settings) table says it is the default.
 
 ## Hardware
 
@@ -216,8 +214,8 @@ once as a layout-1 server with `auto` caches and note the XTX expert count each 
 on both workers, give each MI50 cache a count that fits its card, and confirm `CPU path 0` at start (the hot prefix plus the
 four MI50 caches must cover all 24,576 experts).
 
-**Layout 3, best-known configuration for agents** (what [NX-22](cards/NX-22.md) measured; it needs the switches marked † in
-[Settings](#settings), which are not yet in this tree). Changes against the command above:
+**Layout 3, best-known configuration for agents** (what [NX-22](cards/NX-22.md) measured). Changes against the command
+above:
 
 - the [host setup](#host-setup) above (huge pages, completion timeout, MI50 pin, link check);
 - the arena on hugetlbfs: mount the hugetlbfs folder into the pod instead of `/dev/shm` and point `shared-expert-arena=` at a
@@ -232,9 +230,6 @@ For reproducible runs (A/Bs, regression gates) add `STRATA_REUSE_CKPT_ONLY=1` to
 `STRATA_PARALLEL_SLOTS_ONLY=1` ([NX-24](cards/NX-24.md)); it costs ~5 % of steady multi-user decode.
 
 ## Settings
-
-Switches marked † were measured on our development branch and their code is not yet in this tree; until it is, setting them
-here does nothing.
 
 | Switch | Default | Effect | Card |
 |---|---|---|---|
@@ -258,16 +253,16 @@ here does nothing.
 | `STRATA_POOL_VERIFY=N` | 16 | pool slots byte-checked per card on import | NX-14 |
 | `STRATA_POOL_WEIGHTS="<pci-bus-id>=<w>,..."`, `STRATA_POOL_COVER_B` (1.7) | unset | weighted pool placement (not used in the measured runs) | [SHARED-POOL.md](SHARED-POOL.md) |
 | `STRATA_NO_MTP=1` / `STRATA_BATCH_MTP=1` | - | MTP drafter off / drafter in batch windows | [NX-15](cards/NX-15.md) |
-| `STRATA_BATCH_MTP_ROWS=R` † | 8 | the MTP verify window holds up to R rows (2-16); not kept | [NX-17](cards/NX-17.md) |
-| `STRATA_BATCH_MTP_OFF_ABOVE=N` † | off | no MTP proposals in a window over more than N live slots (the drafters still catch up); not kept | NX-17 |
-| `STRATA_BATCH_MTP_ADAPT=N` † (`STRATA_BATCH_MTP_ADAPT_HEAL_DIV`, 8) | off; **we run 4** on the 8-slot pool | above N live slots no drafter work at all; the drafters' missing K/V rebuilt in one batched pass when N or fewer are live | [NX-20](cards/NX-20.md) |
-| `shared-expert-arena=<file on hugetlbfs>` † (`STRATA_SET`) | opt-in by path (a /dev/shm file takes the old code) | the shared host expert arena on 2 MiB huge pages; **our pool default** with `vm.nr_hugepages=35000` | [NX-19](cards/NX-19.md) |
+| `STRATA_BATCH_MTP_ROWS=R` | 8 | the MTP verify window holds up to R rows (2-16); not kept | [NX-17](cards/NX-17.md) |
+| `STRATA_BATCH_MTP_OFF_ABOVE=N` | off | no MTP proposals in a window over more than N live slots (the drafters still catch up); not kept | NX-17 |
+| `STRATA_BATCH_MTP_ADAPT=N` (`STRATA_BATCH_MTP_ADAPT_HEAL_DIV`, 8) | off; **we run 4** on the 8-slot pool | above N live slots no drafter work at all; the drafters' missing K/V rebuilt in one batched pass when N or fewer are live | [NX-20](cards/NX-20.md) |
+| `shared-expert-arena=<file on hugetlbfs>` (`STRATA_SET`) | opt-in by path (a /dev/shm file takes the old code) | the shared host expert arena on 2 MiB huge pages; **our pool default** with `vm.nr_hugepages=35000` | [NX-19](cards/NX-19.md) |
 | `power_dpm_force_performance_level` of each MI50 (sysfs) | driver `auto` | **we pin `high`** while serving | [NX-21](cards/NX-21.md) |
 | `prompt-cache`, `conversation-cache-mib`, `conversation-cache-slots` (`STRATA_SET`) | cache on; size from free RAM | **on for agents**; on the pool set 8192 MiB / 8 slots per worker | [NX-22](cards/NX-22.md) |
-| `STRATA_BATCH_LENT_EXACT=1` † | off; **recommended on the pool** | implies `STRATA_BATCH_LENT_GPU=1`; no lent expert is ever computed on the CPU (no window runs while one lacks a device alias), and the CPU's share is counted | [NX-23](cards/NX-23.md) |
+| `STRATA_BATCH_LENT_EXACT=1` | off; **recommended on the pool** | implies `STRATA_BATCH_LENT_GPU=1`; no lent expert is ever computed on the CPU (no window runs while one lacks a device alias), and the CPU's share is counted | [NX-23](cards/NX-23.md) |
 | `STRATA_BATCH_DECODE_SHARE=F` | 0.5 | share of a read's time the decoding slots get between its parts; `0` was a diagnostic | NX-23 |
-| `STRATA_REUSE_CKPT_ONLY=1` † | off | continue a conversation only from checkpoints, never from an idle slot's or a parked conversation's live end; reproducible runs only (with the next row) | [NX-24](cards/NX-24.md) |
-| `STRATA_PARALLEL_SLOTS_ONLY=1` † (server) | off | with `--batch`, every request decodes in a batch slot, never on the solo path; reproducible runs only (~5 % steady cost) | NX-24 |
+| `STRATA_REUSE_CKPT_ONLY=1` | off | continue a conversation only from checkpoints, never from an idle slot's or a parked conversation's live end; reproducible runs only (with the next row) | [NX-24](cards/NX-24.md) |
+| `STRATA_PARALLEL_SLOTS_ONLY=1` (server) | off | with `--batch`, every request decodes in a batch slot, never on the solo path; reproducible runs only (~5 % steady cost) | NX-24 |
 | `STRATA_PREFILL_POOL_HELP=1` | does not exist yet | planned MI50 prompt helper | [NX-25](cards/NX-25.md) |
 | `STRATA_TP_TIMING=1\|2\|3`, `STRATA_HELPER_TIMING=1` | off | timing builds (they change the graph; 1.10-1.21x slower) | [ANATOMY.md](ANATOMY.md) |
 
@@ -365,9 +360,6 @@ CPU path); the two pool workers do (8/8). Agent turns with long prompts under co
   and 3 have not been run as written, and the MMQ-on build sequence ([Build](#build)) has not been run from this tree.
 - **Pool vs baseline runtime**: controlled with MTP off (the runtime does not explain the gain, [Results](#results)); the MTP-on
   pool ratios have no same-runtime control.
-- **Code not yet in this tree**: the switches marked † in [Settings](#settings) (adaptive MTP, the hugetlbfs arena, exact lent
-  experts, the reproducible-run switches, the MTP window switches) and the Q4_K cases of `mmq_expert_bench` were measured on our
-  development branch; the best-known pool configuration needs them.
 - **Shared pool**: needs the ROCm 7.2.1 HSA runtime and one pod with shared network / PID / IPC namespaces; needs one shared host
   expert arena (on huge pages, [NX-19](cards/NX-19.md)); the exporter's death stops both workers. Placement tuning (slow-link
   MI50 weight +1.3 %, a hot set from agent traffic +0.3 %, per-worker hot sets -0.6 % per agent at 8 users) missed the 2 % bar

@@ -229,7 +229,7 @@ Switches:
 | `STRATA_POOL_VERIFY=N` | slots byte-checked per card on import (default 16) |
 | `STRATA_POOL_WEIGHTS="<pci-bus-id>=<w>,..."` | replaces the round-robin stripe with mass-weighted placement (cards not named get weight 1) |
 | `STRATA_POOL_COVER_B=<b>` | exponent of the coverage curve used for the routed mass in weighted placement (default 1.7) |
-| `--shared-expert-arena FILE` | backs the host expert arena with one shared file, so the second engine finds it "already filled by another engine". Needed in practice (section 8). A file on a hugetlbfs mount puts the arena on 2 MiB huge pages (development branch, not yet in this tree; section 10.2) |
+| `--shared-expert-arena FILE` | backs the host expert arena with one shared file, so the second engine finds it "already filled by another engine". Needed in practice (section 8). A file on a hugetlbfs mount puts the arena on 2 MiB huge pages (section 10.2) |
 
 Both workers set the same `--expert-cache` (the hot prefix) and the same MI50 cache size. Each startup prints
 `dp pool (exporter|importer): CUDA0 <n>, pool <n>, CPU path <n> of 24576`.
@@ -447,7 +447,7 @@ Open questions:
 
 Every test below was pre-registered (bars, abort lines and hypotheses written before the first measured cell) and run with the
 arms alternated in one session. Run data: [data/2026-11-22-dp-pool.md](data/2026-11-22-dp-pool.md). The switches new here are
-on our development branch and not yet in this tree ([README.md](README.md#settings), marked †).
+listed in [README.md](README.md#settings) (all opt-in).
 
 ### 10.1 MTP under load, and adaptive MTP
 
