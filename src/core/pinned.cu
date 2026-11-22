@@ -136,8 +136,8 @@ uint64_t free_huge_bytes() {
 
 // A 2 MB-aligned reservation.  Large pages first, then the largest alignment the OS will give us for free.
 // A non-empty shared_file instead maps one file whose first 4 KiB identify the pack and whose remaining bytes
-// are the resident arena.  This shared-file layout is intended for tmpfs (/dev/shm); hugetlbfs would need
-// hugepage-aligned file size and arena offset rather than the 4 KiB header layout used here.
+// are the resident arena.  On tmpfs (/dev/shm) the header is 4 KiB; on a hugetlbfs mount (opt-in by path) the header
+// is one huge page and the file is rounded up to whole huge pages (see the hugetlbfs branch below).
 void* reserve(uint64_t bytes, PageBacking& got, std::string& note, const std::string& shared_file,
               uint64_t shared_pack_hash, void*& mapping_base, uint64_t& mapping_bytes) {
     mapping_base = nullptr;
@@ -311,6 +311,109 @@ void* reserve(uint64_t bytes, PageBacking& got, std::string& note, const std::st
             note = "cannot stat shared arena " + shared_file + ": " + std::strerror(e);
             return nullptr;
         }
+
+#ifdef __linux__
+        // Opt-in by path: a file on a hugetlbfs mount (e.g. a 2 MiB-page mount passed into the pod).  hugetlb pages are
+        // never reclaimed, swapped or migrated by compaction, so the KFD userptr range the GPUs map over this arena is
+        // never invalidated by host memory management (docs/flashnext/cards/NX-19.md).  hugetlbfs has no write(): the header is
+        // written through the mapping; its size must be a multiple of the huge page, so the header takes one whole
+        // huge page (the arena then starts huge-page aligned) and the file is rounded up to whole pages.  A /dev/shm
+        // (tmpfs) path is handled below exactly as before.
+        {
+            struct statfs hsf{};
+            if (fstatfs(fd, &hsf) == 0 && (unsigned long) hsf.f_type == 0x958458f6ul /* HUGETLBFS_MAGIC */) {
+                const uint64_t hp = (uint64_t) hsf.f_bsize;
+                if (hp < kSharedArenaHeaderBytes || (hp & (hp - 1)) != 0 || bytes > UINT64_MAX - 2 * hp) {
+                    close(fd);
+                    note = "shared arena " + shared_file + ": unexpected hugetlbfs page size " + std::to_string((unsigned long long) hp);
+                    return nullptr;
+                }
+                const uint64_t hfile = (hp + bytes + hp - 1) / hp * hp;
+                if (st.st_size != 0 && (uint64_t) st.st_size != hfile) {
+                    close(fd);
+                    note = "shared arena " + shared_file + " is " + std::to_string((unsigned long long) st.st_size) +
+                           " B, expected " + std::to_string((unsigned long long) hfile) + " B (hugetlbfs layout, " +
+                           std::to_string((unsigned long long) (hp >> 10)) + " KiB header)";
+                    return nullptr;
+                }
+                if (st.st_size == 0 && ftruncate(fd, (off_t) hfile) != 0) {
+                    const int e = errno;
+                    close(fd);
+                    note = "cannot size shared arena " + shared_file + " on hugetlbfs: " + std::strerror(e);
+                    return nullptr;
+                }
+                // take every huge page now: a short pool is a plain error at start (with the numbers), not a SIGBUS
+                // part-way through the load.  Pages another engine already took cost nothing.
+                if (fallocate(fd, 0, 0, (off_t) hfile) != 0) {
+                    const int e = errno;
+                    close(fd);
+                    unsigned long long tot = 0, fre = 0;
+                    if (std::FILE* f = std::fopen("/proc/meminfo", "r")) {
+                        char line[256];
+                        while (std::fgets(line, sizeof line, f) != nullptr) {
+                            std::sscanf(line, "HugePages_Total: %llu", &tot);
+                            std::sscanf(line, "HugePages_Free: %llu", &fre);
+                        }
+                        std::fclose(f);
+                    }
+                    note = "huge-page pool short for the shared arena " + shared_file + " (" +
+                           std::to_string((unsigned long long) (hfile / hp)) + " pages of " +
+                           std::to_string((unsigned long long) (hp >> 10)) + " KiB; HugePages_Total " + std::to_string(tot) +
+                           ", HugePages_Free " + std::to_string(fre) + "): " + std::strerror(e);
+                    return nullptr;
+                }
+                void* map = mmap(nullptr, (size_t) hfile, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+                const int me = errno;
+                close(fd);
+                if (map == MAP_FAILED) {
+                    note = "cannot map shared arena " + shared_file + " (hugetlbfs): " + std::strerror(me);
+                    return nullptr;
+                }
+                auto* hdr = static_cast<SharedArenaHeader*>(map);
+                auto* magic = reinterpret_cast<volatile char*>(hdr->magic);
+                auto no_magic = [&] { return magic[0] == 0 && magic[1] == 0; };
+                if (no_magic()) {
+                    // a fresh file (all zero) or one whose creator is writing the header right now: wait up to 10 s,
+                    // then write it as the creator would (the same bytes; every engine fills the arena itself)
+                    for (int w = 0; w < 100 && no_magic() && st.st_size != 0; ++w) usleep(100 * 1000);
+                    if (no_magic()) {
+                        SharedArenaHeader fresh{};
+                        std::memcpy(fresh.magic, kSharedArenaMagic, sizeof fresh.magic);
+                        fresh.version = 1;
+                        fresh.header_bytes = (uint32_t) hp;
+                        fresh.arena_bytes = bytes;
+                        fresh.pack_hash = shared_pack_hash;
+                        // fields after the magic first, the magic last (as the Windows section does)
+                        std::memcpy(reinterpret_cast<char*>(hdr) + sizeof fresh.magic,
+                                    reinterpret_cast<char*>(&fresh) + sizeof fresh.magic, sizeof fresh - sizeof fresh.magic);
+                        std::atomic_thread_fence(std::memory_order_seq_cst);
+                        std::memcpy(hdr->magic, fresh.magic, sizeof fresh.magic);
+                    }
+                }
+                std::atomic_thread_fence(std::memory_order_seq_cst);
+                if (std::memcmp(hdr->magic, kSharedArenaMagic, sizeof hdr->magic) != 0 || hdr->version != 1 ||
+                    hdr->header_bytes != (uint32_t) hp || hdr->arena_bytes != bytes) {
+                    munmap(map, (size_t) hfile);
+                    note = "shared arena " + shared_file + " has an incompatible or missing header (hugetlbfs layout)";
+                    return nullptr;
+                }
+                if (hdr->pack_hash != shared_pack_hash) {
+                    char b[256];
+                    std::snprintf(b, sizeof b, "shared arena %s was written for pack hash %016llx, expected %016llx",
+                                  shared_file.c_str(), (unsigned long long) hdr->pack_hash, (unsigned long long) shared_pack_hash);
+                    munmap(map, (size_t) hfile);
+                    note = b;
+                    return nullptr;
+                }
+                mapping_base = map;
+                mapping_bytes = hfile;
+                got = PageBacking::LargePages;   // resident, never paged out: nothing to lock (#779)
+                note = "MAP_SHARED hugetlbfs file " + shared_file + " (" + std::to_string((unsigned long long) (hp >> 10)) +
+                       " KiB pages, " + std::to_string((unsigned long long) (hfile / hp)) + " pages, pack hash checked)";
+                return (uint8_t*) map + hp;
+            }
+        }
+#endif
 
         const bool fresh = st.st_size == 0;
         if (fresh) {
