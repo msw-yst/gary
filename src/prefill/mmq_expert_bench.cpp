@@ -4,7 +4,9 @@
 //
 // One MMQ group as the prompt path launches it: 16 experts, R rows each, in one activation array in expert order.
 // gate/up [1280 x 2560] and down [2560 x 640] in NVFP4, down in Q8_0 (the GPTQ + Q8_0-down pack's 27 layers), and
-// UD-IQ4_XS's IQ3_S gate/up and IQ4_NL down for comparison.
+// UD-IQ4_XS's IQ3_S gate/up and IQ4_NL down for comparison; Q4_K gate/up and down (the calibrated Q4_K pack's gate/up
+// format, docs/flashnext/QUANT.md; its down is Q5_0, whose MMQ instance needs STRATA_ORCA_Q4KS_MMQ, so Q4_K and Q8_0 bracket it).
+// STRATA_BENCH_ONLY=<substring>: only the cases whose name contains it (e.g. "q4_k" on a HIP build without NVFP4).
 // Synthetic weights of the right format (valid scales), random activations of row-varying magnitude.  Per product:
 // the median of 25 runs, and the rate in int8-equivalent TOPS (2 x rows x out x in).  Default R: 12 (a 600-token
 // chunk: 600 x 10 / 512), 160 (8K), 626 (32K).
@@ -39,7 +41,11 @@ std::vector<uint8_t> weights(ggml_type t, int64_t rows, int64_t cols, int expert
     const size_t bs = ggml_type_size(t), nblk = (size_t) experts * per / bs;
     for (size_t i = 0; i < nblk; ++i) {
         uint8_t* blk = w.data() + i * bs;
-        if (t != GGML_TYPE_NVFP4) {                                   // Q8_0, IQ3_S, IQ4_NL: an f16 d leads the block
+        if (t == GGML_TYPE_Q4_K) {                                    // Q4_K: f16 d and f16 dmin lead the block
+            const uint16_t d = 0x2000 + (uint16_t) byte(rng), dm = 0x1c00 + (uint16_t) byte(rng);
+            std::memcpy(blk, &d, 2);
+            std::memcpy(blk + 2, &dm, 2);
+        } else if (t != GGML_TYPE_NVFP4) {                            // Q8_0, IQ3_S, IQ4_NL: an f16 d leads the block
             const uint16_t d = 0x2000 + (uint16_t) byte(rng);         // f16 ~ 0.0078..0.016
             std::memcpy(blk, &d, 2);
         } else {                                                      // NVFP4: the scales lead the block
@@ -116,10 +122,14 @@ int main(int argc, char** argv) {
                           {"nvfp4 down", GGML_TYPE_NVFP4, 2560, 640},
                           {"q8_0 down", GGML_TYPE_Q8_0, 2560, 640},
                           {"iq3_s gate/up", GGML_TYPE_IQ3_S, 1280, 2560},
-                          {"iq4_nl down", GGML_TYPE_IQ4_NL, 2560, 640}};
+                          {"iq4_nl down", GGML_TYPE_IQ4_NL, 2560, 640},
+                          {"q4_k gate/up", GGML_TYPE_Q4_K, 1280, 2560},
+                          {"q4_k down", GGML_TYPE_Q4_K, 2560, 640}};
+    const char* only = std::getenv("STRATA_BENCH_ONLY");
     std::mt19937 rng(7);
     for (int R : Rs)
         for (const Case& c : cases) {
+            if (only != nullptr && std::strstr(c.name, only) == nullptr) continue;
             float ms = 0;
             const double tops = run_case(c, R, rng, &ms);
             std::printf("  R %4d  %-14s %8.3f ms  %7.1f TOPS\n", R, c.name, ms, tops);
