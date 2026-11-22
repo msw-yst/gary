@@ -127,8 +127,8 @@ Licence: MIT. Upstream's [LICENSE](LICENSE) and copyright line are unchanged. YS
 YST" under the same licence. The full record is in
 [NOTICE.md](https://github.com/msw-yst/gary/blob/dsv41-amd/NOTICE.md).
 
-Thanks to Niko1221 and the Strata contributors, whose engine all of this builds on, and to Peasant Smith (mw00) and the
-Project Maya contributors.
+Thanks to Niko1221 and the Strata contributors, whose engine all of this builds on; to Peasant Smith (mw00) and the
+Project Maya contributors; and to the MI50 Discord community.
 
 ## Status and contact
 
