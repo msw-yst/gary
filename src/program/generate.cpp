@@ -6272,6 +6272,27 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "strata generate: --batch-mtp: no proposals in windows over more than %d live slots "
                              "(STRATA_BATCH_MTP_OFF_ABOVE)\n", batch_mtp_off_above);
     }
+    // STRATA_BATCH_MTP_ADAPT=N (opt-in, docs/flashnext/cards/NX-20.md): as STRATA_BATCH_MTP_OFF_ABOVE=N, but a window over more
+    // than N live slots does NO drafter work at all (no catch-up draft(1)): each slot's final residual row and the token
+    // it picked are kept on the host instead (one device->host copy a window), so the slot's draft K/V has a hole from
+    // there.  Once N or fewer slots are live, a slot fills its hole with the drafter's batched prompt pass (prefill) over
+    // the kept rows and drafts again - only if the rest of its request is at least hole / STRATA_BATCH_MTP_ADAPT_HEAL_DIV
+    // tokens (default 8): otherwise it stays at one row a window (no proposals) until its request ends, the others draft.
+    // A kept hole is also filled before the slot's state is parked or continued (conversation cache), so no draft K/V
+    // with a hole leaves the slot.  Drafts never change the output (the verify window picks every token).
+    // Takes precedence over STRATA_BATCH_MTP_OFF_ABOVE.  0 / unset: off (the windows as before).
+    int batch_mtp_adapt = 0, batch_mtp_heal_div = 8;
+    if (const char* e = std::getenv("STRATA_BATCH_MTP_ADAPT"); batch_mtp && !piped_mtp && e != nullptr && e[0] != '\0') {
+        batch_mtp_adapt = std::max(0, std::atoi(e));
+        if (const char* d = std::getenv("STRATA_BATCH_MTP_ADAPT_HEAL_DIV"); d != nullptr && d[0] != '\0')
+            batch_mtp_heal_div = std::max(1, std::atoi(d));
+        if (batch_mtp_adapt > 0) {
+            batch_mtp_off_above = batch_mtp_adapt;   // (the windows' size: one row a slot above N, as OFF_ABOVE)
+            std::fprintf(stderr, "strata generate: --batch-mtp adaptive: no drafter work in windows over more than %d live "
+                                 "slots; holes refilled by a batched pass when %d or fewer are live (heal if the rest >= "
+                                 "hole / %d) (STRATA_BATCH_MTP_ADAPT)\n", batch_mtp_adapt, batch_mtp_adapt, batch_mtp_heal_div);
+        }
+    }
     auto batch_max_t = [&]() -> int {
         // (--batch-mtp and STRATA_PIPED_MTP draft with the draft layer's kernels, built for the narrow window: their windows
         // stay at most kVerifyNarrowT rows; only the plain batch windows are wide.  STRATA_BATCH_MTP_ROWS widens
@@ -13187,8 +13208,60 @@ int main(int argc, char** argv) {
             // that state (a checkpoint, a parked conversation), so it is not kept as a cache when it ends
             bool tainted = false;
             ConvCheckpoint::PromptPlan partial_plan;   ///< --prefill-pipe: the segment it stopped in, read on in its chunks
+            bool mtp_skip = false;   ///< STRATA_BATCH_MTP_ADAPT: its hole was not worth filling: one row a window to its end
         };
         std::vector<BSlot> bs((size_t) std::max(o.batch, 0));
+        // STRATA_BATCH_MTP_ADAPT: each slot's draft K/V hole - the cells [cell0, cell0 + n) its drafter skipped, with the
+        // window's final residual row (hc*n_embd floats) and the token picked after it for each (= what draft()'s catch-up
+        // would have read).  Host memory; filled by mtp_heal() with the drafter's prompt pass.
+        struct MtpHole { int64_t cell0 = -1; std::vector<float> R; std::vector<int32_t> tok; int64_t n() const { return (int64_t) tok.size(); }
+                         void clear() { cell0 = -1; R.clear(); tok.clear(); } };
+        std::vector<MtpHole> mtp_holes(batch_mtp_adapt > 0 ? bs.size() : 0);
+        float* mtp_heal_dev = nullptr;   // device staging for the heal pass (kHealRows rows), on the drafters' device
+        float* mtp_hole_pin = nullptr;   // pinned host staging for one window's rows (kVerifyMaxT rows)
+        constexpr int64_t kHealRows = 64, kHoleCap = 4096;   // rows per heal upload; a hole is filled at once beyond kHoleCap
+        int64_t ad_heals = 0, ad_heal_cells = 0, ad_declined = 0, ad_flushes = 0, ad_off_windows = 0;
+        double ad_heal_ms = 0, ad_save_ms = 0;
+        if (batch_mtp_adapt > 0) {
+            const strata::core::OnDevice on_m(mtp.device());
+            const size_t row_b = (size_t) g.hc * (size_t) g.n_embd * sizeof(float);
+            if (cudaMalloc((void**) &mtp_heal_dev, (size_t) kHealRows * row_b) != cudaSuccess ||
+                cudaMallocHost((void**) &mtp_hole_pin, (size_t) strata::kernels::kVerifyMaxT * row_b) != cudaSuccess) {
+                std::fprintf(stderr, "strata serve: STRATA_BATCH_MTP_ADAPT: the heal buffers do not fit%s\n", vram_free_note().c_str());
+                return 1;
+            }
+        }
+        struct MtpHealBufs { float *d, *h; ~MtpHealBufs() { if (d) (void) cudaFree(d); if (h) (void) cudaFreeHost(h); } } mtp_heal_bufs{mtp_heal_dev, mtp_hole_pin};
+        // Fill slot b's hole: the drafter's prompt pass over its kept cells (all of them, or all but the last with
+        // `and_draft`, whose cell then goes through draft(1): the catch-up and the slot's next proposal).
+        auto mtp_heal = [&](int b, bool and_draft, std::string& e) -> bool {
+            if (mtp_holes.empty()) return true;
+            MtpHole& h = mtp_holes[(size_t) b];
+            if (h.n() == 0) return true;
+            const Clock::time_point th = Clock::now();
+            strata::core::MtpDrafter& d = *slot_mtp[(size_t) b];
+            const strata::core::OnDevice on_m(d.device());
+            const int64_t HCN = g.hc * g.n_embd, n_pre = and_draft ? h.n() - 1 : h.n();
+            if (!d.idle(e)) return false;
+            for (int64_t c = 0; c < n_pre; c += kHealRows) {
+                const int64_t k = std::min<int64_t>(kHealRows, n_pre - c);
+                if (cudaMemcpy(mtp_heal_dev, h.R.data() + (size_t) (c * HCN), (size_t) (k * HCN) * sizeof(float),
+                               cudaMemcpyHostToDevice) != cudaSuccess) { e = "batch MTP heal: upload failed"; return false; }
+                if (!d.prefill(mtp_heal_dev, h.tok.data() + c, k, h.cell0 + c, e, true)) return false;
+            }
+            if (and_draft) {
+                BSlot& sl = bs[(size_t) b];
+                if (cudaMemcpy(slot_mtp_rows[(size_t) b].get(), h.R.data() + (size_t) (n_pre * HCN), (size_t) HCN * sizeof(float),
+                               cudaMemcpyHostToDevice) != cudaSuccess) { e = "batch MTP heal: upload failed"; return false; }
+                if (!d.draft(1, h.tok.data() + n_pre, h.cell0 + n_pre, 0, sl.draft.data(), e)) return false;
+                sl.draft_ready = true;
+            }
+            ++ad_heals;
+            ad_heal_cells += h.n();
+            ad_heal_ms += std::chrono::duration<double, std::milli>(Clock::now() - th).count();
+            h.clear();
+            return true;
+        };
         // timing of the batch windows since the slots were last all idle (one stderr line then)
         double bt_run = 0, bt_commit = 0, bt_emit = 0;
         double bt_wait0 = 0, bt_pool0 = 0;
@@ -13357,6 +13430,7 @@ int main(int argc, char** argv) {
                     cudaDeviceSynchronize() != cudaSuccess)
                     return false;
                 slot_mtp[(size_t) b]->set_prompt_len(upto);
+                if (!mtp_holes.empty()) mtp_holes[(size_t) b].clear();   // (its draft K/V is the new conversation's)
             }
             return true;
         };
@@ -13408,6 +13482,7 @@ int main(int argc, char** argv) {
                 // A returning solo request resumes from its slot's draft KV (on the drafter's device, as above).
                 const strata::core::OnDevice on_mtp(mtp.device());
                 strata::core::ConversationKv image;
+                if (!mtp_heal(b, false, e)) return false;   // STRATA_BATCH_MTP_ADAPT: no hole leaves the slot
                 if (!slot_mtp[(size_t) b]->idle(e) || !mtp.idle(e) ||
                     !strata::core::conversation_kv_save(image, slot_mtp[(size_t) b]->kv_state(),
                                                         draft_geometry, upto, false, e) ||
@@ -13456,6 +13531,11 @@ int main(int argc, char** argv) {
                 return;
             }
             std::string why;
+            if (batch_mtp && !mtp_heal(b, false, why)) {   // STRATA_BATCH_MTP_ADAPT: no hole leaves the slot
+                std::fprintf(stderr, "strata serve: conversation cache: slot %d not parked before its overwrite (draft K/V "
+                                     "hole: %s)\n", b, why.c_str());
+                return;
+            }
             if (batch_mtp && !slot_mtp[(size_t) b]->idle(why)) {
                 std::fprintf(stderr, "strata serve: conversation cache: slot %d not parked before its overwrite (%s)\n",
                              b, why.c_str());
@@ -13496,18 +13576,44 @@ int main(int argc, char** argv) {
             int live = 0;
             for (const auto& sl0 : bs) live += sl0.active ? 1 : 0;
             const bool wdraft = batch_mtp && !(batch_mtp_off_above > 0 && live > batch_mtp_off_above);
+            const bool adaptive = batch_mtp_adapt > 0;
+            // STRATA_BATCH_MTP_ADAPT, N or fewer live: a slot back from windows without drafter work fills its hole
+            // first (or, when the rest of its request is too short for that to pay, stays at one row a window)
+            if (adaptive && wdraft) {
+                for (size_t b = 0; b < bs.size(); ++b) {
+                    BSlot& sl = bs[b];
+                    if (!sl.active || sl.draft_ready || sl.mtp_skip || mtp_holes[b].n() == 0) continue;
+                    if ((sl.max_new - sl.produced) * batch_mtp_heal_div < mtp_holes[b].n()) {
+                        sl.mtp_skip = true;
+                        ++ad_declined;
+                        continue;
+                    }
+                    if (!mtp_heal((int) b, true, err)) {
+                        std::printf("ERR batch MTP slot %zu: %s\n", b, err.c_str());
+                        return false;
+                    }
+                }
+            }
+            // rows a slot: two (its token and its proposal) in a drafting window, else one; with ADAPT, one for a slot
+            // without a proposal ready (it skipped its heal)
+            auto rows_of = [&](const BSlot& sl) { return wdraft && (!adaptive || sl.draft_ready) ? 2 : 1; };
+            int nrow[strata::kernels::kVerifyMaxT] = {};
             const int per = wdraft ? 2 : 1;
             const int win_cap = wdraft ? batch_mtp_rows : batch_mtp ? batch_max_t() : (int) strata::kernels::kVerifyMaxT;
-            for (size_t offset = 0; offset < bs.size() && S + per <= win_cap; ++offset) {
+            for (size_t offset = 0; offset < bs.size(); ++offset) {
                 const int b = (int) ((next_slot + offset) % bs.size());
+                // (the first active slot that does not fit ends the window: the same windows as `S + per <= win_cap`
+                // in the loop's condition, which an idle slot never changed)
+                if (bs[(size_t) b].active && S + (adaptive ? rows_of(bs[(size_t) b]) : per) > win_cap) break;
                 if (bs[(size_t) b].active) {
                     first[A] = S;
+                    nrow[A] = adaptive ? rows_of(bs[(size_t) b]) : per;
                     active[A++] = b;
                     rows[S] = b;
                     tok[S] = bs[(size_t) b].x;
                     pos[S] = bs[(size_t) b].p;
                     ++S;
-                    if (wdraft) {
+                    if (nrow[A - 1] == 2) {
                         rows[S] = b;
                         if (!bs[(size_t) b].draft_ready) {
                             err = "batch MTP: a live slot has no draft";
@@ -13562,9 +13668,9 @@ int main(int argc, char** argv) {
                 for (int a = 0; a < A; ++a) hn = std::max(hn, bs[(size_t) active[a]].pen_n);
                 hn = std::min(hn, kPenaltyWindowCap);
                 if (hn > 0 && d_bhist != nullptr && S <= strata::kernels::kVerifyMaxT) {
-                    for (int a = 0; a < A; ++a) {   // (`per`: this window's rows a slot)
+                    for (int a = 0; a < A; ++a) {   // (`nrow[a]`: this window's rows of that slot)
                         const BSlot& sl = bs[(size_t) active[a]];
-                        strata::kernels::penalty_rows(sl.ids.data(), (int64_t) sl.ids.size(), tok + first[a], per, hn,
+                        strata::kernels::penalty_rows(sl.ids.data(), (int64_t) sl.ids.size(), tok + first[a], nrow[a], hn,
                                                       bhist_stage.data() + (size_t) first[a] * (size_t) hn);
                     }
                     const strata::core::OnDevice on_h(hist_dev);
@@ -13602,7 +13708,7 @@ int main(int argc, char** argv) {
                 const int b = active[a], i = first[a];
                 const BSlot& sl = bs[(size_t) b];
                 const bool eos = std::find(o.eos_ids.begin(), o.eos_ids.end(), (int64_t) outb[i]) != o.eos_ids.end();
-                keep[b] = wdraft && outb[i] == tok[i + 1] && !eos && !sl.stop &&
+                keep[b] = nrow[a] == 2 && outb[i] == tok[i + 1] && !eos && !sl.stop &&
                           sl.produced + 2 <= sl.max_new && sl.p + 3 <= o.max_context ? 2 : 1;
             }
             if (!(batch_mtp ? ver.commit_slot_prefixes(keep.data(), err) : ver.commit_slots(err))) {
@@ -13618,12 +13724,31 @@ int main(int argc, char** argv) {
                 bt_rows += keep[active[a]];
                 bt_accepted += keep[active[a]] - 1;
             }
-            if (wdraft) bt_offered += A; else if (batch_mtp) ++bt_noprop_windows;
+            if (wdraft) { for (int a = 0; a < A; ++a) bt_offered += nrow[a] == 2 ? 1 : 0; } else if (batch_mtp) ++bt_noprop_windows;
+            if (adaptive && !wdraft) ++ad_off_windows;
+            // STRATA_BATCH_MTP_ADAPT: the window's final residual rows to the host once, for the slots whose drafter
+            // skips this window (kept in their holes below)
+            bool ad_saved = false;
+            if (adaptive) {
+                bool any1 = false;
+                for (int a = 0; a < A; ++a) any1 = any1 || nrow[a] == 1;
+                if (any1) {
+                    const Clock::time_point ts = Clock::now();
+                    const strata::core::OnDevice on_m(mtp.device());
+                    if (cudaMemcpy(mtp_hole_pin, ver.final_R_all(), (size_t) S * (size_t) g.hc * (size_t) g.n_embd * sizeof(float),
+                                   cudaMemcpyDeviceToHost) != cudaSuccess) {
+                        std::printf("ERR batch MTP: the window's residual rows could not be kept\n");
+                        return false;
+                    }
+                    ad_saved = true;
+                    ad_save_ms += msd(ts, Clock::now());
+                }
+            }
             for (int t = 0; t < A; ++t) {
                 const int b = active[t];
                 BSlot& sl = bs[(size_t) b];
                 bool nf = false;   // #879: a row of this slot held non-finite logits: the slot ends, nothing emitted
-                for (int r = first[t]; r < first[t] + per; ++r) nf = nf || ver.nonfinite_in(r);
+                for (int r = first[t]; r < first[t] + nrow[t]; ++r) nf = nf || ver.nonfinite_in(r);
                 if (nf) {
                     std::fprintf(stderr, "strata batch: non-finite logits (#879) in slot %d at position %lld: it ends "
                                          "(BDONE nonfinite) and the next request reads its prompt from token 0\n", b,
@@ -13634,6 +13759,7 @@ int main(int argc, char** argv) {
                     sl.cached = false;
                     sl.checks.clear();
                     nan_flush = true;
+                    if (adaptive) mtp_holes[(size_t) b].clear();
                     continue;
                 }
                 for (int j = 0; j < keep[b]; ++j) {
@@ -13654,7 +13780,34 @@ int main(int argc, char** argv) {
                     sl.x = y;
                     sl.p += 1;
                 }
-                if (batch_mtp && sl.active) {
+                if (adaptive && !sl.active && !sl.cached) mtp_holes[(size_t) b].clear();   // (nothing will read its draft K/V)
+                if (adaptive && sl.active && nrow[t] == 1) {
+                    // STRATA_BATCH_MTP_ADAPT: no drafter work; the cell this window's row made (its residual, the token
+                    // picked after it) joins the slot's hole, filled once N or fewer slots are live (or before its state
+                    // leaves the slot)
+                    MtpHole& h = mtp_holes[(size_t) b];
+                    const int64_t cell = pos[first[t]];
+                    const size_t stride = (size_t) g.hc * (size_t) g.n_embd;
+                    if (h.n() > 0 && cell != h.cell0 + h.n() && !mtp_heal(b, false, err)) {   // (not contiguous: never expected)
+                        std::printf("ERR batch MTP slot %d: %s\n", b, err.c_str());
+                        return false;
+                    }
+                    if (h.n() == 0) h.cell0 = cell;
+                    if (!ad_saved) {
+                        std::printf("ERR batch MTP slot %d: its residual row was not kept\n", b);
+                        return false;
+                    }
+                    h.R.insert(h.R.end(), mtp_hole_pin + (size_t) first[t] * stride, mtp_hole_pin + (size_t) (first[t] + 1) * stride);
+                    h.tok.push_back(outb[first[t]]);
+                    sl.draft_ready = false;
+                    if (h.n() >= kHoleCap) {
+                        ++ad_flushes;
+                        if (!mtp_heal(b, false, err)) {
+                            std::printf("ERR batch MTP slot %d: %s\n", b, err.c_str());
+                            return false;
+                        }
+                    }
+                } else if (batch_mtp && sl.active) {
                     // The slot's two residual rows, one in a window without proposals (the final residuals of the last
                     // stage: ver.final_R_all() follows the chain, so with a layer split they are on the last stage's GPU,
                     // where the drafters are).  The copy is queued on the drafter's own stream after the window's host
@@ -13663,9 +13816,9 @@ int main(int argc, char** argv) {
                     const size_t stride = (size_t) g.hc * (size_t) g.n_embd;
                     if (cudaMemcpyAsync(slot_mtp_rows[(size_t) b].get(),
                                         ver.final_R_all() + (size_t) first[t] * stride,
-                                        (size_t) per * stride * sizeof(float), cudaMemcpyDeviceToDevice,
+                                        (size_t) nrow[t] * stride * sizeof(float), cudaMemcpyDeviceToDevice,
                                         slot_mtp[(size_t) b]->stream()) != cudaSuccess ||
-                        !slot_mtp[(size_t) b]->draft(per, outb + first[t], pos[first[t]], keep[b] - 1,
+                        !slot_mtp[(size_t) b]->draft(nrow[t], outb + first[t], pos[first[t]], keep[b] - 1,
                                                     sl.draft.data(), err)) {
                         std::printf("ERR batch MTP slot %d: %s\n", b, err.c_str());
                         return false;
@@ -13759,6 +13912,14 @@ int main(int argc, char** argv) {
                 if (batch_mtp && batch_mtp_off_above > 0)
                     std::fprintf(stderr, "strata batch: %lld of %lld windows without proposals (more than %d live slots)\n",
                                  (long long) bt_noprop_windows, (long long) bt_windows, batch_mtp_off_above);
+                if (adaptive)   // (counted since the engine started)
+                    std::fprintf(stderr, "strata batch: adaptive MTP: %lld windows without drafter work (rows kept: %.3f "
+                                         "ms/window); %lld holes filled (%lld cells, %.1f ms, %.3f ms/cell), %lld declined, "
+                                         "%lld filled at the cap\n",
+                                 (long long) ad_off_windows, ad_save_ms / (double) std::max<int64_t>(ad_off_windows, 1),
+                                 (long long) ad_heals, (long long) ad_heal_cells, ad_heal_ms,
+                                 ad_heal_ms / (double) std::max<int64_t>(ad_heal_cells, 1), (long long) ad_declined,
+                                 (long long) ad_flushes);
                 bt_run = bt_commit = bt_emit = bt_adapt_wait = 0;
                 bt_windows = bt_rows = bt_tokens = bt_accepted = bt_adapt_rounds = bt_adapt_swaps = 0;
                 bt_offered = bt_noprop_windows = 0;
