@@ -133,4 +133,4 @@ Project Maya contributors.
 ## Status and contact
 
 Gary is a working fork, not a product and not a replacement for Strata. The DeepSeek branch has tagged releases, and
-Flash-Next is pre-release. Gary is maintained by YST (Your Systems Team Limited): https://yst.dev.
+Flash-Next is pre-release. Gary is maintained by YST: https://yst.dev.
