@@ -166,7 +166,7 @@ Its switches are in section 2.9.
 | `DS4_HELPER_ARMED=1` (`DS4_HELPER_ARMED_MAXROWS`) | Armed helper windows (pre-armed requests), the predecessor of device-direct windows. | helper window; MI50 | identical (REPORTED) | off | decode set +6.5 %, B1 +10.5 %; B8 bimodal (REPORTED) ([HX-09](cards/HX-09.md)) |
 | `STRATA_HELPER_ZC_OUTPUT` (and zero-copy input, one-shot) (not in the release commit) | Early zero-copy and one-shot switches for the helper. | helper window; MI50 | not run | dropped | ZC_OUTPUT −8 %; others within noise (REPORTED) ([HX-02](cards/HX-02.md)) |
 | `STRATA_POOL_SERVE`, `STRATA_POOL_CLIENT` (`DS4_POOL_STREAMS`, `DS4_POOL_UNION`) | A helper pool shared by several engines, with a shared-memory mailbox. | helper window; MI50 + host | not run (pool gates never run) | dropped (shelved) | 3 engines on one MI50: ~132 tok/s combined (REPORTED) ([HX-03](cards/HX-03.md)) |
-| `DS4_HSTEP_HEAD` (not in the release commit) | A faster MI50 helper head (fewer PCIe reads at the start of each window). | helper window; MI50 | pending | pending: not yet measured | target: the lead's served wait for the helpers, 9–13 % of a one-user step (MEASURED) ([FG-18](cards/FG-18.md)) |
+| `DS4_HSTEP_HEAD` (not in the release commit) | A faster MI50 helper head (fewer PCIe reads at the start of each window). | helper window; MI50 | dropped | no change: one-user 2K decode −0.37 % against a −1 to −3 % prediction, identical output ([HX-40](cards/HX-40.md)) | target: the lead's served wait for the helpers, 9–13 % of a one-user step (MEASURED) ([FG-18](cards/FG-18.md)) |
 
 ### 2.6 Join and combine (lead)
 
