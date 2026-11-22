@@ -102,9 +102,25 @@ The last step joins the two results: one-card engines (no all-reduce, no idle se
 four MI50s, so nothing runs on the CPU ([SHARED-POOL.md](SHARED-POOL.md), [NX-14](cards/NX-14.md)). One engine fills the MI50
 caches and exports them by HIP IPC handle; the other maps the same memory and drives the cards with its own helper threads. It
 needed two runtime conditions (the ROCm 7.2.1 HSA runtime, one pod sharing the network and PID namespaces) and one shared host
-expert arena (the first trial with two private 68 GB arenas stalled in the kernel driver). Then it was exact on every check and
-faster per agent than two plain servers: 1.106x at 4 users, 1.175x at 8, 1.27x at 16; 1.06-1.10x at 1 user, and 1.11-1.17x at 1
-user with the MTP drafter (83-87 tok/s) [MEASURED].
+expert arena (the first trial with two private 68 GB arenas stalled in the kernel driver). Then it passed every exactness
+check (short prompts) and was faster per agent than two plain servers: 1.106x at 4 users, 1.175x at 8, 1.27x at 16; 1.06-1.10x
+at 1 user, and 1.11-1.17x at 1 user with the MTP drafter (83-87 tok/s) [MEASURED].
+
+## The pool under agent load
+
+The second day put the pool under load and under agents ([SHARED-POOL.md](SHARED-POOL.md) section 10):
+
+- MTP paid up to 4 users per worker and lost at 8 ([NX-17](cards/NX-17.md)); adaptive MTP, which stops drafter work above 4 live
+  slots and rebuilds the drafters' state in one pass when the load drops, got both sides and 10 % more on a changing load
+  ([NX-20](cards/NX-20.md)).
+- The kernel moving pages of a GPU-registered 4 KB arena stops every GPU queue of the process; the arena went onto 2 MiB huge
+  pages ([NX-19](cards/NX-19.md)). One MI50 had trained its link at Gen1; a reseat with the power fully off gave every arm 5-10 %
+  ([NX-18](cards/NX-18.md)). Pinning the MI50s at DPM high is worth 3.4 % ([NX-21](cards/NX-21.md)).
+- The headline against the 40 tok/s goal: **4 agents on short prompts, 2 on agent turns** ([NX-22](cards/NX-22.md)). Prompt
+  reads on each worker's XTX take decode away from the other agents.
+- Agent turns under concurrency were not reproducible from run to run (73/96 turns at 16 agents). Two causes, two opt-in fixes:
+  lent experts computed on the CPU during prompt reads ([NX-23](cards/NX-23.md)), and a race in the server's re-send after a
+  thinking-budget wrap-up ([NX-24](cards/NX-24.md)); with both, 96/96, at ~5 % of steady decode.
 
 ## Where it stands
 
@@ -113,6 +129,7 @@ user with the MTP drafter (83-87 tok/s) [MEASURED].
 | tp2 + 4 MI50 (before NX-09) | 50.5 / 40.6 / 31.6 / 18.8 | every expert on a GPU; no MTP; slow prompts; 8 users after [NX-09](cards/NX-09.md): 19.4 (169.4 aggregate) |
 | two one-card servers (1 XTX + 2 MI50 each) | 51.5 / 47.5 / 36.0 / 24.0 | about a third of experts on the CPU |
 | two workers + shared MI50 pool | 54.4 / 52.3 / 39.8 / 28.2 | every expert on a GPU; 83-87 at 1 user with MTP |
+| shared pool, best-known (8 slots, adaptive MTP, after the reseat) | 88.1-89.0 / 85.3-85.8 / 54.0-54.6 / 31.7-32.4 | means over users; 18.2-18.3 at 16 users; 2 agents at >= 40 on agent turns |
 
 The 2-user figures of the last two rows are one user on each worker or server; their 1- and 2-user cells come from a separate
 one-trial test. The pool's ratios against two servers also include a runtime difference (pool on the ROCm 7.2.1 HSA runtime,
@@ -120,5 +137,5 @@ servers on the bundled one); a same-runtime control with MTP off gives the same 
 the runtime does not explain the gain. Rows come from different sessions; ratios within a session are the reliable
 comparison ([README.md](README.md#results)).
 
-Next: placement tuning for the pool, MTP on the pool at more than one user, the remaining 8-row kernels, and quality testing on
-agent tasks.
+Next: prompt reads on the MI50s that already hold the experts (planned, not built, [NX-25](cards/NX-25.md)), a faster MI50
+decode kernel, the remaining 8-row kernels, and quality testing on agent tasks.

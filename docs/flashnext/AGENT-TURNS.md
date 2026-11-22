@@ -114,6 +114,14 @@ So the 40 tok/s floor holds today for about two thinking-on agents on tp2, and a
 at the line). At eight agents both layouts sit in the 20-30 tok/s band, which loses roughly a quarter to a third of
 completions.
 
+**Measured on agent turns (2026-11-22)** [MEASURED, [NX-22](cards/NX-22.md)]: on the shared pool's best-known configuration,
+with 6-turn sessions of 13-32k-token contexts (thinking on, prompt cache on), every agent met both the 40 tok/s floor and
+the 30 s TTFT p95 at **2 agents** (slowest 76 tok/s, warm TTFT p95 6.1 s), not at 4 (slowest 32-36 tok/s, warm TTFT p95 6.3
+s). On the short-prompt load the same configuration serves 4 (slowest 49.8-50.7). TTFT stayed inside the floor with the
+cache on (warm p95 at most ~22 s up to 16 agents; cold first turns 54-79 s at 8-16 agents); decode during other agents'
+prompt reads is what fails. Our sessions' turns are shorter than the benchmark runs above (output p50 148-281 tokens, so a
+prompt read every 10-30 s per agent), which makes them the read-heavy side.
+
 ## Caveats
 
 - **Sample size.** 139 trials over 27 tasks, 79 completers, one harness. The first-attempt check agrees, but the

@@ -25,8 +25,11 @@ Server: one XTX with two MI50 helper caches, MTP drafter on (`STRATA_BATCH_MTP=1
 - **`STRATA_BATCH_CONCURRENT_READ=2`** (opt-in) reads a prompt on its own thread beside the decoding slots. A cold ~45k prompt
   arriving while another agent decodes is read in 41.5 s instead of 62.6 s, and the decoding agent never stops for more than
   0.5 s (was 7.8 s), at ~11 tok/s during the read instead of a bursty ~22 [MEASURED, with the tuned rows and lent experts].
-- **`STRATA_BATCH_LENT_GPU=1`** (opt-in) makes decode beside a read exact. Before it, a slot decoding while another prompt was
-  read computed the read's borrowed experts on the CPU, which rounds differently, so its text depended on timing [MEASURED].
+- **`STRATA_BATCH_LENT_GPU=1`** (opt-in) makes decode beside a read exact in the test below (4 x 12k prompts at once == alone,
+  16/16). Before it, a slot decoding while another prompt was read computed the read's borrowed experts on the CPU, which
+  rounds differently, so its text depended on timing [MEASURED]. On the shared pool, where it had not been set, the same
+  mechanism made agent turns differ from run to run; `STRATA_BATCH_LENT_EXACT=1` (development branch) turns it on with a
+  guarantee and a counter ([NX-23](cards/NX-23.md)).
 
 ## How a prompt is read on one card
 
@@ -114,4 +117,6 @@ they trade the decoding slots' rate during a read for the new prompt's TTFT.
 - A rare solo near-tie in long streams (a 2,500-token stream alone flipped once in 7 launches): which kernel is not run-to-run
   deterministic is not known.
 - Tensor parallel has no batched prompt path and no prompt cache: every prompt goes through the 8-token decode windows.
-- The MI50s idle during a read; using them would run gfx906 kernels (different bits) and move ~10 GB per chunk over PCIe.
+- The MI50s idle during a read; using them would run gfx906 kernels (different bits). On the shared pool, where the MI50s
+  already hold almost every expert a read needs, that is the planned next step (not built; [NX-25](cards/NX-25.md)): each read
+  there streams ~64 GiB of experts to the XTX, about 2.2 s whatever the read's length.

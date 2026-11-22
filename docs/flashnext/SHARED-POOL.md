@@ -8,9 +8,11 @@ Strata v0.2.9 + Gary (this fork).
 
 Numbers are labelled **MEASURED** (read from a run file or a script-written summary), **REPORTED** (from a write-up at
 the time, not re-checked against raw output) or **ESTIMATE** / **INFERRED** (our own arithmetic or reading of the code).
-Run data: [data/2026-11-21-dp-pool.md](data/2026-11-21-dp-pool.md). Timing model and coverage data:
+Run data: [data/2026-11-21-dp-pool.md](data/2026-11-21-dp-pool.md), second day
+[data/2026-11-22-dp-pool.md](data/2026-11-22-dp-pool.md). Timing model and coverage data:
 [data/2026-11-21-comparative-timing.md](data/2026-11-21-comparative-timing.md). Cards: [NX-14](cards/NX-14.md),
-[NX-15](cards/NX-15.md), [NX-16](cards/NX-16.md). How to launch it: [README.md](README.md#launch), layout 3.
+[NX-15](cards/NX-15.md), [NX-16](cards/NX-16.md); second day [NX-17](cards/NX-17.md) to [NX-25](cards/NX-25.md). How to
+launch it: [README.md](README.md#launch), layout 3.
 
 ## 1. Summary
 
@@ -22,21 +24,26 @@ Run data: [data/2026-11-21-dp-pool.md](data/2026-11-21-dp-pool.md). Timing model
 - **Fit.** With both XTX caching the same hot prefix of the expert ranking, and every other expert on exactly one MI50,
   nothing goes to the CPU at 2, 4 or 8 slots per worker, with or without MTP. The pool needs 19,208-21,305 experts and
   four MI50s hold 22,344 [ESTIMATE].
-- **Exact.** Both workers give the single-card reference hash. Batched == solo, loaded == alone and worker 1 == worker 2
-  were all 8/8 [MEASURED].
+- **Exact on short prompts.** Both workers give the single-card reference hash. Batched == solo, loaded == alone and worker
+  1 == worker 2 were all 8/8 [MEASURED]. These checks use short prompts. With several agents reading long prompts at once,
+  outputs differed from run to run (73/96 agent turns identical at 16 agents) until two fixes, section 10.4.
 - **Faster.** Per agent, against two separate single-card servers measured in the same session: **1.106x at 4 users**
   (bar 1.10, met), **1.175x at 8 users** (bar 1.20, missed; abort line 1.05, clear), and **1.27x at 16 users** with 8
   slots per worker [MEASURED]. The pool ran on the ROCm 7.2.1 HSA runtime and the baseline on the bundled one; a control
   with the baseline on the pool's own build and runtime gives the same ratios (1.098x at 4 users, 1.181x at 8), so the
   runtime does not explain the gain (section 8) [MEASURED].
 - **One user, with MTP.** One user per worker with the MTP drafter: 83-87 tok/s per user, 1.11-1.17x the baseline; in the
-  pool, MTP changes no bit of the output [MEASURED].
+  pool, MTP changes no bit of the short-prompt outputs [MEASURED].
 - **Cheaper on the host.** Host RAM 124 GiB against 190 GiB, and about 13 busy cores against 32-40 [MEASURED].
 - **Two runtime conditions.** Export needs the ROCm 7.2.1 HSA runtime. The importing process must share the exporter's
   network and PID namespace (we use one podman pod with `--share net,pid,ipc`).
 - **Placement tuning.** A slower-card weight (+1.3 % per agent at 8 users), a hot set ranked from agent traffic (+0.3 %) and
-  per-worker hot sets (-0.6 %) all missed the 2 % bar and were not kept; no step changed a bit of the output [MEASURED].
-- **Next.** Slots vs hot-cache size; planning the expert dispatch on the device.
+  per-worker hot sets (-0.6 %) all missed the 2 % bar and were not kept; no step changed a bit of the short-prompt outputs [MEASURED].
+- **Second day (section 10).** MTP pays up to 4 users per worker and loses at 8; adaptive MTP gets both sides. The arena
+  moved to 2 MiB huge pages. Reseating MI50 #3 fixed its Gen1 link (+5-10 %). On the best-known configuration the pool serves
+  **4 agents at >= 40 tok/s on short prompts and 2 on agent turns**; prompt reads on the XTX are the limit. Run-to-run
+  identical agent turns under concurrency need two opt-in fixes, one of them at ~5 % of steady decode [MEASURED].
+- **Next.** Prompt reads on the MI50s (planned, not built; section 10.6); a faster MI50 decode kernel; a third XTX.
 
 ## 2. Facts the design rests on
 
@@ -164,6 +171,11 @@ Why a pool worker's output should equal that worker running alone [INFERRED from
 An open shortcut: if one Q4K expert is bitwise identical on gfx1100 (XTX) and gfx906 (MI50), no XTX/MI50 placement
 choice can ever change a text. We have not tested that.
 
+The argument above covers placement only. Two things outside it made agent-turn outputs depend on timing (section 10.4):
+a prompt read lends XTX expert slots, and a decode window during the read computed the lent experts on the CPU; and the
+server's re-send of a turn after its thinking-budget wrap-up could continue from two different places. The short-prompt
+checks in this file cannot see either.
+
 ## 6. Contention estimate
 
 Per worker window and per MI50, option (a), from the measured service times [ESTIMATE; `tools/pool_fit.py`]:
@@ -217,7 +229,7 @@ Switches:
 | `STRATA_POOL_VERIFY=N` | slots byte-checked per card on import (default 16) |
 | `STRATA_POOL_WEIGHTS="<pci-bus-id>=<w>,..."` | replaces the round-robin stripe with mass-weighted placement (cards not named get weight 1) |
 | `STRATA_POOL_COVER_B=<b>` | exponent of the coverage curve used for the routed mass in weighted placement (default 1.7) |
-| `--shared-expert-arena FILE` | backs the host expert arena with one shared file, so the second engine finds it "already filled by another engine". Needed in practice (section 8) |
+| `--shared-expert-arena FILE` | backs the host expert arena with one shared file, so the second engine finds it "already filled by another engine". Needed in practice (section 8). A file on a hugetlbfs mount puts the arena on 2 MiB huge pages (development branch, not yet in this tree; section 10.2) |
 
 Both workers set the same `--expert-cache` (the hot prefix) and the same MI50 cache size. Each startup prints
 `dp pool (exporter|importer): CUDA0 <n>, pool <n>, CPU path <n> of 24576`.
@@ -352,7 +364,7 @@ drafter costs ~443 XTX slots), CPU path 0. Baseline: MTP on, automatic caches. A
 - MTP's own gain at one user on worker 1: pool 1.59x, baseline 1.52x; drafts accepted ~90 % on these prompts. Trials agree
   within 0.6 % [MEASURED].
 - Pool exact with MTP: reference hash on both workers; batched == solo, loaded == alone and worker 1 == worker 2 all 8/8; the
-  texts equal the MTP-off pool's, so in the pool MTP changes no bit of the output [MEASURED].
+  texts equal the MTP-off pool's, so in the pool MTP changes no bit of these short-prompt outputs [MEASURED].
 - The baseline with MTP also gives the no-MTP reference `a7ae6623797f17fe` in this environment. An earlier one-card MTP arm
   on an older engine and environment gave `da29bc7d5a0ba433`; that is not reproduced and was not re-baselined.
 
@@ -392,7 +404,7 @@ Bar: at least +2 % per agent [MEASURED]:
   too little to move per-agent speed on these short prompts; agent turns, where the histogram came from, were not
   benchmarked.
 - c's first treatment cell is left out: its two workers' users did not run at the same time, so its medians do not compare.
-- **Placement never changed a bit:** in every step both workers gave the reference hash and the same 8 solo texts as the
+- **Placement never changed a bit of the short-prompt outputs:** in every step both workers gave the reference hash and the same 8 solo texts as the
   control, batched == solo and worker 1 == worker 2 8/8, with experts moved between MI50s (a) and between XTX and MI50 (b,
   c). On this pack an expert computes the same on gfx1100 and gfx906 [INFERRED from texts, not a per-expert bitwise test].
 
@@ -423,10 +435,82 @@ Open questions:
   between the cards without changing any text, which points to yes, but no per-expert bitwise test has been run.
 - Why does XTX B have 1.27 GiB less free VRAM than XTX A? It sets the common hot prefix (~460 experts, ~2.7 % of entries).
 - Which workload should the hot set be tuned for: short prompts or agent turns?
-- MTP on the pool workers at more than one user per worker: the pool fits with MTP at every slot count (section 3), and
-  one user per worker is measured (above), but 4-16 users with MTP are not.
+- MTP on the pool workers at more than one user per worker: measured on the second day (section 10.1).
 - Three or four workers. With 3 XTX + 4 MI50 the pool still fits and host RAM (~157 GB with one arena) fits too
   [ESTIMATE]. With 4 XTX + 3 MI50, per-launch overhead would saturate the cards without merging concurrent requests into
   one launch (design B) [ESTIMATE].
 - Whether the first stall was memory-pressure eviction (likely) or an IPC / userptr interaction is not proven; it has
-  not recurred with one shared arena.
+  not recurred with one shared arena. The second day measured the eviction mechanism directly and moved the arena to huge
+  pages (section 10.2).
+
+## 10. Second day (2026-11-21 evening to 2026-11-22)
+
+Every test below was pre-registered (bars, abort lines and hypotheses written before the first measured cell) and run with the
+arms alternated in one session. Run data: [data/2026-11-22-dp-pool.md](data/2026-11-22-dp-pool.md). The switches new here are
+on our development branch and not yet in this tree ([README.md](README.md#settings), marked †).
+
+### 10.1 MTP under load, and adaptive MTP
+
+- **MTP on the pool** ([NX-17](cards/NX-17.md)): per agent on / off 1.58x at 1 user per worker, **1.28x at 2+2** (51.0 tok/s,
+  slowest 45.8-47.8: 4 agents >= 40 on short prompts), 1.07x at 4+4, **0.87x at 8+8**. A verify window holds 8 rows, so 8 live
+  slots need two windows a step. A 16-row window (`STRATA_BATCH_MTP_ROWS=16`) or no proposals above 4 live slots
+  (`STRATA_BATCH_MTP_OFF_ABOVE=4`) reached 0.90x / 0.89x of MTP off at 8+8: a 13-row window costs 1.77x a 7-row one, and the
+  drafters' catch-up still cost 5.7 ms a window. Neither kept [MEASURED].
+- **Adaptive MTP** ([NX-20](cards/NX-20.md)), `STRATA_BATCH_MTP_ADAPT=4`: above 4 live slots no drafter work at all (0.03-0.04
+  ms a window to keep each slot's row); when 4 or fewer are live, each drafter's missing K/V is rebuilt in one batched pass
+  (0.07 ms a cell). Per agent 0.997x plain MTP at 2+2, 0.993x at 4+4, 0.993x MTP off at 8+8; on a 2 -> 8 -> 2 ramp the long
+  requests ran **1.10x the better fixed policy**. Outputs identical with the drafter on, off, skipped or rebuilt (short
+  prompts) [MEASURED].
+
+### 10.2 Host memory: the arena on huge pages
+
+- An arena registered with the GPU on 4 KB pages is a KFD userptr range: when the kernel moves one of its pages, KFD stops
+  every queue of the process until the range is faulted back in. `evicted_ms` in `/sys/class/kfd/kfd/proc/<pid>/` measures it.
+  Two private 68 GB arenas left 59-61 GiB available, the regime of both earlier stalls.
+- On 2 MiB hugetlb pages ([NX-19](cards/NX-19.md)), private arenas' load-time eviction fell from 9.8 / 14.9 s to 0.07-2.6 s,
+  none after load, same speed. The pool's shared arena on hugetlbfs with `vm.nr_hugepages=35000`: eviction 0.04-0.05 s (as
+  /dev/shm), 114 GiB available, per agent 0.985x / 1.006x /dev/shm at 4+4 / 8+8; adopted as the pool's arena. With 70,000
+  pages reserved the idle half pushed the load into compaction and it was not adopted [MEASURED].
+
+### 10.3 Hardware and host
+
+- **MI50 #3's link** trained at Gen1 x8 on a Gen3 x8 port; a reseat with the power fully off fixed it, and every arm then ran
+  5-10 % faster per agent (median ~7 %; attribution INFERRED: time and build also changed) ([NX-18](cards/NX-18.md)).
+- **MI50 DPM**: `auto` is 0.966x `high` per agent at 8+8; keep the pin while serving (~9 W per card) ([NX-21](cards/NX-21.md)).
+- **PCIe completion timeout** 1-3.5 s on every GPU root port from 22 November on (three ports had 65-210 ms); error handling
+  only, in force for both arms of every comparison ([README.md](README.md#host-setup)).
+
+### 10.4 How many agents, and exactness under concurrency
+
+- **Headline** ([NX-22](cards/NX-22.md)), best-known configuration (8 slots, adaptive MTP, huge pages, MI50 pin): every agent
+  >= 40 tok/s with TTFT p95 <= 30 s in both trials for **4 agents on the steady short-prompt load** (slowest 49.8-50.7) and
+  **2 agents on agent turns** (6-turn sessions, 13-32k-token contexts, thinking on; slowest 76, warm TTFT p95 6.1 s). At 4
+  agents on agent turns the slowest gets 32-36 tok/s. With the prompt cache on the goal fails on decode, not TTFT.
+- **The prompt cache belongs on** for agents: 1.8x per-agent decode at 4 agents and warm TTFT p95 6 s instead of 26 s; with it
+  off every re-send reads the whole context again and clients stalled at 8-16 agents.
+- **Run to run under concurrency** ([NX-23](cards/NX-23.md), [NX-24](cards/NX-24.md)): two identical agent-turn runs agreed on
+  only 73/96 turns at 16 agents and 32/48 at 8. Cause 1: decode windows during another agent's prompt read computed the lent
+  experts on the CPU. `STRATA_BATCH_LENT_EXACT=1` (lent experts on the GPU, guaranteed and counted: 0 on the CPU) gave 89/96
+  and 47/48 at no speed cost. Cause 2: the server's re-send after a thinking-budget wrap-up continued from one of two places
+  depending on which server event came first. `STRATA_PARALLEL_SLOTS_ONLY=1` with `STRATA_REUSE_CKPT_ONLY=1` gave **24/24,
+  48/48, 96/96**, at 0.944x steady 4+4 decode: the reproducible-run configuration, not the speed default [MEASURED].
+
+### 10.5 The limit: prompt reads on the XTX
+
+- With `--batch` no MI50 takes part in a prompt read. Each read lends half the XTX's hot slots and streams ~23,000 experts
+  (~64 GiB) from host RAM per part, about 2.2 s of every read whatever its length; the decoding slots wait between a read's
+  parts. One cell's workers spent 426-443 s of ~700 s reading. Per agent on agent turns is 0.71x the steady rate at 4 agents
+  [MEASURED; the 2.2 s share ESTIMATE].
+- Reading beside decode (`STRATA_BATCH_CONCURRENT_READ=2`) is exact and adds 7-10 % per agent, but the read saturates the XTX
+  (decode windows ~140 ms beside it instead of ~45) and the slowest agent at 4 does not move; at 16 agents a client stalled.
+- Above 4 agents decode itself is the limit: 32 tok/s per agent at 4+4 with no reads at all.
+
+### 10.6 Next (not built; ESTIMATE)
+
+- **An MI50 prompt helper** ([NX-25](cards/NX-25.md)): compute a read's experts on the MI50s that already hold them, with no
+  loan and no stream. llama.cpp's Q4_K MMQ on one MI50 measured 7-12 int8-TOPS, ~0.07-0.12 ms a prompt token a card. Estimate:
+  warm reads 3.1-3.65 s -> 0.3-0.6 s and the agent-turn headline 2 -> 4. It changes the arithmetic, so it will be gated on
+  quality (argmax agreement >= 99 %, mean KL <= 0.003), not called exact.
+- **A faster MI50 decode kernel**: the wait for the helpers is ~1/3 of every steady decode window; ~36 rather than 32 tok/s per
+  agent at 4+4 if a fused Q4_K / Q5_0 expert kernel cut it by 40 %.
+- **A third XTX** as a third pool worker: the pool and host RAM fit; ~6 agents on short prompts, ~3 on agent turns.

@@ -10,7 +10,8 @@ Built by YST. Contact: https://yst.dev
 **Start here:**
 - [JOURNEY.md](JOURNEY.md): what we did, in order, and why.
 - [ANATOMY.md](ANATOMY.md): where the time goes in a decode window, tp2 against one card, the decode kernels, the CPU pool's wait.
-- [SHARED-POOL.md](SHARED-POOL.md): two XTX workers sharing one MI50 expert pool, design and results.
+- [SHARED-POOL.md](SHARED-POOL.md): two XTX workers sharing one MI50 expert pool, design and results; section 10 has the
+  second day (MTP under load, host memory, how many agents it serves, run-to-run exactness under concurrency).
 - [PREFILL.md](PREFILL.md): prompt reading.
 - [QUANT.md](QUANT.md): the calibrated Q4_K file and how it scores against Q8_0.
 - [AGENT-TURNS.md](AGENT-TURNS.md): how fast each agent's stream must be.
@@ -28,23 +29,50 @@ helper build:
 - **Tensor parallel over two XTX** (`--tensor-parallel 2`), with MI50 expert helpers.
 - **MI50 helpers** on one card or under tensor parallel: up to 5 helper GPUs, a fast helper round trip (kernel fetch / push /
   flag, graph replay, one issue thread per helper).
-- **A shared MI50 expert pool** for two one-card workers: one exports its MI50 caches by HIP IPC handle, the other imports them.
-- **Batched serving fixes**: penalties in batch windows, batch self-commit, lent experts computed on the GPU during a prompt read.
+- **A shared MI50 expert pool** for two one-card workers: one exports its MI50 caches by HIP IPC handle, the other imports them;
+  its host expert arena on 2 MiB hugetlb pages.
+- **Batched serving fixes**: penalties in batch windows, batch self-commit, lent experts computed on the GPU during a prompt read
+  (and a guarantee that none goes to the CPU), adaptive MTP (no drafter work above N live slots), and a reproducible-run mode
+  (every request in a batch slot, continuations only from checkpoints).
 - **Kernels**: multi-row Q6_K matvecs under TSUM (B6), IQ4 lookup by `v_perm` on gfx1100, router rank.
 - **Prompt reading**: tuned hipBLASLt rows for the experts' gate/up GEMM, a concurrent read mode.
 - **CPU pool**: a predicted wake between layers instead of spinning.
 
-Every new path is opt-in unless a card or the [Settings](#settings) table says it is the default.
+Every new path is opt-in unless a card or the [Settings](#settings) table says it is the default. The hugetlb arena, the
+lent-expert guarantee, adaptive MTP and the reproducible-run mode were measured on our development branch and are not yet in
+this tree (marked † in [Settings](#settings)).
 
 ## Hardware
 
 | Label | Card | Notes |
 |---|---|---|
 | XTX A, XTX B | RX 7900 XTX 24 GB (gfx1100) | XTX A is tensor-parallel card 0 and pool worker 1 |
-| MI50 #1-#4 | Instinct MI50 16 GB (gfx906), 135 W cap | MI50 #3's PCIe transfers cost 2.4-2.9x the others' ("the slow-link MI50"); its kernels are as fast |
+| MI50 #1-#4 | Instinct MI50 16 GB (gfx906), 135 W cap | links Gen4 x16, Gen4 x8, Gen3 x8, Gen3 x8. Until 22 November MI50 #3's link trained at Gen1 x8 and its PCIe transfers cost 2.4-2.9x the others' ("the slow-link MI50"); a reseat fixed it ([NX-18](cards/NX-18.md)) |
 
 Host: one EPYC 7642 (48 cores, Zen 2), 256 GB DDR4-2666 (8 channels). Software: Strata v0.2.9 plus this fork; ROCm 7.2 (the
 runtime in Strata's ROCm container image); the shared pool needs the ROCm 7.2.1 HSA runtime (below).
+
+## Host setup
+
+What the 22 November results ran on, beyond a stock ROCm host. Each item says what it is for.
+
+- **2 MiB huge pages for the pool's expert arena** ([NX-19](cards/NX-19.md)): `vm.nr_hugepages=35000` (persist it in
+  `/etc/sysctl.d`; on a running host drop caches and compact memory first, then read back `HugePages_Total`) and a hugetlbfs
+  mount with `pagesize=2M,size=70000M`. 35,000 pages hold one arena of our Q4_K file (34,803 pages). A GPU-registered arena on
+  4 KB pages can have its pages moved by the kernel, and each move stops every GPU queue of the process; huge pages are never
+  moved. Two private-arena servers need 70,000 instead, and a /dev/shm pool does not fit beside 70,000.
+- **PCIe completion timeout of 1-3.5 s on every GPU root port.** Some of our ports defaulted to the 65-210 ms range. We set
+  the Device Control 2 timeout field on each GPU's root port, for example `setpci -s <root port> CAP_EXP+0x28.w=000a:000f`
+  (value `0xa` = 1-3.5 s; the mask leaves the register's other bits alone). It does not survive a reboot, so apply it at boot.
+  It changes how a slow completion is handled, not throughput; every result from 22 November on ran with it, and we have not
+  measured its effect on its own.
+- **MI50s pinned at DPM `high` while serving** ([NX-21](cards/NX-21.md)): `power_dpm_force_performance_level=high` on each
+  MI50 after the workers load, `auto` when they stop. `auto` was 3.4 % slower on the pool at 16 users.
+- **XTX power cap 272 W** (the driver's floor): no measurable cost in decode ([NX-16](cards/NX-16.md)).
+- **Check every card's PCIe link** (`current_link_speed` / `current_link_width`, or `lspci -vv`) against what its root port
+  supports, and **remove AC power before changing or reseating a card**: on some server boards a soft power-off keeps the
+  slots powered on standby, and cards changed that way can fail to enumerate or train their links until the board is fully
+  drained ([NX-18](cards/NX-18.md)).
 
 ## Layouts
 
@@ -188,7 +216,25 @@ once as a layout-1 server with `auto` caches and note the XTX expert count each 
 on both workers, give each MI50 cache a count that fits its card, and confirm `CPU path 0` at start (the hot prefix plus the
 four MI50 caches must cover all 24,576 experts).
 
+**Layout 3, best-known configuration for agents** (what [NX-22](cards/NX-22.md) measured; it needs the switches marked † in
+[Settings](#settings), which are not yet in this tree). Changes against the command above:
+
+- the [host setup](#host-setup) above (huge pages, completion timeout, MI50 pin, link check);
+- the arena on hugetlbfs: mount the hugetlbfs folder into the pod instead of `/dev/shm` and point `shared-expert-arena=` at a
+  file in it;
+- 8 slots per worker (`PARALLEL=8`), `STRATA_BATCH_MTP=1 STRATA_BATCH_MTP_ADAPT=4`, hot `expert-cache=3150`, MI50 caches
+  `5400` each;
+- `STRATA_BATCH_LENT_EXACT=1` in place of `STRATA_BATCH_LENT_GPU=1` (it implies it);
+- the prompt cache on (do not set `prompt-cache=0`), with `conversation-cache-mib=8192 conversation-cache-slots=8` on each worker
+  (two workers would otherwise both size their cache from the same free RAM).
+
+For reproducible runs (A/Bs, regression gates) add `STRATA_REUSE_CKPT_ONLY=1` to both workers and run the server with
+`STRATA_PARALLEL_SLOTS_ONLY=1` ([NX-24](cards/NX-24.md)); it costs ~5 % of steady multi-user decode.
+
 ## Settings
+
+Switches marked † were measured on our development branch and their code is not yet in this tree; until it is, setting them
+here does nothing.
 
 | Switch | Default | Effect | Card |
 |---|---|---|---|
@@ -203,8 +249,8 @@ four MI50 caches must cover all 24,576 experts).
 | `STRATA_XTX_FAST_PERM=1` | off | IQ4_NL / IQ4_XS lookup by `v_perm` on gfx1100; bitwise identical | [ANATOMY.md](ANATOMY.md) section 5 |
 | `STRATA_ROUTE_RANK=1` | off | router rank kernel | - |
 | packaged hipBLASLt rows (`STRATA_PF_GU_LEGACY=1` for the old kernel) | on | the experts' prompt GEMM on matrix cores; the exactness reference | [NX-10](cards/NX-10.md) |
-| `STRATA_BATCH_CONCURRENT_READ=2` | off | read a prompt beside the decoding slots | [NX-11](cards/NX-11.md) |
-| `STRATA_BATCH_LENT_GPU=1` | off | lent experts on the GPU during a read: decode beside a read stays exact | NX-11 |
+| `STRATA_BATCH_CONCURRENT_READ=2` | off | read a prompt beside the decoding slots (on the pool: +7-10 % per agent at 4-8 agents, but a client stalled at 16; up to 8 agents only) | [NX-11](cards/NX-11.md), [NX-23](cards/NX-23.md) |
+| `STRATA_BATCH_LENT_GPU=1` | off | lent experts on the GPU during a read: decode beside a read measured exact on one card (16/16 == alone); on the pool use `STRATA_BATCH_LENT_EXACT=1` | NX-11 |
 | `STRATA_PF_DQ_BATCH=G` | off | batched FP16 conversion (exact, slower) | [NX-12](cards/NX-12.md) |
 | `STRATA_POOL_WAIT=spin\|futex\|nap\|pred` | spin | CPU pool wait between layers | [NX-13](cards/NX-13.md) |
 | `STRATA_POOL_EXPORT` / `STRATA_POOL_IMPORT=<manifest>` | unset | shared MI50 pool | [NX-14](cards/NX-14.md) |
@@ -212,18 +258,40 @@ four MI50 caches must cover all 24,576 experts).
 | `STRATA_POOL_VERIFY=N` | 16 | pool slots byte-checked per card on import | NX-14 |
 | `STRATA_POOL_WEIGHTS="<pci-bus-id>=<w>,..."`, `STRATA_POOL_COVER_B` (1.7) | unset | weighted pool placement (not used in the measured runs) | [SHARED-POOL.md](SHARED-POOL.md) |
 | `STRATA_NO_MTP=1` / `STRATA_BATCH_MTP=1` | - | MTP drafter off / drafter in batch windows | [NX-15](cards/NX-15.md) |
+| `STRATA_BATCH_MTP_ROWS=R` † | 8 | the MTP verify window holds up to R rows (2-16); not kept | [NX-17](cards/NX-17.md) |
+| `STRATA_BATCH_MTP_OFF_ABOVE=N` † | off | no MTP proposals in a window over more than N live slots (the drafters still catch up); not kept | NX-17 |
+| `STRATA_BATCH_MTP_ADAPT=N` † (`STRATA_BATCH_MTP_ADAPT_HEAL_DIV`, 8) | off; **we run 4** on the 8-slot pool | above N live slots no drafter work at all; the drafters' missing K/V rebuilt in one batched pass when N or fewer are live | [NX-20](cards/NX-20.md) |
+| `shared-expert-arena=<file on hugetlbfs>` † (`STRATA_SET`) | opt-in by path (a /dev/shm file takes the old code) | the shared host expert arena on 2 MiB huge pages; **our pool default** with `vm.nr_hugepages=35000` | [NX-19](cards/NX-19.md) |
+| `power_dpm_force_performance_level` of each MI50 (sysfs) | driver `auto` | **we pin `high`** while serving | [NX-21](cards/NX-21.md) |
+| `prompt-cache`, `conversation-cache-mib`, `conversation-cache-slots` (`STRATA_SET`) | cache on; size from free RAM | **on for agents**; on the pool set 8192 MiB / 8 slots per worker | [NX-22](cards/NX-22.md) |
+| `STRATA_BATCH_LENT_EXACT=1` † | off; **recommended on the pool** | implies `STRATA_BATCH_LENT_GPU=1`; no lent expert is ever computed on the CPU (no window runs while one lacks a device alias), and the CPU's share is counted | [NX-23](cards/NX-23.md) |
+| `STRATA_BATCH_DECODE_SHARE=F` | 0.5 | share of a read's time the decoding slots get between its parts; `0` was a diagnostic | NX-23 |
+| `STRATA_REUSE_CKPT_ONLY=1` † | off | continue a conversation only from checkpoints, never from an idle slot's or a parked conversation's live end; reproducible runs only (with the next row) | [NX-24](cards/NX-24.md) |
+| `STRATA_PARALLEL_SLOTS_ONLY=1` † (server) | off | with `--batch`, every request decodes in a batch slot, never on the solo path; reproducible runs only (~5 % steady cost) | NX-24 |
+| `STRATA_PREFILL_POOL_HELP=1` | does not exist yet | planned MI50 prompt helper | [NX-25](cards/NX-25.md) |
 | `STRATA_TP_TIMING=1\|2\|3`, `STRATA_HELPER_TIMING=1` | off | timing builds (they change the graph; 1.10-1.21x slower) | [ANATOMY.md](ANATOMY.md) |
 
 ## How to read the numbers
 
 - **Labels.** MEASURED = read from a run file or a script-written summary; REPORTED = from a write-up at the time, not re-checked
   against raw output; ESTIMATE = our arithmetic; INFERRED = our reading of the code.
-- **Exactness first.** Greedy decode (temperature 0). A configuration is exact when its token ids equal the single-card
-  reference for the same prompt, batched == solo, a loaded server == the same server alone, and repeat runs are identical. Only
-  then do its speed numbers count. A change that alters rounding (another kernel, another device for an expert, another
-  summation order) re-baselines the reference only by a deliberate decision, recorded on its card. The current reference for the
-  256-token prompt with our Q4_K file is `a7ae6623797f17fe` (sha256 prefix of the text); the tuned prompt GEMM rows set new
-  references for the long prompts ([NX-10](cards/NX-10.md)).
+- **Exactness first.** Greedy decode (temperature 0). In these docs "exact" means what we tested: the token ids of the 256-token
+  reference prompt equal the single-card reference, batched == solo, a loaded server == the same server alone, the two pool
+  workers give each other's texts, and repeat runs of the short-prompt speed set are identical. Those prompts are short (~30
+  tokens for the speed set), so they are read through the decode windows. Only exact configurations' speed numbers count. A
+  change that alters rounding (another kernel, another device for an expert, another summation order) re-baselines the
+  reference only by a deliberate decision, recorded on its card. The current reference for the 256-token prompt with our Q4_K
+  file is `a7ae6623797f17fe` (sha256 prefix of the text); the tuned prompt GEMM rows set new references for the long prompts
+  ([NX-10](cards/NX-10.md)).
+- **Exactness caveat: long prompts under concurrency.** The checks above do not cover several agents with long prompts at
+  once. On the shared pool, two identical agent-turn runs gave identical texts for only 73 of 96 turns at 16 agents (32/48 at
+  8): a decode step that landed while another agent's prompt was being read computed some experts on the CPU, which rounds
+  differently, and whether a step landed there depended on timing. `STRATA_BATCH_LENT_EXACT=1` removes that cause (0 experts
+  on the CPU; 89/96, 47/48). The remaining differences come from a race in how the server re-sends a turn after its
+  thinking-budget wrap-up; `STRATA_PARALLEL_SLOTS_ONLY=1` with `STRATA_REUSE_CKPT_ONLY=1` removes it: 100 % identical at 4, 8
+  and 16 agents, at ~5 % of steady decode ([NX-23](cards/NX-23.md), [NX-24](cards/NX-24.md)). Without those switches, treat
+  agent-turn output under concurrency as not reproducible from run to run. On one-card servers `STRATA_BATCH_LENT_GPU=1` was
+  measured exact beside reads ([NX-11](cards/NX-11.md)); the wrap-up race was not tested there.
 - **Method.** One GPU measurement at a time; arms alternated within a session (A B A B); bars and abort lines written down
   before the run where the card says so.
 - **Speed.** Per agent = median over users of streamed chunks per second; aggregate = total tok/s (wall clock, or while every
@@ -246,7 +314,9 @@ Per-agent decode tok/s, calibrated Q4_K, short prompts (384 tokens out), tempera
 | one XTX + 2 MI50, MTP (before NX-09) | 76.3 | 49.3 | 26.7 | 13.2 | - | same |
 | two one-card servers, users split evenly | 51.5 | 47.5 | 36.0 | 24.0 | 13.4 (8 slots each) | [pool runs](data/2026-11-21-dp-pool.md) |
 | **two workers + shared MI50 pool** | **54.4** | **52.3** | **39.8** | **28.2** | **17.1** (8 slots each) | same |
-| shared pool, MTP | **86.5-87.0** | **83.1** | not measured | not measured | - | same |
+| shared pool, MTP | **86.5-87.0** | **83.1** | 51.0 | 30.6 (4 slots) | 14.9 (8 slots) | [pool, 2nd day](data/2026-11-22-dp-pool.md) section 1 |
+| shared pool, 8 slots, MTP off, after the reseat | - | - | 40.8 | 30.5 | 18.4 | same, section 4 |
+| **shared pool, 8 slots, adaptive MTP (N = 4), after the reseat** | **88.1-89.0** | **85.3-85.8** | **54.0-54.6** | **31.7-32.4** | **18.2-18.3** | same, section 6 |
 
 - **Runtime control.** Every pool cell ran an engine build with the ROCm 7.2.1 HSA runtime swapped in (export needs it); every
   baseline cell in this table ran the build with the bundled runtime. A control put the baseline on the pool's own build and
@@ -265,15 +335,26 @@ Per-agent decode tok/s, calibrated Q4_K, short prompts (384 tokens out), tempera
   32-40.
 - Agent turns with ~50k-token contexts (one server, MTP): 74-75 tok/s alone; prefix reused in 3.6-4.5 s; a cold 52k prompt in
   36 s with the tuned rows ([PREFILL.md](PREFILL.md)).
-- Our per-agent target for thinking-on coding agents is 40 tok/s ([AGENT-TURNS.md](AGENT-TURNS.md)): the pool meets it for about
-  four agents (39.8, at the line), tp2 and a single server for two.
+- The last three rows ran on 22 November after MI50 #3's link was fixed (5-10 % faster on every arm, [NX-18](cards/NX-18.md))
+  with the arena on huge pages; the "shared pool, MTP" row's 4- to 16-user cells ran before the fix. Rows from different
+  sessions compare loosely. The adaptive-MTP row gives per-agent means over users (two trials), the other rows medians.
+- Our per-agent target for thinking-on coding agents is 40 tok/s with TTFT p95 at most 30 s ([AGENT-TURNS.md](AGENT-TURNS.md)).
+  On the best-known pool configuration ([NX-22](cards/NX-22.md)), counting only levels where every agent meets it in both
+  trials: **4 agents on the steady short-prompt load** (slowest 49.8-50.7 tok/s) and **2 agents on agent turns** (6-turn
+  sessions with 13-32k-token contexts, prompt cache on: slowest 76 tok/s, warm TTFT p95 6.1 s). At 4 agents on agent turns
+  the slowest agent gets 32-36 tok/s: each worker reads prompts on its XTX alone, and decode waits during the reads. tp2 and a
+  single server meet the target for two agents on short prompts.
+- **Keep the prompt cache on for agents.** On the pool at 4 agents it gave 1.8x the per-agent decode of cache off and warm
+  TTFT p95 6 s instead of 26 s; with it off, clients stalled at 8-16 agents.
 
-Exactness: every row above gives the reference text `a7ae6623797f17fe` on its solo prompt except one XTX + 2 MI50 with MTP,
-which gave `da29bc7d5a0ba433`: the drafter takes 513 XTX expert slots, so a different set of experts runs on that server's CPU
-path, and the CPU rounds differently from the GPUs (MTP itself was not separated from that). The pool has no CPU path and gives `a7ae6623797f17fe` with and without MTP.
-Batched == solo on every server.
-Two separate one-card servers do not give each other's texts at 384 tokens (different experts on each one's CPU path); the two
-pool workers do (8/8).
+Exactness (as defined [above](#how-to-read-the-numbers): short prompts): every row above gives the reference text
+`a7ae6623797f17fe` on its solo prompt except one XTX + 2 MI50 with MTP, which gave `da29bc7d5a0ba433`: the drafter takes 513
+XTX expert slots, so a different set of experts runs on that server's CPU path, and the CPU rounds differently from the GPUs
+(MTP itself was not separated from that). The pool has no CPU path in normal decode and gives `a7ae6623797f17fe` with and
+without MTP, with adaptive MTP and with any window setting; MTP did not change any of its short-prompt texts. Batched == solo
+on every server. Two separate one-card servers do not give each other's texts at 384 tokens (different experts on each one's
+CPU path); the two pool workers do (8/8). Agent turns with long prompts under concurrency are a different matter: see the
+[exactness caveat](#how-to-read-the-numbers).
 
 ## Limitations and open items
 
@@ -284,11 +365,24 @@ pool workers do (8/8).
   and 3 have not been run as written, and the MMQ-on build sequence ([Build](#build)) has not been run from this tree.
 - **Pool vs baseline runtime**: controlled with MTP off (the runtime does not explain the gain, [Results](#results)); the MTP-on
   pool ratios have no same-runtime control.
+- **Code not yet in this tree**: the switches marked † in [Settings](#settings) (adaptive MTP, the hugetlbfs arena, exact lent
+  experts, the reproducible-run switches, the MTP window switches) and the Q4_K cases of `mmq_expert_bench` were measured on our
+  development branch; the best-known pool configuration needs them.
 - **Shared pool**: needs the ROCm 7.2.1 HSA runtime and one pod with shared network / PID / IPC namespaces; needs one shared host
-  expert arena; the exporter's death stops both workers. Placement tuning (slow-link MI50 weight +1.3 %, a hot set from agent
-  traffic +0.3 %, per-worker hot sets -0.6 % per agent at 8 users) missed the 2 % bar and was not kept
-  ([SHARED-POOL.md](SHARED-POOL.md) section 8); MTP at more than one user per worker is not measured. The cause of the first trial's driver stall is likely
-  memory-pressure eviction but not proven.
+  expert arena (on huge pages, [NX-19](cards/NX-19.md)); the exporter's death stops both workers. Placement tuning (slow-link
+  MI50 weight +1.3 %, a hot set from agent traffic +0.3 %, per-worker hot sets -0.6 % per agent at 8 users) missed the 2 % bar
+  and was not kept ([SHARED-POOL.md](SHARED-POOL.md) section 8; measured before the slow link was fixed). A GPU-registered
+  arena on 4 KB pages under memory pressure is the likely cause of the earlier stalls (the kernel moving its pages stops every
+  queue of the process); huge pages remove that for the arena, and a smaller load-time eviction from another registered range
+  remains, not identified.
+- **Agents per machine**: 4 on short prompts, 2 on agent turns at 40 tok/s ([NX-22](cards/NX-22.md)). Prompt reads run only on
+  each worker's XTX and stream ~64 GiB of experts from host RAM per read part, about 2.2 s of every read; reading beside decode
+  (`STRATA_BATCH_CONCURRENT_READ=2`) adds only 7-10 % because the read saturates the XTX. **Future work, not built and not a
+  claim**: an MI50 prompt helper that computes the experts where the pool already holds them ([NX-25](cards/NX-25.md); ESTIMATE:
+  warm reads 3.1-3.65 s -> 0.3-0.6 s, agent-turn headline 2 -> 4); it would change the arithmetic and be quality-gated, not
+  called exact. Above 4 agents decode itself is the limit (32 tok/s per agent at 8 with no reads).
+- **Run-to-run exactness under concurrency** needs `STRATA_BATCH_LENT_EXACT=1` plus the reproducible-run switches, which cost ~5 %
+  of steady decode ([exactness caveat](#how-to-read-the-numbers)).
 - **Long prompts serialise**: four cold 50k prompts at once still take ~150-160 s for the last first token.
 - **Exactness corners**: with penalties on, tp2's solo text differs from one card's (pre-existing); a rare solo near-tie in long
   streams (one flip in 7 launches of a 2,500-token stream); the earlier one-card MTP reference `da29bc7d5a0ba433` is no longer
@@ -300,7 +394,8 @@ pool workers do (8/8).
   published.
 - **No public re-run yet**: the short-prompt set is private; a public prompt set and a published launcher example
   (`docs/examples/`) are to come.
-- **Hardware**: one machine; one MI50 with a slow PCIe link; host RAM, DRAM bandwidth and CPU threads limit a third server.
+- **Hardware**: one machine; host RAM, DRAM bandwidth and CPU threads limit a third server; a third XTX on the pool is a desk
+  estimate only (~6 agents on short prompts, ~3 on agent turns).
 
 ## Card index
 
@@ -320,5 +415,14 @@ pool workers do (8/8).
 | [NX-12](cards/NX-12.md) | Expert streams, batched FP16 conversion | dropped | exact | 1.3-14 % / 2.7-6.1 % slower |
 | [NX-13](cards/NX-13.md) | CPU pool sleeps between layers (pred) | kept (opt-in) | every text identical | 17-20 cores freed, speed within noise |
 | [NX-14](cards/NX-14.md) | Two XTX workers sharing one MI50 pool | kept (opt-in) | 8/8 on every check | 1.106x / 1.175x / 1.272x per agent at 4 / 8 / 16 users |
-| [NX-15](cards/NX-15.md) | Shared pool at one user, with and without MTP | finding | MTP changes no bit | 83-87 tok/s per user with MTP (1.11-1.17x) |
+| [NX-15](cards/NX-15.md) | Shared pool at one user, with and without MTP | finding | MTP changes no short-prompt bit | 83-87 tok/s per user with MTP (1.11-1.17x) |
 | [NX-16](cards/NX-16.md) | XTX power cap | finding | n/a | 272 W costs nothing in decode |
+| [NX-17](cards/NX-17.md) | MTP on the pool at 2-8 users per worker; the verify window | finding (window switches not kept) | MTP changes no short-prompt text | 1.28x at 2 per worker, 1.07x at 4, 0.87x at 8 |
+| [NX-18](cards/NX-18.md) | Reseating the slow-link MI50 (Gen1 -> Gen3 x8) | finding | n/a | every arm +5-10 % per agent (median ~+7 %) |
+| [NX-19](cards/NX-19.md) | Expert arenas on 2 MiB hugetlb pages | kept (pool default, opt-in by path) | identical texts | load-time eviction 9.8-14.9 s -> <= 2.6 s; pool 0.985x / 1.006x |
+| [NX-20](cards/NX-20.md) | Adaptive MTP (`STRATA_BATCH_MTP_ADAPT=4`) | kept (opt-in) | identical texts | MTP's speed at <= 4 live slots, MTP off's above; ramp 1.10x |
+| [NX-21](cards/NX-21.md) | MI50 DPM high vs auto | finding (keep the pin) | identical texts | auto 0.966x at 16 users |
+| [NX-22](cards/NX-22.md) | Agents at 40 tok/s on the pool | finding | not run-to-run identical under concurrency | 4 agents steady, 2 on agent turns; prompt cache on |
+| [NX-23](cards/NX-23.md) | Lent experts never on the CPU; concurrent read on the pool | kept (opt-in) | 0 lent experts on the CPU; 89/96 run to run | concurrent read +7-10 % per agent, headline unchanged |
+| [NX-24](cards/NX-24.md) | Run-to-run identical agent turns | kept (opt-in, reproducible runs) | **96/96 run to run** | ~5 % steady cost |
+| [NX-25](cards/NX-25.md) | MI50 Q4_K prompt-kernel rate; planned prompt helper | finding + plan | helper would be quality-gated, not exact | 7-12 int8-TOPS on one MI50 |
