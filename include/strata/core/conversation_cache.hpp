@@ -303,7 +303,8 @@ public:
     }
 
     template<class Token>
-    Match best(const std::vector<Token>& prompt, const std::vector<ConversationImageKey>& images, bool cvec) const {
+    Match best(const std::vector<Token>& prompt, const std::vector<ConversationImageKey>& images, bool cvec,
+               bool live_ok = true) const {   // live_ok false: checkpoints only (STRATA_REUSE_CKPT_ONLY)
         Match best;
         // Ties prefer the most recently parked branch. The caller prefers its
         // already-active state when that offers the same prefix length.
@@ -314,7 +315,7 @@ public:
                 const int64_t n = conversation_prefix(c, prompt, images);
                 if (n > best.tokens) best = {i, n, live, serials_[i]};
             };
-            consider(e.live, true);
+            if (live_ok) consider(e.live, true);
             for (const auto& c : e.checkpoints) consider(c, false);
         }
         return best;

@@ -15145,6 +15145,19 @@ int main(int argc, char** argv) {
             ConvCheckpoint::PromptPlan resume_plan;
             int64_t resume_plan_at = -1, resume_plan_end = -1;   // where it goes on, and the segment end it needs
             const ConvCheckpoint* slot_ck = nullptr;   // the slot's checkpoint the prompt continues from (else its end)
+            // STRATA_REUSE_CKPT_ONLY=1 (opt-in, docs/flashnext/cards/NX-24.md): an idle slot's end and a parked
+            // conversation's live end are no reuse source, only checkpoints.  Those ends sit where the last request
+            // stopped - after a solo -> slot hand-off of 1-3 tokens, or a STOP that raced the decoding - so a re-send that
+            // continues them (e.g. a client's thinking-budget wrap-up) re-reads its own reply from a timing-dependent
+            // start, in other chunks, with other bits.  A checkpoint sits at a turn boundary or on the read's grid: the same in every
+            // run.  Costs a re-read of the reply where a client re-sends it verbatim.
+            static const bool reuse_ckpt_only = [] {
+                const char* v = std::getenv("STRATA_REUSE_CKPT_ONLY");
+                const bool on = v != nullptr && std::atoi(v) != 0;
+                if (on) std::fprintf(stderr, "strata serve: STRATA_REUSE_CKPT_ONLY=1: an idle slot's or a parked "
+                                             "conversation's end is not reused, only checkpoints\n");
+                return on;
+            }();
             if (o.prompt_cache > 0 && req_imgs.empty())
                 for (int b = 0; b < (int) bs.size(); ++b) {
                     const BSlot& sl = bs[(size_t) b];
@@ -15154,7 +15167,8 @@ int main(int argc, char** argv) {
                     const bool active_source = sl.active && !sl.tainted && slot_ckpt_move_env() &&
                                                (!use_mtp || batch_mtp || admit_slot >= 0);
                     if (sl.cvec != want_cvec || !(idle_source || active_source)) continue;
-                    if (idle_source && (int64_t) sl.ids.size() > std::max(resume, slot_tokens) && starts_with(sl.ids, {})) {
+                    if (idle_source && !reuse_ckpt_only && (int64_t) sl.ids.size() > std::max(resume, slot_tokens) &&
+                        starts_with(sl.ids, {})) {
                         slot_source = b;
                         slot_tokens = (int64_t) sl.ids.size();
                         slot_ck = nullptr;
@@ -15200,7 +15214,7 @@ int main(int argc, char** argv) {
                                  k + 1, (long long) (k < now.size() ? now[k].start : -1));
                 }
             }
-            const auto parked = conversations.best(ids, req_imgs, want_cvec);
+            const auto parked = conversations.best(ids, req_imgs, want_cvec, !reuse_ckpt_only);
             std::optional<strata::core::SavedConversation> incoming;
             // A checkpoint inside ANOTHER parked conversation (a sibling subagent's system prompt and tools, say) is
             // borrowed: its K/V up to there and the checkpoint come over, and that conversation stays parked for its
